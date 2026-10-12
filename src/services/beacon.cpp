@@ -101,7 +101,8 @@ void beaconLoop() {
         return;
     }
     if (!routerCanSend()) {
-        s_waiting = g_config.aprsIsEnabled ? "TNC or APRS-IS" : "TNC";
+        const char *rf = g_config.rfLink == RfLink::Lora ? "LoRa radio" : "TNC";
+        s_waiting = g_config.aprsIsEnabled ? String(rf) + " or APRS-IS" : String(rf);
         return;
     }
     const uint32_t now = uptimeS();

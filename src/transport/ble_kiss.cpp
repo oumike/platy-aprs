@@ -109,6 +109,8 @@ class ClientCb : public NimBLEClientCallbacks {
     }
 } s_clientCb;
 
+bool bleIsRfLink() { return g_config.rfLink == RfLink::Ble; }
+
 void loadConfig() {
     s_addr = g_config.tncAddress;
     s_addr.trim();
@@ -196,7 +198,7 @@ void sendPending() {
 
 void task(void *) {
     loadConfig();
-    s_wantConnected = g_config.tncAutoConnect && s_addr.length();
+    s_wantConnected = g_config.tncAutoConnect && s_addr.length() && bleIsRfLink();
     s_nextAttemptMs = millis() + 1000;
     setState(s_addr.length() ? (s_wantConnected ? BleState::Waiting : BleState::Idle) : BleState::Off);
 
@@ -216,6 +218,7 @@ void task(void *) {
             if (cmds & CMD_DISCONNECT) s_wantConnected = false;
             else if (cmds & CMD_CONNECT) s_wantConnected = s_addr.length() > 0;
             else s_wantConnected = s_addr.length() && (g_config.tncAutoConnect || linkUp());
+            if (!bleIsRfLink()) s_wantConnected = false;   // the LoRa radio is the RF link
 
             const bool targetChanged = prevAddr != s_addr || prevSvc != s_svcUuid + s_wrUuid + s_ntUuid;
             if (linkUp() && (!s_wantConnected || targetChanged)) dropLink();

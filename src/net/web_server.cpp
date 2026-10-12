@@ -12,6 +12,7 @@
 #include "services/router.h"
 #include "services/sd_log.h"
 #include "transport/ble_kiss.h"
+#include "transport/lora_aprs.h"
 #include "util/geo.h"
 #include "net/wifi_manager.h"
 #include "net/aprs_is.h"
@@ -92,7 +93,11 @@ void handlePostConfig() {
                             next.tncServiceUuid != g_config.tncServiceUuid ||
                             next.tncWriteUuid != g_config.tncWriteUuid ||
                             next.tncNotifyUuid != g_config.tncNotifyUuid ||
-                            next.tncAutoConnect != g_config.tncAutoConnect;
+                            next.tncAutoConnect != g_config.tncAutoConnect ||
+                            next.rfLink != g_config.rfLink;
+    const bool loraChanged = next.rfLink != g_config.rfLink || next.loraFreqMhz != g_config.loraFreqMhz ||
+                             next.loraSf != g_config.loraSf || next.loraBwKhz != g_config.loraBwKhz ||
+                             next.loraCr != g_config.loraCr || next.loraPowerDbm != g_config.loraPowerDbm;
     g_config = next;
     displaySetBrightness(g_config.brightness);
     if (tzChanged) {
@@ -105,6 +110,7 @@ void handlePostConfig() {
     }
     if (wifiChanged) s_pendingWifiApply = true;
     if (tncChanged) g_ble.reconfigure();
+    if (loraChanged) g_lora.reconfigure();
     JsonDocument doc;
     doc["ok"] = true;
     doc["wifiChanged"] = wifiChanged;
@@ -150,6 +156,22 @@ void handleStatus() {
     wj["rssi"] = w.rssi;
     wj["hostname"] = w.hostname;
     fillTncStatus(doc["tnc"].to<JsonObject>());
+    {
+        const LoraStatus l = g_lora.status();
+        JsonObject lo = doc["lora"].to<JsonObject>();
+        lo["state"] = loraStateName(l.state);
+        lo["active"] = g_config.rfLink == RfLink::Lora;
+        lo["freqMhz"] = l.freqMhz;
+        lo["rxFrames"] = l.rxFrames;
+        lo["txFrames"] = l.txFrames;
+        lo["rxBad"] = l.rxBad;
+        if (l.lastRxS) {
+            lo["lastRxAgoS"] = uptimeS() - l.lastRxS;
+            lo["lastRssi"] = l.lastRssi;
+            lo["lastSnr"] = l.lastSnr;
+        }
+        lo["lastError"] = l.lastError;
+    }
     JsonObject sd = doc["sd"].to<JsonObject>();
     sd["mounted"] = sdMounted();
     sd["totalMB"] = (uint32_t)(sdTotalBytes() / (1024 * 1024));

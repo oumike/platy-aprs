@@ -1,4 +1,6 @@
 #include <unity.h>
+#include <string.h>
+#include "aprs/lora_frame.h"
 #include "aprs/gating.h"
 
 void setUp() {}
@@ -56,10 +58,27 @@ static void test_digipeat() {
     TEST_ASSERT_FALSE(gating::digipeat(f, me));
 }
 
+static void test_lora_frame() {
+    const std::string f = lora_frame::encode("N0CALL-7>APLRT1,WIDE1-1:!4200.00N/08300.00W>");
+    TEST_ASSERT_EQUAL_UINT8('<', (uint8_t)f[0]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, (uint8_t)f[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x01, (uint8_t)f[2]);
+    std::string out;
+    const std::string rx = f + "\r\n";
+    TEST_ASSERT_TRUE(lora_frame::decode((const uint8_t *)rx.data(), rx.size(), out));
+    TEST_ASSERT_EQUAL_STRING("N0CALL-7>APLRT1,WIDE1-1:!4200.00N/08300.00W>", out.c_str());
+    // Prefix-less TNC2 accepted, garbage rejected.
+    const char *bare = "N0CALL>APRS::hello";
+    TEST_ASSERT_TRUE(lora_frame::decode((const uint8_t *)bare, strlen(bare), out));
+    const uint8_t junk[] = {0x12, 0x34, 0x3E, 0x00, 0x3A};
+    TEST_ASSERT_FALSE(lora_frame::decode(junk, sizeof(junk), out));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_rf_to_is);
     RUN_TEST(test_is_to_rf);
     RUN_TEST(test_digipeat);
+    RUN_TEST(test_lora_frame);
     return UNITY_END();
 }

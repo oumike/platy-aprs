@@ -72,6 +72,14 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     o["digi"]["enabled"] = c.digiEnabled;
 
+    o["rfLink"] = c.rfLink == RfLink::Lora ? "lora" : "ble";
+    JsonObject lr = o["lora"].to<JsonObject>();
+    lr["freqMhz"] = c.loraFreqMhz;
+    lr["sf"] = c.loraSf;
+    lr["bwKhz"] = c.loraBwKhz;
+    lr["cr"] = c.loraCr;
+    lr["powerDbm"] = c.loraPowerDbm;
+
     JsonObject t = o["tnc"].to<JsonObject>();
     t["name"] = c.tncName;
     t["address"] = c.tncAddress;
@@ -189,6 +197,17 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     JsonObjectConst dg = o["digi"];
     if (dg) take(dg, "enabled", c.digiEnabled);
 
+    if (o["rfLink"].is<const char *>())
+        c.rfLink = strcmp(o["rfLink"].as<const char *>(), "lora") == 0 ? RfLink::Lora : RfLink::Ble;
+    JsonObjectConst lr = o["lora"];
+    if (lr) {
+        takeNum(lr, "freqMhz", c.loraFreqMhz);
+        takeNum(lr, "sf", c.loraSf);
+        takeNum(lr, "bwKhz", c.loraBwKhz);
+        takeNum(lr, "cr", c.loraCr);
+        takeNum(lr, "powerDbm", c.loraPowerDbm);
+    }
+
     JsonObjectConst t = o["tnc"];
     if (t) {
         takeStr(t, "name", c.tncName);
@@ -250,6 +269,12 @@ String configValidate(const AppConfig &c) {
     if (c.smart.fastRateS < 30) return "SmartBeaconing fast rate must be at least 30 s";
     if (c.smart.slowSpeedKmh >= c.smart.fastSpeedKmh) return "SmartBeaconing slow speed must be below fast speed";
     if (c.aprsIsPasscode < -1 || c.aprsIsPasscode > 32767) return "Passcode must be -1 (auto) or 0-32767";
+    if (c.loraFreqMhz < 150 || c.loraFreqMhz > 960) return "LoRa frequency must be 150-960 MHz";
+    if (c.loraSf < 7 || c.loraSf > 12) return "LoRa spreading factor must be 7-12";
+    if (c.loraBwKhz != 62.5f && c.loraBwKhz != 125.0f && c.loraBwKhz != 250.0f && c.loraBwKhz != 500.0f)
+        return "LoRa bandwidth must be 62.5, 125, 250 or 500 kHz";
+    if (c.loraCr < 5 || c.loraCr > 8) return "LoRa coding rate must be 5-8 (4/5-4/8)";
+    if (c.loraPowerDbm < -9 || c.loraPowerDbm > 22) return "LoRa power must be -9 to 22 dBm";
     if (c.wifiSsid.length() > 32) return "Wi-Fi SSID too long";
     if (c.wifiPassword.length() > 0 && c.wifiPassword.length() < 8) return "Wi-Fi password must be at least 8 characters";
     if (c.brightness < 10) return "Brightness must be 10-255";

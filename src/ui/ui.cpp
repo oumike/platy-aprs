@@ -13,6 +13,7 @@
 #include "services/data_store.h"
 #include "services/router.h"
 #include "transport/ble_kiss.h"
+#include "transport/lora_aprs.h"
 #include "util/geo.h"
 #include "ui/map_view.h"
 #include "version.h"
@@ -26,6 +27,7 @@ constexpr int kStatusH = 22;
 constexpr lv_color_t kGrey = LV_COLOR_MAKE(0x60, 0x66, 0x70);
 constexpr lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
 constexpr lv_color_t kAmber = LV_COLOR_MAKE(0xff, 0xb3, 0x47);
+constexpr lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
 
 struct Screen {
     lv_obj_t *scr;
@@ -144,12 +146,19 @@ void updateStatusBar() {
     lv_obj_set_style_text_color(s_sbWifi, wc, 0);
     lv_label_set_text(s_sbWifi, w.apActive ? LV_SYMBOL_WIFI " AP" : LV_SYMBOL_WIFI);
 
-    const BleStatus b = g_ble.status();
-    lv_obj_set_style_text_color(s_sbBt,
-                                b.state == BleState::Connected                                     ? kGreen
-                                : b.state == BleState::Connecting || b.state == BleState::Waiting ? kAmber
-                                                                                                   : kGrey,
-                                0);
+    if (g_config.rfLink == RfLink::Lora) {
+        const LoraState ls = g_lora.status().state;
+        lv_label_set_text(s_sbBt, ls == LoraState::Tx ? "LoRa " LV_SYMBOL_UPLOAD : "LoRa");
+        lv_obj_set_style_text_color(s_sbBt, ls == LoraState::Failed ? kRed : ls == LoraState::Off ? kGrey : kGreen, 0);
+    } else {
+        const BleStatus b = g_ble.status();
+        lv_label_set_text(s_sbBt, LV_SYMBOL_BLUETOOTH);
+        lv_obj_set_style_text_color(s_sbBt,
+                                    b.state == BleState::Connected                                     ? kGreen
+                                    : b.state == BleState::Connecting || b.state == BleState::Waiting ? kAmber
+                                                                                                       : kGrey,
+                                    0);
+    }
 
     const GpsFix g = gpsFix();
     lv_obj_set_style_text_color(s_sbGps, g.valid ? kGreen : g.alive ? kAmber : kGrey, 0);
@@ -332,7 +341,7 @@ void openMonitor() {
     s_mon.note = makeNote(scr, "");
     lv_obj_add_flag(s_mon.note, LV_OBJ_FLAG_HIDDEN);
     s_mon.list = makeList(scr);
-    if (!packetLogCount()) makeNote(scr, "No packets yet. Connect a TNC under Settings > TNC.");
+    if (!packetLogCount()) makeNote(scr, "No packets yet. Set up the radio link under Settings.");
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_mon.list = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshMonitor);
 }
@@ -700,8 +709,29 @@ struct {
     bool wasScanning;
 } s_tnc;
 
+bool s_reopenTnc;  // rebuild the radio screen after an RF-link switch
+
+String loraSummary() {
+    const LoraStatus l = g_lora.status();
+    String t = String("LoRa: ") + loraStateName(l.state) + "  " + String(l.freqMhz, 3) + " MHz";
+    if (l.state == LoraState::Failed && l.lastError.length()) t += "\n" + l.lastError;
+    return t;
+}
+
 void refreshTnc() {
     if (!s_tnc.info) return;
+    if (g_config.rfLink == RfLink::Lora) {
+        const LoraStatus l = g_lora.status();
+        String t = loraSummary() + "\nSF" + String(g_config.loraSf) + "  BW" + String(g_config.loraBwKhz, 1) +
+                   "  CR4/" + String(g_config.loraCr) + "  " + String(g_config.loraPowerDbm) + " dBm" +
+                   "\nRX " + String(l.rxFrames) + "  TX " + String(l.txFrames) + "  bad " + String(l.rxBad);
+        if (l.lastRxS)
+            t += "\nLast heard " + String(uptimeS() - l.lastRxS) + "s ago, " + String(l.lastRssi, 0) + " dBm, SNR " +
+                 String(l.lastSnr, 1);
+        t += "\nRadio settings are in the web config.";
+        lv_label_set_text(s_tnc.info, t.c_str());
+        return;
+    }
     const BleStatus b = g_ble.status();
     String t = String("State: ") + bleStateName(b.state);
     if (b.peerAddress.length()) t += "\n" + (b.peerName.length() ? b.peerName + "  " : String()) + b.peerAddress;
@@ -738,7 +768,8 @@ void refreshTnc() {
 
 void openTnc() {
     lv_group_t *grp;
-    lv_obj_t *scr = newScreen(LV_SYMBOL_BLUETOOTH " TNC", &grp);
+    const bool lora = g_config.rfLink == RfLink::Lora;
+    lv_obj_t *scr = newScreen(lora ? "Radio (LoRa)" : LV_SYMBOL_BLUETOOTH " Radio (TNC)", &grp);
     s_tnc.grp = grp;
     s_tnc.shown.clear();
     s_tnc.wasScanning = false;
@@ -751,7 +782,8 @@ void openTnc() {
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_style_pad_row(row, 4, 0);
     lv_obj_set_style_pad_column(row, 4, 0);
     auto btn = [&](const char *txt, lv_event_cb_t cb) {
         lv_obj_t *b = lv_button_create(row);
@@ -760,6 +792,19 @@ void openTnc() {
         lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
         lv_group_add_obj(grp, b);
     };
+    btn(lora ? "Use BLE TNC" : "Use LoRa", [](lv_event_t *) {
+        g_config.rfLink = g_config.rfLink == RfLink::Lora ? RfLink::Ble : RfLink::Lora;
+        configSave();
+        g_ble.reconfigure();
+        g_lora.reconfigure();
+        s_reopenTnc = true;
+    });
+    if (lora) {
+        s_tnc.list = nullptr;
+        lv_obj_add_event_cb(scr, [](lv_event_t *) { s_tnc.info = nullptr; }, LV_EVENT_DELETE, nullptr);
+        pushScreen(scr, grp, refreshTnc);
+        return;
+    }
     btn(LV_SYMBOL_REFRESH " Scan", [](lv_event_t *) {
         lv_obj_clean(s_tnc.list);
         g_ble.startScan(8);
@@ -811,7 +856,7 @@ void openSettings() {
     });
     lv_label_set_text_fmt(lv_obj_get_child(hp, -1), "Home panel: %s", homePanelName(g_config.homePanel));
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
-    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "TNC (Bluetooth)", [](lv_event_t *) { openTnc(); });
+    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
@@ -835,8 +880,12 @@ void refreshInfo() {
     else if (w.staConfigured) t += "Wi-Fi: connecting to " + w.staSsid + "...\n";
     else t += "Wi-Fi: not set up\n";
     if (w.apActive) t += "Setup AP: " + w.apSsid + "\nhttp://" + w.apIp + "\n";
-    t += String("TNC: ") + bleStateName(b.state);
-    if (b.peerName.length()) t += " (" + b.peerName + ")";
+    if (g_config.rfLink == RfLink::Lora) {
+        t += loraSummary();
+    } else {
+        t += String("TNC: ") + bleStateName(b.state);
+        if (b.peerName.length()) t += " (" + b.peerName + ")";
+    }
     if (g_config.aprsIsEnabled) {
         const AprsIsStatus is = aprsIsStatus();
         t += String("\nAPRS-IS: ") + is.state + (is.connected && !is.verified ? " (unverified)" : "");
@@ -1076,6 +1125,11 @@ void uiLoop() {
         s_pendingThread = "";
         popScreen();
         openThread(peer.c_str());
+    }
+    if (s_reopenTnc) {
+        s_reopenTnc = false;
+        popScreen();
+        openTnc();
     }
     toastLoop();
 }

@@ -11,6 +11,7 @@
 #include "services/router.h"
 #include "services/sd_log.h"
 #include "transport/ble_kiss.h"
+#include "transport/lora_aprs.h"
 #include "net/aprs_is.h"
 #include "net/web_server.h"
 #include "net/wifi_manager.h"
@@ -40,6 +41,7 @@ void setup() {
     webBegin();
     aprsIsBegin();
     g_ble.begin();
+    g_lora.begin();
     if (g_config.buzzer) boardBeep(2000, 60);
 }
 
@@ -47,6 +49,7 @@ void loop() {
     keyboardPoll();
     wifiLoop();
     webLoop();
+    g_lora.loop();
     routerLoop();
     aprsIsLoop();
     gpsSetEnabled(g_config.gpsEnabled);   // follows config changes

@@ -20,6 +20,8 @@ struct SmartBeaconConfig {
     uint16_t minTurnTimeS = 15;
 };
 
+enum class RfLink : uint8_t { Ble, Lora };
+
 struct AppConfig {
     // Station
     String callsign = "N0CALL";
@@ -47,6 +49,14 @@ struct AppConfig {
     bool igateRfToIs = true;
     bool igateIsToRfMsgs = false;
     bool digiEnabled = false;
+
+    // RF link: the BLE KISS TNC or the built-in LoRa radio (one at a time)
+    RfLink rfLink = RfLink::Ble;
+    float loraFreqMhz = 433.775f;   // LoRa APRS (OE5BPA): 433.775 MHz SF12 BW125 CR4/5
+    uint8_t loraSf = 12;
+    float loraBwKhz = 125.0f;
+    uint8_t loraCr = 5;             // 4/5 .. 4/8
+    int8_t loraPowerDbm = 20;
 
     // TNC (BLE KISS)
     String tncName;

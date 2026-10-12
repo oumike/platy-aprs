@@ -78,14 +78,25 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <div class="chk"><input type="checkbox" data-k="digi.enabled" data-t="bool">Digipeater (WIDE1-1 fill-in)</div>
 </div></section>
 
-<section data-tab="TNC"><div class="card">
+<section data-tab="Radio"><div class="card">
+<label>RF link</label><select data-k="rfLink" onchange="rfl()"><option value="ble">Bluetooth KISS TNC (radio)</option><option value="lora">Built-in LoRa radio (LoRa APRS)</option></select>
+<small>One at a time. Save to switch.</small>
+</div><div class="card" id="lorac">
+<div id="lst">…</div>
+<label>Frequency (MHz)</label><input data-k="lora.freqMhz" data-t="num" type="number" step="0.001">
+<div class="row"><div><label>Spreading factor</label><select data-k="lora.sf" data-t="num"><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option></select></div>
+<div><label>Bandwidth (kHz)</label><select data-k="lora.bwKhz" data-t="num"><option>62.5</option><option>125</option><option>250</option><option>500</option></select></div>
+<div><label>Coding rate</label><select data-k="lora.cr" data-t="num"><option value="5">4/5</option><option value="6">4/6</option><option value="7">4/7</option><option value="8">4/8</option></select></div></div>
+<label>TX power (dBm)</label><input data-k="lora.powerDbm" data-t="num" type="number" min="-9" max="22">
+<small>LoRa APRS standard: 433.775 MHz, SF12, 125 kHz, 4/5 (needs a 70 cm licence). The M9's antenna path may be tuned for 915 MHz, so range on 433 MHz can be poor.</small>
+</div><div class="card" id="tncc">
 <div id="tst">…</div>
 <button class="btn sec" onclick="tscan(1)">Scan for TNCs</button>
 <button class="btn sec" onclick="post('/api/tnc/connect','Connecting…')">Connect</button>
 <button class="btn sec" onclick="post('/api/tnc/disconnect','Disconnecting…')">Disconnect</button>
 <div id="tnets"></div>
 <small>Turn on the TNC's Bluetooth and keep it near the device. Devices that advertise the KISS service are listed first.</small>
-</div><div class="card">
+</div><div class="card" id="tncc3">
 <label>Device name</label><input data-k="tnc.name">
 <label>BLE address</label><input data-k="tnc.address" placeholder="aa:bb:cc:dd:ee:ff">
 <div class="chk"><input type="checkbox" data-k="tnc.autoConnect" data-t="bool">Auto-connect</div>
@@ -157,8 +168,9 @@ const set=(o,p,v)=>{const ks=p.split('.');let a=o;ks.slice(0,-1).forEach(k=>a=a[
 function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'var(--bad)':'var(--ok)';m.style.color='#000';m.style.display='block';clearTimeout(m.t);m.t=setTimeout(()=>m.style.display='none',4000)}
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
-$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
+rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname)}
+function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);set(o,e.dataset.k,v)});
 if($('#wpass').value)set(o,'wifi.password',$('#wpass').value);
@@ -223,13 +235,14 @@ async function scan(start){const j=await (await fetch('/api/wifi/scan'+(start?'?
 if(j.scanning){$('#nets').innerHTML='<small>Scanning…</small>';return setTimeout(()=>scan(0),1500)}
 $('#nets').innerHTML='';(j.networks||[]).sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const d=document.createElement('div');d.className='net';
 d.textContent=n.ssid+'  '+n.rssi+' dBm'+(n.secure?' 🔒':'');d.onclick=()=>{$('#wssid').value=n.ssid;$('#wpass').focus()};$('#nets').appendChild(d)})}
-async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc,g=s.gps,b=s.beacon,i=s.aprsis;
+async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc,L=s.lora,g=s.gps,b=s.beacon,i=s.aprsis;
 $('#ist').innerHTML='<p>APRS-IS: <b style="color:'+(i.verified?'var(--ok)':i.connected?'var(--bad)':'var(--mut)')+'">'+esc(i.state)+(i.connected&&!i.verified?' (not verified)':'')+'</b>'+(i.server?' · '+esc(i.server):'')+(i.connected?'<br><small>up '+age(i.connectedForS)+' · RX '+i.rxLines+' · TX '+i.txLines+' · gated RF→IS '+i.gatedRfToIs+' · IS→RF '+i.gatedIsToRf+'</small>':'')+(i.lastError?'<br><small style="color:var(--bad)">'+esc(i.lastError)+'</small>':'')+'</p>';
 $$('nav button').forEach(x=>{if(x.textContent.startsWith('Messages'))x.textContent='Messages'+(s.unreadMessages?' ('+s.unreadMessages+')':'')});
 $('#bst').innerHTML='<p>GPS: '+(!g.enabled?'off':!g.alive?'<span style="color:var(--bad)">no data</span>':g.fix?'<b style="color:var(--ok)">fix</b>, '+g.sats+' sats · '+g.lat.toFixed(5)+', '+g.lon.toFixed(5)+(g.altM!=null?' · '+Math.round(g.altM)+' m':'')+' · '+Math.round(g.speedKmh)+' km/h':'searching, '+g.sats+' sats')+
 '<br>Beacon: <b>'+b.mode+'</b>'+(b.lastAgoS!=null?' · last '+age(b.lastAgoS)+' ago':'')+(b.nextInS!=null?' · next in '+age(b.nextInS):'')+(b.waitingFor?' · <span style="color:var(--mut)">waiting for '+esc(b.waitingFor)+'</span>':'')+(b.lastError?'<br><small style="color:var(--bad)">'+esc(b.lastError)+'</small>':'')+'</p>';
 $('#tst').innerHTML='<p>TNC: <b style="color:'+(t.connected?'var(--ok)':'var(--mut)')+'">'+esc(t.state)+'</b>'+(t.name||t.address?' · '+esc(t.name||'')+' <small>'+esc(t.address)+'</small>':'')+
 (t.connected?'<br><small>MTU '+t.mtu+' · RX '+t.rxFrames+' · TX '+t.txFrames+'</small>':'')+(t.lastError&&!t.connected?'<br><small>'+esc(t.lastError)+(t.retryInS?', retry in '+t.retryInS+'s':'')+'</small>':'')+'</p>';
+$('#lst').innerHTML='<p>LoRa: <b style="color:'+(L.state=='listening'||L.state=='transmitting'?'var(--ok)':L.state=='failed'?'var(--bad)':'var(--mut)')+'">'+esc(L.state)+'</b>'+(L.freqMhz?' · '+L.freqMhz.toFixed(3)+' MHz':'')+'<br><small>RX '+L.rxFrames+' · TX '+L.txFrames+' · bad '+L.rxBad+(L.lastRxAgoS!=null?' · last '+age(L.lastRxAgoS)+' ago, '+Math.round(L.lastRssi)+' dBm, SNR '+L.lastSnr.toFixed(1):'')+'</small>'+(L.lastError?'<br><small style="color:var(--bad)">'+esc(L.lastError)+'</small>':'')+'</p>';
 $('#st').innerHTML=s.callsign+' · v'+s.version+'<br>'+(w.staConnected?'Wi-Fi '+w.staSsid+' '+w.staIp:'Wi-Fi offline')+(w.apActive?' · AP on':'');
 $('#wst').innerHTML=w.staConnected?'<p style="color:var(--ok)">Connected to <b>'+w.staSsid+'</b> at <b>'+w.staIp+'</b> ('+w.rssi+' dBm).'+(w.apActive?' The setup AP will shut down shortly; reconnect to '+w.staSsid+' and open <b>http://'+w.staIp+'</b> or <b>http://'+w.hostname+'.local</b>.':'')+'</p>'
 :(w.staConfigured?'<p style="color:var(--bad)">Not connected to '+w.staSsid+' yet…</p>':'<p>No network configured.</p>')}catch(e){$('#st').textContent='offline'}}

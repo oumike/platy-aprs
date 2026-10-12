@@ -1,6 +1,6 @@
 # rhino-aprs
 
-APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radio (Mobilinkd TNC3/TNC4, Vero VR-N76/VR-N7600, or any BLE KISS device with configurable UUIDs). It has an LVGL UI and a web config page.
+APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radio (Mobilinkd TNC3/TNC4, Vero VR-N76/VR-N7600, or any BLE KISS device with configurable UUIDs), or LoRa APRS on the M9's built-in LR1110. It has an LVGL UI and a web config page.
 
 First target: **Elecrow ThinkNode M9** (ESP32-S3).
 
@@ -32,9 +32,21 @@ choose in Settings or the web Device tab). Connection details and the setup QR c
 
 ## Bluetooth TNC
 
-Web **TNC** tab (or device **TNC** screen): Scan, pick the radio, and it connects and reconnects automatically.
+Web **Radio** tab (or device **Settings > Radio link** screen): Scan, pick the radio, and it connects and reconnects automatically.
 Defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961f68bb`); UUIDs are configurable.
 Put the radio in BLE pairing mode for the first connection (tested with the BTECH/Vero VR-N7600).
+
+## LoRa APRS
+
+The RF link is either the BLE TNC **or** LoRa, never both. Switch it in the web **Radio** tab or with
+**Use LoRa / Use BLE TNC** on the device's Radio link screen; the status bar shows `LoRa` instead of the Bluetooth icon.
+Defaults follow the common LoRa APRS convention: 433.775 MHz, SF12, BW 125 kHz, CR 4/5, 20 dBm, with the
+`<\xFF\x01` + TNC2 text framing, so it interoperates with LoRa APRS iGates/trackers (e.g. CA2RXU, APLRG1).
+Frequency (150–960 MHz), SF, bandwidth, coding rate and power are configurable. The M9's antenna and RF path
+are built for its sold band (433 or 868/915), so stick to that band. Transmitting needs an amateur licence.
+
+Preproduction M9 LR1110s run old radio firmware that rejects one RadioLib setup command (`begin()` → -706);
+`tools/patch_radiolib_lr11x0.py` patches RadioLib at build time to skip it.
 
 ## Beaconing & messaging
 
@@ -98,4 +110,4 @@ console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
 
 Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
 and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done, plus the APRS-IS iGate, digipeater
-SD packet log and map. Next: LoRa APRS.
+SD packet log, map and LoRa APRS (milestone 4).

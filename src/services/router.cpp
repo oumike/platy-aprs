@@ -8,7 +8,7 @@
 #include "messages.h"
 #include "net/aprs_is.h"
 #include "version.h"
-#include "transport/ble_kiss.h"
+#include "transport/lora_aprs.h"
 
 namespace {
 
@@ -57,7 +57,7 @@ std::string pathOf(const std::string &tnc2) {
 
 bool sendFrame(const ax25::Frame &f) {
     const std::vector<uint8_t> bin = ax25::encode(f);
-    if (bin.empty() || !g_ble.sendAx25(bin.data(), bin.size())) return false;
+    if (bin.empty() || !rfLink().sendAx25(bin.data(), bin.size())) return false;
     const std::string tnc2 = ax25::toTnc2(f);
     packetLogAdd(tnc2.c_str(), true, false);
     Serial.printf("[tx] %s\n", tnc2.c_str());
@@ -65,7 +65,7 @@ bool sendFrame(const ax25::Frame &f) {
 }
 
 void digipeat(const ax25::Frame &rx) {
-    if (!g_config.digiEnabled || !g_ble.connected()) return;
+    if (!g_config.digiEnabled || !rfLink().connected()) return;
     ax25::Address me;
     if (!ax25::parseAddress(myCall().c_str(), me)) return;
     ax25::Frame f = rx;
@@ -91,7 +91,7 @@ bool heardOnRfRecently(const std::string &call) {
 // Messages from APRS-IS to a station that is local on RF (and whose sender is
 // not) are retransmitted as third-party traffic.
 void gateToRf(const gating::IsPacket &ip, const aprs::Packet &p) {
-    if (!g_config.igateIsToRfMsgs || !g_ble.connected() || p.type != aprs::Type::Message) return;
+    if (!g_config.igateIsToRfMsgs || !rfLink().connected() || p.type != aprs::Type::Message) return;
     String to(p.addressee.c_str());
     to.trim();
     if (to.equalsIgnoreCase(myCall()) || !heardOnRfRecently(p.addressee) || heardOnRfRecently(ip.src)) return;
@@ -133,7 +133,7 @@ void routerBegin() {
 void routerLoop() {
     RxFrame rx;
     // Bounded so a burst cannot starve the UI.
-    for (int i = 0; i < 4 && g_ble.receive(rx); i++) handleRf(rx);
+    for (int i = 0; i < 4 && rfLink().receive(rx); i++) handleRf(rx);
 }
 
 void routerOnIsLine(const std::string &line) {
@@ -161,16 +161,17 @@ bool myPosition(double &lat, double &lon) {
     return true;
 }
 
-bool routerCanSend() { return g_ble.connected() || aprsIsReady(); }
+bool routerCanSend() { return rfLink().connected() || aprsIsReady(); }
 
 bool routerSendInfo(const std::string &info, String &err) {
     if (g_config.callsign.isEmpty() || g_config.callsign.equalsIgnoreCase("N0CALL")) {
         err = "Set your callsign first";
         return false;
     }
-    const bool rf = g_ble.connected(), is = aprsIsReady();
+    const bool rf = rfLink().connected(), is = aprsIsReady();
     if (!rf && !is) {
-        err = g_config.aprsIsEnabled ? "Neither TNC nor APRS-IS connected" : "TNC not connected";
+        const char *link = g_config.rfLink == RfLink::Lora ? "LoRa radio not running" : "TNC not connected";
+        err = g_config.aprsIsEnabled ? String(link) + " and APRS-IS not connected" : String(link);
         return false;
     }
     ax25::Frame f;
