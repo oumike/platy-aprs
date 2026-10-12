@@ -26,6 +26,26 @@ You can set an optional admin password (username `admin`) on the **Device** tab.
 
 D-pad: move/select · Back: previous screen · Home: home screen.
 
+## Bluetooth TNC
+
+Web **TNC** tab (or device **TNC** screen): Scan, pick the radio, and it connects and reconnects automatically.
+Defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961f68bb`); UUIDs are configurable.
+Put the radio in BLE pairing mode for the first connection (tested with the BTECH/Vero VR-N7600).
+
+## Backup & restore
+
+Web **Device** tab: download a backup JSON file, restore one by uploading it, or save backups to the SD card
+(`/rhino/backups/`) and restore, download, or delete them there. Passwords are only included if you tick the box.
+Restoring reboots the device. The device Settings screen can also save a backup (no passwords) to SD.
+
+## API (selection)
+
+`GET /api/status` · `GET/POST /api/config` · `GET /api/tnc/status` · `GET /api/tnc/scan[?start=1]` ·
+`POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
+`GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
+`POST /api/backup/sd/restore?name=` · `GET /api/backup/sd/download?name=` · `POST /api/backup/sd/delete?name=`
+
 ## Status
 
-Milestone 1 (skeleton, display, keyboard, config, Wi-Fi, web config) is done. Next: BLE KISS + APRS decode.
+Milestones 1 (skeleton, display, Wi-Fi, web config) and 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
+are done. Next: GPS, beaconing, transmit, and messaging.

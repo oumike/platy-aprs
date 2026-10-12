@@ -46,6 +46,7 @@ struct AppConfig {
     // TNC (BLE KISS)
     String tncName;
     String tncAddress;
+    uint8_t tncAddressType = 0;   // BLE_ADDR_PUBLIC=0, RANDOM=1
     String tncServiceUuid = "00000001-ba2a-46c9-ae49-01b0961f68bb";
     String tncWriteUuid = "00000002-ba2a-46c9-ae49-01b0961f68bb";
     String tncNotifyUuid = "00000003-ba2a-46c9-ae49-01b0961f68bb";

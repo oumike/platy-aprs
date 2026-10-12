@@ -74,6 +74,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     JsonObject t = o["tnc"].to<JsonObject>();
     t["name"] = c.tncName;
     t["address"] = c.tncAddress;
+    t["addressType"] = c.tncAddressType;
     t["serviceUuid"] = c.tncServiceUuid;
     t["writeUuid"] = c.tncWriteUuid;
     t["notifyUuid"] = c.tncNotifyUuid;
@@ -167,6 +168,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     if (t) {
         takeStr(t, "name", c.tncName);
         takeStr(t, "address", c.tncAddress);
+        takeNum(t, "addressType", c.tncAddressType);
         takeStr(t, "serviceUuid", c.tncServiceUuid);
         takeStr(t, "writeUuid", c.tncWriteUuid);
         takeStr(t, "notifyUuid", c.tncNotifyUuid);

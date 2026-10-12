@@ -3,6 +3,9 @@
 #include "hal/board.h"
 #include "hal/display.h"
 #include "hal/keyboard.h"
+#include "hal/sd_card.h"
+#include "services/router.h"
+#include "transport/ble_kiss.h"
 #include "net/web_server.h"
 #include "net/wifi_manager.h"
 #include "ui/ui.h"
@@ -20,10 +23,13 @@ void setup() {
     displayBegin();
     displaySetBrightness(g_config.brightness);
     keyboardBegin();
+    sdBegin();
+    routerBegin();
     uiBegin();
 
     wifiBegin();
     webBegin();
+    g_ble.begin();
     if (g_config.buzzer) boardBeep(2000, 60);
 }
 
@@ -31,6 +37,7 @@ void loop() {
     keyboardPoll();
     wifiLoop();
     webLoop();
+    routerLoop();
     displayLoop();
     uiLoop();
     delay(2);

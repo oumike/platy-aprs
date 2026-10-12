@@ -1,6 +1,5 @@
 #include <unity.h>
 #include "aprs/passcode.h"
-#include "../../src/aprs/passcode.cpp"
 
 void setUp() {}
 void tearDown() {}

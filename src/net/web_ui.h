@@ -25,6 +25,12 @@ input[type=checkbox]{width:auto;margin-right:8px}.chk{display:flex;align-items:c
 #msg{position:fixed;bottom:12px;left:12px;right:12px;padding:10px;border-radius:6px;display:none}
 .net{padding:8px;border-bottom:1px solid #2a313b;cursor:pointer}.net:hover{background:#232a33}
 small{color:var(--mut)}
+.mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all}
+.pk{padding:4px 0;border-bottom:1px solid #2a313b}.pk .t{color:var(--mut);margin-right:6px}
+.tx{color:var(--acc)}table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-align:top}th{color:var(--mut);font-weight:500}
+.fl{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a313b}.fl span{flex:1}
+.fl .btn{margin:0;padding:6px 10px}
 </style></head><body>
 <header><b>rhino-aprs</b><div id="st">…</div></header>
 <nav id="tabs"></nav>
@@ -67,6 +73,13 @@ small{color:var(--mut)}
 </div></section>
 
 <section data-tab="TNC"><div class="card">
+<div id="tst">…</div>
+<button class="btn sec" onclick="tscan(1)">Scan for TNCs</button>
+<button class="btn sec" onclick="post('/api/tnc/connect','Connecting…')">Connect</button>
+<button class="btn sec" onclick="post('/api/tnc/disconnect','Disconnecting…')">Disconnect</button>
+<div id="tnets"></div>
+<small>Turn on the TNC's Bluetooth and keep it near the device. Devices that advertise the KISS service are listed first.</small>
+</div><div class="card">
 <label>Device name</label><input data-k="tnc.name">
 <label>BLE address</label><input data-k="tnc.address" placeholder="aa:bb:cc:dd:ee:ff">
 <div class="chk"><input type="checkbox" data-k="tnc.autoConnect" data-t="bool">Auto-connect</div>
@@ -92,18 +105,33 @@ small{color:var(--mut)}
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
 <label>Admin password, username "admin" <small id="apw"></small></label><input type="password" id="apass" autocomplete="new-password">
 <div class="chk"><input type="checkbox" id="aclr">Remove admin password</div>
+</div><div class="card"><b>Backup &amp; restore</b>
+<div class="chk"><input type="checkbox" id="bsec">Include passwords (Wi-Fi, admin) in the backup</div>
+<button class="btn sec" onclick="bdl()">Download backup</button>
+<button class="btn sec" onclick="bsd()">Save backup to SD card</button>
+<label>Restore from a backup file</label><input type="file" id="bfile" accept=".json,application/json">
+<button class="btn sec" onclick="bup()">Restore from file</button>
+<label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div>
+<small>Restoring replaces all settings and reboots. Passwords missing from a backup keep their current values.</small>
 </div><div class="card">
 <button class="btn sec" onclick="post('/api/reboot','Rebooting…')">Reboot</button>
 <button class="btn bad" onclick="confirm('Erase all settings?')&&post('/api/factory-reset','Resetting…')">Factory reset</button>
 </div></section>
 
-<div style="padding:0 12px 60px"><button class="btn" onclick="save()">Save</button></div>
+<section data-tab="Monitor" data-nosave><div class="card"><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
+
+<section data-tab="Stations" data-nosave><div class="card"><table><thead><tr><th>Station</th><th>Heard</th><th>Dist</th><th>Info</th></tr></thead><tbody id="stl"></tbody></table></div></section>
+
+<div style="padding:0 12px 60px" id="savebar"><button class="btn" onclick="save()">Save</button></div>
 <div id="msg"></div>
 <script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-let cfg={};
+let cfg={},tab='';
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const age=s=>s<60?s+'s':s<3600?(s/60|0)+'m':s<86400?(s/3600|0)+'h':(s/86400|0)+'d';
 const secs=$$('section');secs.forEach((s,i)=>{const b=document.createElement('button');b.textContent=s.dataset.tab;
-b.onclick=()=>{secs.forEach(x=>x.classList.remove('on'));$$('nav button').forEach(x=>x.classList.remove('on'));s.classList.add('on');b.classList.add('on')};
+b.onclick=()=>{secs.forEach(x=>x.classList.remove('on'));$$('nav button').forEach(x=>x.classList.remove('on'));s.classList.add('on');b.classList.add('on');
+$('#savebar').style.display=s.hasAttribute('data-nosave')?'none':'';tab=s.dataset.tab;poll()};
 $('#tabs').appendChild(b);if(!i)b.click()});
 for(let i=0;i<16;i++)$('[data-k="station.ssid"]').add(new Option(i?'-'+i:'(none)',i));
 const get=(o,p)=>p.split('.').reduce((a,k)=>a==null?a:a[k],o);
@@ -121,12 +149,42 @@ if($('#aclr').checked)set(o,'device.clearAdminPassword',true);
 const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
 const j=await r.json();if(!j.ok)return toast(j.error||'Save failed',1);
 toast(j.wifiChanged?'Saved. Connecting to Wi-Fi…':'Saved');$('#wpass').value='';$('#apass').value='';$('#aclr').checked=false;load()}
-async function post(u,t){toast(t);await fetch(u,{method:'POST'})}
+async function post(u,t){toast(t);const r=await fetch(u,{method:'POST'});const j=await r.json().catch(()=>({}));if(j.ok===false)toast(j.error,1);setTimeout(status,500)}
+async function tscan(start){const j=await (await fetch('/api/tnc/scan'+(start?'?start=1':''))).json();const d=$('#tnets');d.innerHTML='';
+(j.devices||[]).forEach(n=>{const e=document.createElement('div');e.className='net';e.innerHTML=esc(n.name)+(n.kiss?' <b>KISS</b>':'')+'<br><small>'+esc(n.address)+' · '+n.rssi+' dBm</small>';
+e.onclick=async()=>{toast('Selecting '+n.name+'…');const r=await (await fetch('/api/tnc/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})).json();
+r.ok?(toast('Selected '+n.name+'; connecting'),load()):toast(r.error,1)};d.appendChild(e)});
+if(j.scanning){d.insertAdjacentHTML('beforeend','<small>Scanning…</small>');setTimeout(()=>tscan(0),1500)}else if(!(j.devices||[]).length)d.innerHTML='<small>No devices found.</small>'}
+let lastSeq=0;
+async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();if(!j.packets.length)return;
+if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;
+const html=j.packets.map(p=>'<div class="pk'+(p.tx?' tx':'')+'"><span class="t">'+(p.epoch?new Date(p.epoch*1000).toLocaleTimeString():'-'+age(p.ageS))+(p.tx?' TX':'')+'</span>'+esc(p.raw)+'</div>').join('');
+$('#mon').insertAdjacentHTML('afterbegin',html);const k=$('#mon').children;while(k.length>200)k[k.length-1].remove()}
+async function stations(){const j=await (await fetch('/api/stations')).json();
+$('#stl').innerHTML=j.stations.map(s=>'<tr><td><b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+
+[s.speed,s.altitude,s.status,s.comment].filter(x=>x).map(esc).join(' · ')+(s.lat!=null?'<br><small>'+s.lat.toFixed(4)+', '+s.lon.toFixed(4)+(s.path?' via '+esc(s.path):'')+'</small>':'')+'</td></tr>').join('')||'<tr><td colspan=4><small>No stations heard yet.</small></td></tr>'}
+async function poll(){try{if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device')await sdlist()}catch(e){}}
+setInterval(()=>{if(tab=='Monitor'||tab=='Stations')poll()},3000);
+const bs=()=>$('#bsec').checked?'1':'0';
+function bdl(){location.href='/api/backup?secrets='+bs()}
+async function bsd(){toast('Saving to SD…');const j=await (await fetch('/api/backup/sd?secrets='+bs(),{method:'POST'})).json();j.ok?toast('Saved '+j.name):toast(j.error,1);sdlist()}
+async function restoreRes(r){const j=await r.json().catch(()=>({ok:false,error:'Restore failed'}));if(!j.ok)return toast(j.error,1);toast('Restored. Rebooting…');setTimeout(()=>location.reload(),8000)}
+async function bup(){const f=$('#bfile').files[0];if(!f)return toast('Choose a backup file first',1);
+if(!confirm('Replace all settings with '+f.name+' and reboot?'))return;
+restoreRes(await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:await f.text()}))}
+async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
+$('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
+[...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+if(b.dataset.a=='d')location.href='/api/backup/sd/download?name='+n;
+else if(b.dataset.a=='r'){if(confirm('Restore '+j.files[i].name+' and reboot?'))restoreRes(await fetch('/api/backup/sd/restore?name='+n,{method:'POST'}))}
+else if(confirm('Delete '+j.files[i].name+'?')){await fetch('/api/backup/sd/delete?name='+n,{method:'POST'});sdlist()}})})}
 async function scan(start){const j=await (await fetch('/api/wifi/scan'+(start?'?start=1':''))).json();
 if(j.scanning){$('#nets').innerHTML='<small>Scanning…</small>';return setTimeout(()=>scan(0),1500)}
 $('#nets').innerHTML='';(j.networks||[]).sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const d=document.createElement('div');d.className='net';
 d.textContent=n.ssid+'  '+n.rssi+' dBm'+(n.secure?' 🔒':'');d.onclick=()=>{$('#wssid').value=n.ssid;$('#wpass').focus()};$('#nets').appendChild(d)})}
-async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi;
+async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc;
+$('#tst').innerHTML='<p>TNC: <b style="color:'+(t.connected?'var(--ok)':'var(--mut)')+'">'+esc(t.state)+'</b>'+(t.name||t.address?' · '+esc(t.name||'')+' <small>'+esc(t.address)+'</small>':'')+
+(t.connected?'<br><small>MTU '+t.mtu+' · RX '+t.rxFrames+' · TX '+t.txFrames+'</small>':'')+(t.lastError&&!t.connected?'<br><small>'+esc(t.lastError)+(t.retryInS?', retry in '+t.retryInS+'s':'')+'</small>':'')+'</p>';
 $('#st').innerHTML=s.callsign+' · v'+s.version+'<br>'+(w.staConnected?'Wi-Fi '+w.staSsid+' '+w.staIp:'Wi-Fi offline')+(w.apActive?' · AP on':'');
 $('#wst').innerHTML=w.staConnected?'<p style="color:var(--ok)">Connected to <b>'+w.staSsid+'</b> at <b>'+w.staIp+'</b> ('+w.rssi+' dBm).'+(w.apActive?' The setup AP will shut down shortly; reconnect to '+w.staSsid+' and open <b>http://'+w.staIp+'</b> or <b>http://'+w.hostname+'.local</b>.':'')+'</p>'
 :(w.staConfigured?'<p style="color:var(--bad)">Not connected to '+w.staSsid+' yet…</p>':'<p>No network configured.</p>')}catch(e){$('#st').textContent='offline'}}
