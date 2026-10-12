@@ -68,6 +68,20 @@ const Station *stationDbAt(size_t i);
 const Station *stationDbFind(const char *call);
 void stationDbClear();
 
+// ── Last received APRS message (text messages and bulletins, not acks) ──────
+
+struct HeardMessage {
+    bool valid;
+    bool forMe;          // addressed to our full callsign
+    char from[10];
+    char to[10];
+    char text[68];
+    uint32_t uptimeS;
+};
+
+void lastMessageUpdate(const aprs::Packet &p);
+const HeardMessage &lastMessage();
+
 // Bumped whenever the log or the station list changes, so screens can skip
 // redundant rebuilds.
 extern uint32_t g_dataGen;

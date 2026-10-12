@@ -360,7 +360,11 @@ bool parseInner(const std::string &src, const std::string &dest, const std::stri
 
 bool parse(const std::string &src, const std::string &dest, const std::string &info, Packet &out) {
     out = Packet();
-    return parseInner(src, dest, info, out, 0);
+    if (!parseInner(src, dest, info, out, 0)) return false;
+    // Many radios end the info field with CR/LF or spaces.
+    for (std::string *f : {&out.comment, &out.status, &out.text})
+        while (!f->empty() && (unsigned char)f->back() <= ' ') f->pop_back();
+    return true;
 }
 
 const char *typeName(Type t) {

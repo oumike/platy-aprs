@@ -4,6 +4,10 @@
 
 enum class BeaconMode : uint8_t { Off = 0, Gps = 1, Fixed = 2 };
 enum class Units : uint8_t { Imperial = 0, Metric = 1 };
+// What the compact panel on the home screen shows.
+enum class HomePanel : uint8_t { LastHeard = 0, LastMessage = 1, LastPacket = 2, None = 3 };
+const char *homePanelKey(HomePanel p);    // JSON value, e.g. "lastHeard"
+const char *homePanelName(HomePanel p);   // display name, e.g. "Last heard station"
 
 struct SmartBeaconConfig {
     bool enabled = true;
@@ -59,6 +63,7 @@ struct AppConfig {
 
     // Device
     Units units = Units::Imperial;
+    HomePanel homePanel = HomePanel::LastHeard;
     bool buzzer = true;
     uint8_t brightness = 160;
     String timezone = "EST5EDT,M3.2.0,M11.1.0";

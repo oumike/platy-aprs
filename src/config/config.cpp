@@ -87,10 +87,29 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     JsonObject d = o["device"].to<JsonObject>();
     d["units"] = c.units == Units::Metric ? "metric" : "imperial";
+    d["homePanel"] = homePanelKey(c.homePanel);
     d["buzzer"] = c.buzzer;
     d["brightness"] = c.brightness;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
+}
+
+const char *homePanelKey(HomePanel p) {
+    switch (p) {
+        case HomePanel::LastMessage: return "lastMessage";
+        case HomePanel::LastPacket: return "lastPacket";
+        case HomePanel::None: return "none";
+        default: return "lastHeard";
+    }
+}
+
+const char *homePanelName(HomePanel p) {
+    switch (p) {
+        case HomePanel::LastMessage: return "Last received message";
+        case HomePanel::LastPacket: return "Last received packet";
+        case HomePanel::None: return "Nothing";
+        default: return "Last heard station";
+    }
 }
 
 template <typename T>
@@ -187,6 +206,10 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     if (d) {
         const char *u = d["units"] | (const char *)nullptr;
         if (u) c.units = strcmp(u, "metric") == 0 ? Units::Metric : Units::Imperial;
+        const char *hp = d["homePanel"] | (const char *)nullptr;
+        if (hp)
+            for (uint8_t i = 0; i <= (uint8_t)HomePanel::None; i++)
+                if (!strcmp(hp, homePanelKey((HomePanel)i))) c.homePanel = (HomePanel)i;
         take(d, "buzzer", c.buzzer);
         if (d["brightness"].is<long>()) {
             const long b = d["brightness"].as<long>();

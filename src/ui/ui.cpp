@@ -32,6 +32,7 @@ constexpr int kMaxDepth = 6;
 Screen s_stack[kMaxDepth];
 int s_depth = 0;
 
+volatile bool s_pendingCloseInfo = false;
 lv_obj_t *s_sbCall, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
 
 // ── Screen stack ─────────────────────────────────────────────────────────────
@@ -523,6 +524,13 @@ void openSettings() {
         openWifiStatus();
     });
     addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi status", [](lv_event_t *) { openWifiStatus(); });
+    lv_obj_t *hp = addItem(list, grp, LV_SYMBOL_HOME, "", [](lv_event_t *e) {
+        g_config.homePanel = (HomePanel)(((uint8_t)g_config.homePanel + 1) % ((uint8_t)HomePanel::None + 1));
+        configSave();
+        lv_label_set_text_fmt(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), -1), "Home panel: %s",
+                              homePanelName(g_config.homePanel));
+    });
+    lv_label_set_text_fmt(lv_obj_get_child(hp, -1), "Home panel: %s", homePanelName(g_config.homePanel));
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "TNC (Bluetooth)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
@@ -530,63 +538,188 @@ void openSettings() {
     pushScreen(scr, grp);
 }
 
+// ── Info modal ───────────────────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *bg, *qr, *text;
+    lv_group_t *grp;
+    String key;
+} s_info;
+
+void refreshInfo() {
+    if (!s_info.bg) return;
+    const WifiStatus w = wifiStatus();
+    const BleStatus b = g_ble.status();
+    String t = g_config.fullCallsign() + "\n";
+    if (w.staConnected) t += "Wi-Fi: " + w.staSsid + "\nhttp://" + w.staIp + "\n";
+    else if (w.staConfigured) t += "Wi-Fi: connecting to " + w.staSsid + "...\n";
+    else t += "Wi-Fi: not set up\n";
+    if (w.apActive) t += "Setup AP: " + w.apSsid + "\nhttp://" + w.apIp + "\n";
+    t += String("TNC: ") + bleStateName(b.state);
+    if (b.peerName.length()) t += " (" + b.peerName + ")";
+    t += "\nStations heard: " + String(stationDbCount());
+    const String key = t + String(w.apActive);
+    if (key == s_info.key) return;
+    s_info.key = key;
+    lv_label_set_text(s_info.text, t.c_str());
+    if (w.apActive) {
+        const String qr = "WIFI:T:nopass;S:" + w.apSsid + ";;";
+        lv_qrcode_update(s_info.qr, qr.c_str(), qr.length());
+        lv_obj_remove_flag(s_info.qr, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_info.qr, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void closeInfo() {
+    if (!s_info.bg) return;
+    lv_obj_delete(s_info.bg);
+    lv_group_delete(s_info.grp);
+    s_info = {};
+    lv_group_t *g = s_stack[s_depth - 1].grp;
+    lv_group_set_default(g);
+    lv_indev_set_group(keyboardIndev(), g);
+}
+
+void openInfo() {
+    if (s_info.bg) return;
+    // Dimmed backdrop below the status bar; the box takes all key input.
+    s_info.bg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_info.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_align(s_info.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_radius(s_info.bg, 0, 0);
+    lv_obj_set_style_border_width(s_info.bg, 0, 0);
+    lv_obj_set_style_bg_color(s_info.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_info.bg, LV_OPA_70, 0);
+    lv_obj_clear_flag(s_info.bg, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *box = lv_obj_create(s_info.bg);
+    lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(box, lv_pct(100), 0);
+    lv_obj_center(box);
+    lv_obj_set_style_pad_all(box, 8, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(box, 6, 0);
+
+    s_info.qr = lv_qrcode_create(box);
+    lv_qrcode_set_size(s_info.qr, 96);
+    lv_qrcode_set_dark_color(s_info.qr, lv_color_black());
+    lv_qrcode_set_light_color(s_info.qr, lv_color_white());
+    lv_obj_set_style_border_color(s_info.qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(s_info.qr, 3, 0);
+
+    s_info.text = lv_label_create(box);
+    lv_obj_set_width(s_info.text, lv_pct(100));
+    lv_label_set_long_mode(s_info.text, LV_LABEL_LONG_WRAP);
+
+    lv_obj_t *close = lv_button_create(box);
+    lv_obj_t *cl = lv_label_create(close);
+    lv_label_set_text(cl, "Close");
+    lv_obj_add_event_cb(close, [](lv_event_t *) { s_pendingCloseInfo = true; }, LV_EVENT_CLICKED, nullptr);
+
+    s_info.grp = lv_group_create();
+    lv_group_add_obj(s_info.grp, close);
+    lv_group_set_default(s_info.grp);
+    lv_indev_set_group(keyboardIndev(), s_info.grp);
+    refreshInfo();
+}
+
 // ── Home ─────────────────────────────────────────────────────────────────────
 
-lv_obj_t *s_homeCard, *s_homeQr, *s_homeText;
-String s_homeKey;
+struct {
+    lv_obj_t *panel, *title, *body;
+    String key;
+    char call[10];   // station the panel links to
+    bool apWasActive;
+} s_home;
+
+void refreshHomePanel() {
+    const HomePanel mode = g_config.homePanel;
+    if (mode == HomePanel::None) {
+        lv_obj_add_flag(s_home.panel, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(s_home.panel, LV_OBJ_FLAG_HIDDEN);
+
+    String title, body;
+    s_home.call[0] = 0;
+    if (mode == HomePanel::LastHeard) {
+        const Station *st = stationDbCount() ? stationDbAt(0) : nullptr;
+        if (st) {
+            title = "Last heard, " + ageStr(st->lastHeardS) + " ago";
+            body = st->call;
+            double myLat, myLon;
+            if (st->hasPos && myPosition(myLat, myLon))
+                body += "  " + String(geo::formatDistance(geo::distanceKm(myLat, myLon, st->lat, st->lon),
+                                                          g_config.units == Units::Metric).c_str()) +
+                        " " + geo::compassPoint(geo::bearingDeg(myLat, myLon, st->lat, st->lon));
+            const char *extra = st->status[0] ? st->status : st->comment;
+            if (extra[0]) body += String("\n") + extra;
+            strlcpy(s_home.call, st->call, sizeof(s_home.call));
+        } else {
+            title = "Last heard";
+            body = "No stations heard yet.";
+        }
+    } else if (mode == HomePanel::LastMessage) {
+        const HeardMessage &m = lastMessage();
+        if (m.valid) {
+            title = "Last message, " + ageStr(m.uptimeS) + " ago" + (m.forMe ? "  (to you)" : "");
+            body = String(m.from) + " > " + m.to + "\n" + m.text;
+            strlcpy(s_home.call, m.from, sizeof(s_home.call));
+        } else {
+            title = "Last message";
+            body = "No messages received yet.";
+        }
+    } else {
+        const LogEntry *e = packetLogCount() ? packetLogAt(0) : nullptr;
+        title = e ? "Last packet, " + ageStr(e->uptimeS) + " ago" : String("Last packet");
+        body = e ? e->raw : "No packets yet.";
+    }
+    const String key = title + body;
+    if (key == s_home.key) return;
+    s_home.key = key;
+    lv_label_set_text(s_home.title, title.c_str());
+    lv_label_set_text(s_home.body, body.c_str());
+}
 
 void refreshHome() {
-    const WifiStatus w = wifiStatus();
-    const bool showQr = w.apActive;
-    const BleStatus b = g_ble.status();
-    const String tnc = String("TNC: ") + bleStateName(b.state) +
-                       (b.state == BleState::Connected ? "\nHeard: " + String(stationDbCount()) + " stations" : String());
-    const String key = String(showQr) + w.apSsid + w.staIp + String(w.staConnected) + g_config.fullCallsign() + tnc;
-    if (key == s_homeKey) return;
-    s_homeKey = key;
-
-    if (showQr) {
-        const String qr = "WIFI:T:nopass;S:" + w.apSsid + ";;";
-        lv_qrcode_update(s_homeQr, qr.c_str(), qr.length());
-        lv_obj_remove_flag(s_homeQr, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_fmt(s_homeText, "Setup Wi-Fi:\n%s\n\nThen open\nhttp://%s", w.apSsid.c_str(),
-                              w.apIp.c_str());
-    } else {
-        lv_obj_add_flag(s_homeQr, LV_OBJ_FLAG_HIDDEN);
-        if (w.staConnected)
-            lv_label_set_text_fmt(s_homeText, "%s\nWi-Fi: %s\nConfig: http://%s\n%s", g_config.fullCallsign().c_str(),
-                                  w.staSsid.c_str(), w.staIp.c_str(), tnc.c_str());
-        else
-            lv_label_set_text_fmt(s_homeText, "%s\nWi-Fi: connecting to %s...\n%s", g_config.fullCallsign().c_str(),
-                                  w.staSsid.c_str(), tnc.c_str());
-    }
+    // Pop the info up by itself whenever the setup AP comes on, so the QR code
+    // is there for first-time setup.
+    const bool ap = wifiStatus().apActive;
+    if (ap && !s_home.apWasActive && s_depth == 1) openInfo();
+    s_home.apWasActive = ap;
+    refreshHomePanel();
 }
 
 void buildHome() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(nullptr, &grp);
 
-    s_homeCard = lv_obj_create(scr);
-    lv_obj_set_size(s_homeCard, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(s_homeCard, 6, 0);
-    lv_obj_set_flex_flow(s_homeCard, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(s_homeCard, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(s_homeCard, 8, 0);
-    lv_obj_clear_flag(s_homeCard, LV_OBJ_FLAG_SCROLLABLE);
+    s_home.panel = lv_obj_create(scr);
+    lv_obj_set_size(s_home.panel, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(s_home.panel, 5, 0);
+    lv_obj_set_flex_flow(s_home.panel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s_home.panel, 1, 0);
+    lv_obj_clear_flag(s_home.panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_home.panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_home.panel, [](lv_event_t *) {
+        if (g_config.homePanel == HomePanel::LastPacket) openMonitor();
+        else if (s_home.call[0]) openStationDetail(s_home.call);
+    }, LV_EVENT_CLICKED, nullptr);
 
-    s_homeQr = lv_qrcode_create(s_homeCard);
-    lv_qrcode_set_size(s_homeQr, 88);
-    lv_qrcode_set_dark_color(s_homeQr, lv_color_black());
-    lv_qrcode_set_light_color(s_homeQr, lv_color_white());
-    lv_obj_set_style_border_color(s_homeQr, lv_color_white(), 0);
-    lv_obj_set_style_border_width(s_homeQr, 3, 0);
-
-    s_homeText = lv_label_create(s_homeCard);
-    lv_obj_set_flex_grow(s_homeText, 1);
-    lv_label_set_long_mode(s_homeText, LV_LABEL_LONG_WRAP);
+    s_home.title = lv_label_create(s_home.panel);
+    lv_obj_set_style_text_font(s_home.title, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(s_home.title, kGrey, 0);
+    s_home.body = lv_label_create(s_home.panel);
+    lv_obj_set_width(s_home.body, lv_pct(100));
+    // Fixed two lines so the panel never grows over the menu.
+    lv_label_set_long_mode(s_home.body, LV_LABEL_LONG_DOT);
+    lv_obj_set_height(s_home.body, 2 * lv_font_get_line_height(&lv_font_montserrat_14));
+    lv_group_add_obj(grp, s_home.panel);
 
     lv_obj_t *list = makeList(scr);
-    addItem(list, grp, LV_SYMBOL_LIST, "Stations", [](lv_event_t *) { openStations(); });
+    lv_obj_t *first = addItem(list, grp, LV_SYMBOL_LIST, "Stations", [](lv_event_t *) { openStations(); });
     addItem(list, grp, LV_SYMBOL_ENVELOPE, "Messages", [](lv_event_t *) {
         openPlaceholder("Messages", "APRS messaging arrives in milestone 3.");
     });
@@ -594,7 +727,9 @@ void buildHome() {
     addItem(list, grp, LV_SYMBOL_GPS, "Map", [](lv_event_t *) {
         openPlaceholder("Map", "Map arrives in milestone 4.");
     });
+    addItem(list, grp, LV_SYMBOL_WIFI, "Status & connection info", [](lv_event_t *) { openInfo(); });
     addItem(list, grp, LV_SYMBOL_SETTINGS, "Settings", [](lv_event_t *) { openSettings(); });
+    lv_group_focus_obj(first);
 
     pushScreen(scr, grp, refreshHome);
 }
@@ -615,6 +750,7 @@ bool hotkey(uint8_t key) {
 void tick(lv_timer_t *) {
     updateStatusBar();
     if (s_depth > 0 && s_stack[s_depth - 1].refresh) s_stack[s_depth - 1].refresh();
+    refreshInfo();
 }
 
 }  // namespace
@@ -630,6 +766,12 @@ void uiBegin() {
 void uiLoop() {
     const Nav nav = s_pendingNav;
     s_pendingNav = Nav::None;
+    if (s_pendingCloseInfo || (nav != Nav::None && s_info.bg)) {
+        s_pendingCloseInfo = false;
+        closeInfo();
+        if (nav == Nav::Home) popToHome();
+        return;
+    }
     if (nav == Nav::Back) popScreen();
     else if (nav == Nav::Home) popToHome();
 }

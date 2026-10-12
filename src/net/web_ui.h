@@ -100,6 +100,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
+<label>Home screen panel</label><select data-k="device.homePanel"><option value="lastHeard">Last heard station</option><option value="lastMessage">Last received message</option><option value="lastPacket">Last received packet</option><option value="none">Nothing</option></select>
 <div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">

@@ -31,6 +31,7 @@ static void handleRf(const RxFrame &rx) {
     aprs::Packet p;
     if (!aprs::parse(f.src.str(), f.dst.str(), f.info, p)) return;
     stationDbUpdate(p, pathOf(tnc2).c_str(), tnc2.c_str(), false);
+    lastMessageUpdate(p);
 }
 
 void routerLoop() {

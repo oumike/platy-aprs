@@ -1,4 +1,5 @@
 #include "data_store.h"
+#include "config/config.h"
 #include <esp_heap_caps.h>
 #include <time.h>
 
@@ -179,3 +180,23 @@ void stationDbUpdate(const aprs::Packet &p, const char *path, const char *raw, b
     copyPrintable(s.lastRaw, sizeof(s.lastRaw), raw ? raw : "");
     g_dataGen++;
 }
+
+// ── Last message ─────────────────────────────────────────────────────────────
+
+static HeardMessage s_lastMsg;
+
+void lastMessageUpdate(const aprs::Packet &p) {
+    if (p.type != aprs::Type::Message || p.isAck || p.isRej) return;
+    HeardMessage m{};
+    m.valid = true;
+    copyStr(m.from, sizeof(m.from), p.source);
+    copyStr(m.to, sizeof(m.to), p.addressee);
+    for (int k = strlen(m.to) - 1; k >= 0 && m.to[k] == ' '; k--) m.to[k] = 0;
+    copyStr(m.text, sizeof(m.text), p.text);
+    m.forMe = g_config.fullCallsign().equalsIgnoreCase(m.to);
+    m.uptimeS = uptimeS();
+    s_lastMsg = m;
+    g_dataGen++;
+}
+
+const HeardMessage &lastMessage() { return s_lastMsg; }

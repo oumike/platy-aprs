@@ -24,7 +24,11 @@ You can set an optional admin password (username `admin`) on the **Device** tab.
 
 ## Keys (M9)
 
-D-pad: move/select · Back: previous screen · Home: home screen.
+D-pad: move/select · Back: previous screen/close · Home: home screen.
+
+The home screen shows a compact panel (last heard station, last received message, last packet, or nothing;
+choose in Settings or the web Device tab). Connection details and the setup QR code are under
+"Status & connection info"; that pops up automatically while the setup AP is on.
 
 ## Bluetooth TNC
 

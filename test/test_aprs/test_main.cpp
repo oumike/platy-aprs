@@ -16,6 +16,12 @@ static void test_uncompressed_position() {
     TEST_ASSERT_FALSE(p.messaging);
 }
 
+static void test_trailing_cr_trimmed() {
+    aprs::Packet p;
+    TEST_ASSERT_TRUE(aprs::parse("N0CALL", "APRS", "!4903.50N/07201.75W-Test \r", p));
+    TEST_ASSERT_EQUAL_STRING("Test", p.comment.c_str());
+}
+
 static void test_timestamp_course_speed_altitude() {
     aprs::Packet p;
     TEST_ASSERT_TRUE(aprs::parse("N0CALL", "APRS", "@092345z4903.50N/07201.75W>088/036/A=001234hello", p));
@@ -112,6 +118,7 @@ static void test_garbage_does_not_crash() {
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_uncompressed_position);
+    RUN_TEST(test_trailing_cr_trimmed);
     RUN_TEST(test_timestamp_course_speed_altitude);
     RUN_TEST(test_compressed_position);
     RUN_TEST(test_mic_e);
