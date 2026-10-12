@@ -14,6 +14,7 @@
 #include "services/router.h"
 #include "transport/ble_kiss.h"
 #include "util/geo.h"
+#include "ui/map_view.h"
 #include "version.h"
 #include <Arduino.h>
 #include <lvgl.h>
@@ -404,6 +405,17 @@ void openStationDetail(const char *call) {
     lv_obj_set_style_text_font(s_stDetail, &lv_font_montserrat_12, 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_stDetail = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshStationDetail);
+}
+
+void openMap() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(nullptr, &grp);
+    lv_obj_set_style_pad_hor(scr, 0, 0);
+    lv_obj_set_style_pad_bottom(scr, 0, 0);
+    lv_obj_set_style_pad_top(scr, kStatusH, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    mapViewCreate(scr, grp, openStationDetail);
+    pushScreen(scr, grp);
 }
 
 struct {
@@ -1000,7 +1012,7 @@ void buildHome() {
     addItem(list, grp, LV_SYMBOL_EYE_OPEN, "Monitor", [](lv_event_t *) { openMonitor(); });
     addItem(list, grp, LV_SYMBOL_UPLOAD, "Send beacon now", [](lv_event_t *) { beaconNowUi(); });
     addItem(list, grp, LV_SYMBOL_GPS, "Map", [](lv_event_t *) {
-        openPlaceholder("Map", "Map arrives in milestone 4.");
+        openMap();
     });
     addItem(list, grp, LV_SYMBOL_WIFI, "Status & connection info", [](lv_event_t *) { openInfo(); });
     addItem(list, grp, LV_SYMBOL_SETTINGS, "Settings", [](lv_event_t *) { openSettings(); });
@@ -1009,7 +1021,7 @@ void buildHome() {
     pushScreen(scr, grp, refreshHome);
 }
 
-enum class Nav : uint8_t { None, Back, Home, Messages };
+enum class Nav : uint8_t { None, Back, Home, Messages, Map };
 volatile Nav s_pendingNav = Nav::None;
 
 // Runs inside LVGL's indev read; navigation is deferred to uiLoop() so no
@@ -1019,6 +1031,7 @@ bool hotkey(uint8_t key) {
         case M9_KEY_BACK: s_pendingNav = Nav::Back; return true;
         case M9_KEY_HOME: s_pendingNav = Nav::Home; return true;
         case M9_KEY_MESSAGE: s_pendingNav = Nav::Messages; return true;
+        case M9_KEY_MAP: s_pendingNav = Nav::Map; return true;
         default: return false;
     }
 }
@@ -1054,6 +1067,9 @@ void uiLoop() {
     else if (nav == Nav::Messages) {
         popToHome();
         openMessages();
+    } else if (nav == Nav::Map) {
+        popToHome();
+        openMap();
     }
     if (s_pendingThread.length()) {
         const String peer = s_pendingThread;

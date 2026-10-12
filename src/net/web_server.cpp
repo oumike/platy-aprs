@@ -1,3 +1,4 @@
+#include <lvgl.h>
 #include "web_server.h"
 #include "config/config.h"
 #include "hal/board.h"
@@ -627,6 +628,17 @@ void webBegin() {
     s_server.on("/api/backup/sd/restore", HTTP_POST, handleSdBackupRestore);
     s_server.on("/api/backup/sd/download", HTTP_GET, handleSdBackupDownload);
     s_server.on("/api/backup/sd/delete", HTTP_POST, handleSdBackupDelete);
+#ifdef RHINO_SERIAL_KEYS
+    // Debug builds: raw RGB565 dump of the active screen (240x320, little endian).
+    s_server.on("/api/debug/screen", HTTP_GET, [] {
+        lv_draw_buf_t *b = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+        if (!b) { s_server.send(500, "text/plain", "snapshot failed"); return; }
+        s_server.setContentLength(b->header.h * b->header.stride);
+        s_server.send(200, "application/octet-stream", "");
+        s_server.sendContent((const char *)b->data, b->header.h * b->header.stride);
+        lv_draw_buf_destroy(b);
+    });
+#endif
     s_server.on("/api/logs", HTTP_GET, handleLogList);
     s_server.on("/api/logs/download", HTTP_GET, handleLogDownload);
     s_server.on("/api/logs/delete", HTTP_POST, handleLogDelete);

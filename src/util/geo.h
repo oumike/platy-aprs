@@ -13,4 +13,10 @@ std::string formatSpeed(double knots, bool metric);
 std::string formatAltitude(double feet, bool metric);
 std::string formatAge(unsigned long seconds);   // "12s", "5m", "3h", "2d"
 
+// Web Mercator "world pixel" coordinates for 256 px tiles at a zoom level.
+double lonToWorldX(double lon, int zoom);
+double latToWorldY(double lat, int zoom);
+double worldXToLon(double x, int zoom);
+double worldYToLat(double y, int zoom);
+
 }  // namespace geo

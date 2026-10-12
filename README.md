@@ -24,7 +24,7 @@ You can set an optional admin password (username `admin`) on the **Device** tab.
 
 ## Keys (M9)
 
-D-pad: move/select · Back: previous screen/close · Home: home screen.
+D-pad: move/select · Back: previous screen/close · Home: home screen · Map: map.
 
 The home screen shows a compact panel (last heard station, last received message, last packet, or nothing;
 choose in Settings or the web Device tab). Connection details and the setup QR code are under
@@ -59,6 +59,15 @@ own beacons and messages to APRS-IS as well as over RF, so messaging also works 
 - **Digipeater** (off by default): WIDE1-1 fill-in (`<call>*,WIDE1*`) and packets routed through our callsign,
   with 30 s duplicate suppression.
 
+## Map
+
+Home → **Map** (or the MAP key). OpenStreetMap tiles come from `maps.camillia.sumat.org` when on Wi-Fi and are
+cached on the SD card (`/rhino/tiles/z/x/y.png`), so areas you have viewed work offline. Stations with a
+position are drawn as dots (amber RF, grey APRS-IS, blue weather, purple objects; "me" in blue).
+
+D-pad: pan · `+`/`i`: zoom in · `-`/`o`: zoom out · `N`: select the next station in view (and centre on it) ·
+`C`: centre on me · Enter: details of the selected station.
+
 ## Packet log
 
 With "Log packets to the SD card" on (web **Device** tab, default on), every RF packet and everything we send
@@ -74,6 +83,10 @@ Restoring reboots the device. The device Settings screen can also save a backup 
 
 ## API (selection)
 
+Debug builds (`PLATFORMIO_BUILD_FLAGS=-DRHINO_SERIAL_KEYS`) also accept raw M9 key codes on the serial
+console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
+
+
 `GET /api/status` · `GET/POST /api/config` · `GET /api/tnc/status` · `GET /api/tnc/scan[?start=1]` ·
 `POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
 `POST /api/beacon` · `GET /api/messages[?peer=]` · `POST /api/messages` (`{to,text}`) ·
@@ -85,4 +98,4 @@ Restoring reboots the device. The device Settings screen can also save a backup 
 
 Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
 and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done, plus the APRS-IS iGate, digipeater
-and SD packet log. Next: map, LoRa APRS.
+SD packet log and map. Next: LoRa APRS.

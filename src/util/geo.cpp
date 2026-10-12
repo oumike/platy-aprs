@@ -62,4 +62,22 @@ std::string formatAge(unsigned long s) {
     return buf;
 }
 
+static double worldSize(int zoom) { return 256.0 * (double)(1UL << zoom); }
+
+double lonToWorldX(double lon, int zoom) { return (lon + 180.0) / 360.0 * worldSize(zoom); }
+
+double latToWorldY(double lat, int zoom) {
+    if (lat > 85.0511) lat = 85.0511;
+    if (lat < -85.0511) lat = -85.0511;
+    const double r = lat * kPi / 180.0;
+    return (1.0 - log(tan(r) + 1.0 / cos(r)) / kPi) / 2.0 * worldSize(zoom);
+}
+
+double worldXToLon(double x, int zoom) { return x / worldSize(zoom) * 360.0 - 180.0; }
+
+double worldYToLat(double y, int zoom) {
+    const double n = kPi - 2.0 * kPi * y / worldSize(zoom);
+    return 180.0 / kPi * atan(0.5 * (exp(n) - exp(-n)));
+}
+
 }  // namespace geo

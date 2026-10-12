@@ -61,6 +61,7 @@ bool focusedWantsArrows() {
     if (lv_group_get_editing(g)) return true;
     lv_obj_t *f = lv_group_get_focused(g);
     if (!f) return false;
+    if (lv_obj_has_flag(f, LV_OBJ_FLAG_USER_1)) return true;   // e.g. the map
     // One-line text fields keep up/down for moving between fields.
     if (lv_obj_check_type(f, &lv_textarea_class)) return !lv_textarea_get_one_line(f);
     return lv_obj_check_type(f, &lv_dropdown_class) ||
@@ -132,6 +133,10 @@ void keyboardBegin() {
 }
 
 void keyboardPoll() {
+#ifdef RHINO_SERIAL_KEYS
+    // Debug builds: raw M9 key codes typed on the serial console act as key presses.
+    while (Serial.available() > 0) push((uint8_t)Serial.read());
+#endif
     const uint32_t now = millis();
     if ((int32_t)(now - s_nextPollMs) < 0) return;
     s_nextPollMs = now + 15;

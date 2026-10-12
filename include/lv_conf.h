@@ -28,5 +28,9 @@
 #define LV_THEME_DEFAULT_DARK 1
 
 #define LV_USE_QRCODE 1
+#define LV_USE_LODEPNG 1
+#ifdef RHINO_SERIAL_KEYS
+#define LV_USE_SNAPSHOT 1
+#endif   // map tiles (decoded by map_view.cpp)
 
 #endif  // LV_CONF_H

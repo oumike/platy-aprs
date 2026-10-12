@@ -2,6 +2,7 @@
 #include "aprs/aprs_encoder.h"
 #include "aprs/aprs_parser.h"
 #include "aprs/smart_beacon.h"
+#include "util/geo.h"
 
 void setUp() {}
 void tearDown() {}
@@ -63,11 +64,20 @@ static void test_smart_beacon() {
     TEST_ASSERT_FALSE(sb.due(120, 3, 270, prm));    // too slow to corner-peg
 }
 
+static void test_web_mercator() {
+    // Known tile: Detroit area at z10 lies in tile x=274, y=378 (OSM numbering).
+    TEST_ASSERT_EQUAL_INT(274, (int)(geo::lonToWorldX(-83.364, 10) / 256));
+    TEST_ASSERT_EQUAL_INT(378, (int)(geo::latToWorldY(42.468, 10) / 256));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, 42.468, geo::worldYToLat(geo::latToWorldY(42.468, 14), 14));
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, -83.364, geo::worldXToLon(geo::lonToWorldX(-83.364, 14), 14));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_position_roundtrip);
     RUN_TEST(test_minutes_carry);
     RUN_TEST(test_message_and_ack);
     RUN_TEST(test_smart_beacon);
+    RUN_TEST(test_web_mercator);
     return UNITY_END();
 }
