@@ -43,6 +43,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     st["comment"] = c.comment;
     st["path"] = c.path;
 
+    o["gps"]["enabled"] = c.gpsEnabled;
     JsonObject b = o["beacon"].to<JsonObject>();
     b["mode"] = beaconModeStr(c.beaconMode);
     b["lat"] = c.fixedLat;
@@ -151,6 +152,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         c.path.trim();
         c.path.toUpperCase();
     }
+    if (o["gps"]["enabled"].is<bool>()) c.gpsEnabled = o["gps"]["enabled"].as<bool>();
     JsonObjectConst b = o["beacon"];
     if (b) {
         c.beaconMode = beaconModeFrom(b["mode"] | (const char *)nullptr, c.beaconMode);

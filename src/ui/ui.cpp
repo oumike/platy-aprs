@@ -3,9 +3,12 @@
 #include "hal/board.h"
 #include "hal/keyboard.h"
 #include "hal/pins_m9.h"
+#include "hal/gps.h"
 #include "hal/sd_card.h"
 #include "net/wifi_manager.h"
 #include "services/backup.h"
+#include "services/beacon.h"
+#include "services/messages.h"
 #include "services/data_store.h"
 #include "services/router.h"
 #include "transport/ble_kiss.h"
@@ -33,7 +36,7 @@ Screen s_stack[kMaxDepth];
 int s_depth = 0;
 
 volatile bool s_pendingCloseInfo = false;
-lv_obj_t *s_sbCall, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
+lv_obj_t *s_sbCall, *s_sbMsg, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
 
 // ── Screen stack ─────────────────────────────────────────────────────────────
 
@@ -118,6 +121,8 @@ void buildStatusBar() {
 
     s_sbCall = sbLabel(bar, "");
     lv_obj_set_flex_grow(s_sbCall, 1);
+    s_sbMsg = sbLabel(bar, "");
+    lv_obj_set_style_text_color(s_sbMsg, kAmber, 0);
     s_sbBt = sbLabel(bar, LV_SYMBOL_BLUETOOTH);
     s_sbGps = sbLabel(bar, LV_SYMBOL_GPS);
     s_sbWifi = sbLabel(bar, LV_SYMBOL_WIFI);
@@ -144,6 +149,13 @@ void updateStatusBar() {
                                                                                                    : kGrey,
                                 0);
 
+    const GpsFix g = gpsFix();
+    lv_obj_set_style_text_color(s_sbGps, g.valid ? kGreen : g.alive ? kAmber : kGrey, 0);
+
+    const uint32_t unread = messagesUnread();
+    if (unread) lv_label_set_text_fmt(s_sbMsg, LV_SYMBOL_ENVELOPE " %lu", (unsigned long)unread);
+    else lv_label_set_text(s_sbMsg, "");
+
     const int pct = boardBatteryPercent();
     const char *sym = pct < 0    ? LV_SYMBOL_BATTERY_EMPTY
                       : pct > 80 ? LV_SYMBOL_BATTERY_FULL
@@ -160,6 +172,44 @@ void updateStatusBar() {
         localtime_r(&now, &tm);
         lv_label_set_text_fmt(s_sbTime, "%02d:%02d", tm.tm_hour, tm.tm_min);
     }
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+lv_obj_t *s_toast;
+uint32_t s_toastUntilMs;
+
+void toast(const String &text, uint32_t ms = 3000) {
+    if (!s_toast) {
+        s_toast = lv_label_create(lv_layer_top());
+        lv_obj_set_width(s_toast, lv_pct(94));
+        lv_label_set_long_mode(s_toast, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_max_height(s_toast, 60, 0);
+        lv_obj_set_style_bg_color(s_toast, lv_color_hex(0x2a313b), 0);
+        lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_toast, kAmber, 0);
+        lv_obj_set_style_border_width(s_toast, 1, 0);
+        lv_obj_set_style_radius(s_toast, 6, 0);
+        lv_obj_set_style_pad_all(s_toast, 6, 0);
+        lv_obj_align(s_toast, LV_ALIGN_BOTTOM_MID, 0, -6);
+    }
+    lv_label_set_text(s_toast, text.c_str());
+    lv_obj_move_foreground(s_toast);
+    lv_obj_remove_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+    s_toastUntilMs = millis() + ms;
+}
+
+void toastLoop() {
+    if (s_toast && s_toastUntilMs && (int32_t)(millis() - s_toastUntilMs) >= 0) {
+        lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+        s_toastUntilMs = 0;
+    }
+}
+
+void beaconNowUi() {
+    String err;
+    if (beaconNow(err)) toast(LV_SYMBOL_UPLOAD " Beacon sent");
+    else toast("Beacon not sent: " + err);
 }
 
 // ── Placeholder screens ──────────────────────────────────────────────────────
@@ -412,6 +462,221 @@ void openStations() {
     pushScreen(scr, grp, refreshStations);
 }
 
+// ── Messages ─────────────────────────────────────────────────────────────────
+
+String s_pendingThread;   // opened from uiLoop (after leaving the compose screen)
+
+lv_obj_t *makeInput(lv_obj_t *parent, lv_group_t *grp, const char *placeholder, uint32_t maxLen) {
+    lv_obj_t *ta = lv_textarea_create(parent);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_placeholder_text(ta, placeholder);
+    lv_textarea_set_max_length(ta, maxLen);
+    lv_obj_set_width(ta, lv_pct(100));
+    lv_group_add_obj(grp, ta);
+    return ta;
+}
+
+const char *kCallChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-";
+
+struct {
+    lv_obj_t *list, *input;
+    lv_group_t *grp;
+    char peer[10];
+    uint32_t gen;
+    uint32_t seqs[150];
+} s_thr;
+
+void sendFromThread() {
+    const char *txt = lv_textarea_get_text(s_thr.input);
+    if (!txt[0]) return;
+    String err;
+    if (messagesSend(s_thr.peer, txt, err)) lv_textarea_set_text(s_thr.input, "");
+    else toast("Not sent: " + err);
+}
+
+void refreshThread() {
+    if (!s_thr.list) return;
+    if (s_thr.gen == g_msgGen) return;
+    messagesMarkRead(s_thr.peer);
+    s_thr.gen = g_msgGen;
+    const bool inputFocused = lv_group_get_focused(s_thr.grp) == s_thr.input;
+    lv_obj_clean(s_thr.list);
+    size_t n = 0;
+    for (size_t i = 0; i < messagesCount(); i++) {
+        const ChatMsg *m = messagesAt(i);
+        if (strcasecmp(m->peer, s_thr.peer)) continue;
+        String line = m->text;
+        if (m->outgoing) {
+            const char *st = m->state == MsgState::Acked      ? LV_SYMBOL_OK
+                             : m->state == MsgState::Pending  ? "..."
+                             : m->state == MsgState::Rejected ? LV_SYMBOL_CLOSE " rejected"
+                                                              : LV_SYMBOL_CLOSE " not delivered, press to retry";
+            line = String("You: ") + line + "  " + st;
+        }
+        s_thr.seqs[n] = m->seq;
+        lv_obj_t *b = addWrapItem(s_thr.list, s_thr.grp, line.c_str(), [](lv_event_t *e) {
+            const uint32_t seq = s_thr.seqs[(size_t)(uintptr_t)lv_event_get_user_data(e)];
+            String err;
+            for (size_t i = 0; i < messagesCount(); i++)
+                if (messagesAt(i)->seq == seq && messagesAt(i)->state == MsgState::Failed) messagesRetry(seq, err);
+        }, (void *)(uintptr_t)n);
+        if (m->outgoing) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
+        if (++n == 150) break;
+    }
+    // Keep the input last in the focus order.
+    lv_group_remove_obj(s_thr.input);
+    lv_group_add_obj(s_thr.grp, s_thr.input);
+    if (inputFocused || !lv_group_get_focused(s_thr.grp)) lv_group_focus_obj(s_thr.input);
+    if (n) lv_obj_scroll_to_view(lv_obj_get_child(s_thr.list, n - 1), LV_ANIM_OFF);
+}
+
+void openThread(const char *peer) {
+    strlcpy(s_thr.peer, peer, sizeof(s_thr.peer));
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen((String(LV_SYMBOL_ENVELOPE " ") + peer).c_str(), &grp);
+    s_thr.grp = grp;
+    s_thr.gen = 0;
+    s_thr.list = makeList(scr);
+    s_thr.input = makeInput(scr, grp, "Type, Enter to send", 67);
+    lv_obj_add_event_cb(s_thr.input, [](lv_event_t *) { sendFromThread(); }, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_thr.list = nullptr; }, LV_EVENT_DELETE, nullptr);
+    pushScreen(scr, grp, refreshThread);
+    lv_group_focus_obj(s_thr.input);
+}
+
+struct {
+    lv_obj_t *to, *text;
+} s_new;
+
+void sendNew() {
+    String to = lv_textarea_get_text(s_new.to);
+    to.trim();
+    to.toUpperCase();
+    String err;
+    if (!messagesSend(to, lv_textarea_get_text(s_new.text), err)) {
+        toast("Not sent: " + err);
+        return;
+    }
+    s_pendingThread = to;   // swap this screen for the conversation
+}
+
+void openNewMessage(const char *to = "") {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_EDIT " New message", &grp);
+    s_new.to = makeInput(scr, grp, "To (callsign)", 9);
+    lv_textarea_set_accepted_chars(s_new.to, kCallChars);
+    lv_textarea_set_text(s_new.to, to);
+    s_new.text = makeInput(scr, grp, "Message", 67);
+    lv_obj_add_event_cb(s_new.to, [](lv_event_t *) { lv_group_focus_obj(s_new.text); }, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(s_new.text, [](lv_event_t *) { sendNew(); }, LV_EVENT_READY, nullptr);
+    lv_obj_t *b = lv_button_create(scr);
+    lv_obj_t *l = lv_label_create(b);
+    lv_label_set_text(l, LV_SYMBOL_UPLOAD " Send");
+    lv_obj_add_event_cb(b, [](lv_event_t *) { sendNew(); }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, b);
+    makeNote(scr, "Up/down moves between fields. Max 67 characters.");
+    pushScreen(scr, grp);
+    lv_group_focus_obj(to[0] ? s_new.text : s_new.to);
+}
+
+struct {
+    lv_obj_t *list;
+    lv_group_t *grp;
+    uint32_t gen;
+    uint32_t lastBuildS;
+    char peers[40][10];
+} s_msgs;
+
+void refreshMessages() {
+    if (!s_msgs.list) return;
+    if (s_msgs.gen == g_msgGen && uptimeS() - s_msgs.lastBuildS < 30) return;
+    s_msgs.gen = g_msgGen;
+    s_msgs.lastBuildS = uptimeS();
+    const int fi = focusedIndex(s_msgs.list);
+    lv_obj_clean(s_msgs.list);
+    addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
+    const auto threads = messagesThreads();
+    size_t n = 0;
+    for (const ChatThread &t : threads) {
+        strlcpy(s_msgs.peers[n], t.peer.c_str(), sizeof(s_msgs.peers[n]));
+        String line = t.peer;
+        if (t.unread) line += "  (" + String(t.unread) + " new)";
+        if (t.lastUptimeS) line += "  " + ageStr(t.lastUptimeS);
+        line += "\n" + String(t.lastOutgoing ? "You: " : "") + t.lastText;
+        lv_obj_t *b = addWrapItem(s_msgs.list, s_msgs.grp, line.c_str(), [](lv_event_t *e) {
+            openThread(s_msgs.peers[(size_t)(uintptr_t)lv_event_get_user_data(e)]);
+        }, (void *)(uintptr_t)n);
+        if (t.unread) lv_obj_set_style_text_color(b, kAmber, 0);
+        if (++n == 40) break;
+    }
+    if (!n) makeNote(s_msgs.list, "No conversations yet.");
+    const uint32_t cnt = lv_obj_get_child_count(s_msgs.list);
+    if (fi >= 0 && (uint32_t)fi < cnt) lv_group_focus_obj(lv_obj_get_child(s_msgs.list, fi));
+}
+
+void openMessages() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_ENVELOPE " Messages", &grp);
+    s_msgs.grp = grp;
+    s_msgs.gen = 0;
+    s_msgs.list = makeList(scr);
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_msgs.list = nullptr; }, LV_EVENT_DELETE, nullptr);
+    pushScreen(scr, grp, refreshMessages);
+}
+
+void onIncomingMessage(const ChatMsg &m) {
+    // No banner when that conversation is already on screen.
+    if (s_thr.list && !strcasecmp(s_thr.peer, m.peer)) return;
+    toast(String(LV_SYMBOL_ENVELOPE " ") + m.peer + ": " + m.text, 6000);
+}
+
+// ── GPS ──────────────────────────────────────────────────────────────────────
+
+lv_obj_t *s_gpsInfo;
+
+void refreshGps() {
+    if (!s_gpsInfo) return;
+    const GpsFix f = gpsFix();
+    const bool metric = g_config.units == Units::Metric;
+    String t;
+    if (!f.enabled) t = "GPS is off (Settings or the web Beacon tab).";
+    else if (!f.alive) t = "No data from the GPS receiver yet.";
+    else if (!f.valid) t = "Searching...  satellites: " + String(f.sats);
+    else {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.5f, %.5f\n", f.lat, f.lon);
+        t = String("Fix, ") + f.sats + " satellites, HDOP " + String(f.hdop, 1) + "\n" + buf;
+        if (f.hasAlt) t += "Alt: " + String(geo::formatAltitude(f.altM * 3.28084, metric).c_str()) + "\n";
+        t += "Speed: " + String(geo::formatSpeed(f.speedKmh / 1.852, metric).c_str()) + "  course " + String(f.course) + "\xC2\xB0";
+    }
+    const BeaconStatus b = beaconStatus();
+    t += String("\n\nBeacon: ") + b.mode;
+    if (b.sentAny) t += ", last " + String(geo::formatAge(b.lastAgoS).c_str()) + " ago";
+    if (b.nextInS >= 0) t += ", next in " + String(geo::formatAge(b.nextInS).c_str());
+    if (b.waitingFor.length()) t += "\nWaiting for " + b.waitingFor;
+    if (b.lastError.length()) t += "\nLast error: " + b.lastError;
+    lv_label_set_text(s_gpsInfo, t.c_str());
+}
+
+void openGps() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_GPS " GPS & beacon", &grp);
+    s_gpsInfo = lv_label_create(scr);
+    lv_obj_set_width(s_gpsInfo, lv_pct(100));
+    lv_label_set_long_mode(s_gpsInfo, LV_LABEL_LONG_WRAP);
+    lv_obj_t *list = makeList(scr);
+    addItem(list, grp, LV_SYMBOL_UPLOAD, "Send beacon now", [](lv_event_t *) { beaconNowUi(); });
+    lv_obj_t *gb = addItem(list, grp, LV_SYMBOL_POWER, "", [](lv_event_t *e) {
+        g_config.gpsEnabled = !g_config.gpsEnabled;
+        configSave();
+        lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), -1),
+                          g_config.gpsEnabled ? "Turn GPS off" : "Turn GPS on");
+    });
+    lv_label_set_text(lv_obj_get_child(gb, -1), g_config.gpsEnabled ? "Turn GPS off" : "Turn GPS on");
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_gpsInfo = nullptr; }, LV_EVENT_DELETE, nullptr);
+    pushScreen(scr, grp, refreshGps);
+}
+
 // ── TNC ──────────────────────────────────────────────────────────────────────
 
 struct {
@@ -531,6 +796,7 @@ void openSettings() {
                               homePanelName(g_config.homePanel));
     });
     lv_label_set_text_fmt(lv_obj_get_child(hp, -1), "Home panel: %s", homePanelName(g_config.homePanel));
+    addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "TNC (Bluetooth)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
@@ -558,6 +824,10 @@ void refreshInfo() {
     t += String("TNC: ") + bleStateName(b.state);
     if (b.peerName.length()) t += " (" + b.peerName + ")";
     t += "\nStations heard: " + String(stationDbCount());
+    const GpsFix g = gpsFix();
+    t += String("\nGPS: ") + (!g.enabled ? "off" : g.valid ? "fix, " + String(g.sats) + " sats" : g.alive ? "searching" : "no data");
+    const BeaconStatus bs = beaconStatus();
+    t += String("\nBeacon: ") + bs.mode + (bs.waitingFor.length() ? " (waiting for " + bs.waitingFor + ")" : String());
     const String key = t + String(w.apActive);
     if (key == s_info.key) return;
     s_info.key = key;
@@ -720,10 +990,9 @@ void buildHome() {
 
     lv_obj_t *list = makeList(scr);
     lv_obj_t *first = addItem(list, grp, LV_SYMBOL_LIST, "Stations", [](lv_event_t *) { openStations(); });
-    addItem(list, grp, LV_SYMBOL_ENVELOPE, "Messages", [](lv_event_t *) {
-        openPlaceholder("Messages", "APRS messaging arrives in milestone 3.");
-    });
+    addItem(list, grp, LV_SYMBOL_ENVELOPE, "Messages", [](lv_event_t *) { openMessages(); });
     addItem(list, grp, LV_SYMBOL_EYE_OPEN, "Monitor", [](lv_event_t *) { openMonitor(); });
+    addItem(list, grp, LV_SYMBOL_UPLOAD, "Send beacon now", [](lv_event_t *) { beaconNowUi(); });
     addItem(list, grp, LV_SYMBOL_GPS, "Map", [](lv_event_t *) {
         openPlaceholder("Map", "Map arrives in milestone 4.");
     });
@@ -734,7 +1003,7 @@ void buildHome() {
     pushScreen(scr, grp, refreshHome);
 }
 
-enum class Nav : uint8_t { None, Back, Home };
+enum class Nav : uint8_t { None, Back, Home, Messages };
 volatile Nav s_pendingNav = Nav::None;
 
 // Runs inside LVGL's indev read; navigation is deferred to uiLoop() so no
@@ -743,6 +1012,7 @@ bool hotkey(uint8_t key) {
     switch (key) {
         case M9_KEY_BACK: s_pendingNav = Nav::Back; return true;
         case M9_KEY_HOME: s_pendingNav = Nav::Home; return true;
+        case M9_KEY_MESSAGE: s_pendingNav = Nav::Messages; return true;
         default: return false;
     }
 }
@@ -760,6 +1030,7 @@ void uiBegin() {
     buildStatusBar();
     buildHome();
     updateStatusBar();
+    messagesSetIncomingHook(onIncomingMessage);
     lv_timer_create(tick, 1000, nullptr);
 }
 
@@ -774,4 +1045,15 @@ void uiLoop() {
     }
     if (nav == Nav::Back) popScreen();
     else if (nav == Nav::Home) popToHome();
+    else if (nav == Nav::Messages) {
+        popToHome();
+        openMessages();
+    }
+    if (s_pendingThread.length()) {
+        const String peer = s_pendingThread;
+        s_pendingThread = "";
+        popScreen();
+        openThread(peer.c_str());
+    }
+    toastLoop();
 }

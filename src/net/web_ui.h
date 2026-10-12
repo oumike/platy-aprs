@@ -31,6 +31,8 @@ small{color:var(--mut)}
 td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-align:top}th{color:var(--mut);font-weight:500}
 .fl{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a313b}.fl span{flex:1}
 .fl .btn{margin:0;padding:6px 10px}
+.bub{max-width:80%;padding:6px 10px;border-radius:10px;margin:6px 0;background:#2a313b}.bub.o{margin-left:auto;background:#1d4a73}
+.bub small{display:block;font-size:11px}.ur{background:var(--acc);color:#000;border-radius:9px;padding:0 6px;font-size:12px;margin-left:6px}
 </style></head><body>
 <header><b>rhino-aprs</b><div id="st">…</div></header>
 <nav id="tabs"></nav>
@@ -46,6 +48,9 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div></section>
 
 <section data-tab="Beacon"><div class="card">
+<div id="bst"><small>…</small></div>
+<button class="btn sec" onclick="post('/api/beacon','Sending beacon…')">Beacon now</button>
+<div class="chk"><input type="checkbox" data-k="gps.enabled" data-t="bool">GPS receiver on</div>
 <label>Position source</label><select data-k="beacon.mode"><option value="gps">GPS</option><option value="fixed">Fixed position</option><option value="off">Off</option></select>
 <div class="row"><div><label>Fixed latitude</label><input data-k="beacon.lat" data-t="num" type="number" step="any"></div>
 <div><label>Fixed longitude</label><input data-k="beacon.lon" data-t="num" type="number" step="any"></div></div>
@@ -119,6 +124,13 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <button class="btn bad" onclick="confirm('Erase all settings?')&&post('/api/factory-reset','Resetting…')">Factory reset</button>
 </div></section>
 
+<section data-tab="Messages" data-nosave><div class="card">
+<div class="row"><div style="flex:0 0 32%"><label>To</label><input id="mto" maxlength="9" autocapitalize="characters"></div>
+<div><label>Message <small id="mlen"></small></label><input id="mtx" maxlength="67"></div></div>
+<button class="btn" onclick="msend()">Send</button>
+</div><div class="card" id="mconv" style="display:none"><div class="fl"><span><b id="mpeer"></b></span><button class="btn bad" onclick="mdel()">Delete conversation</button></div><div id="mlist"></div></div>
+<div class="card"><b>Conversations</b><div id="mth"><small>No messages yet.</small></div></div></section>
+
 <section data-tab="Monitor" data-nosave><div class="card"><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
 
 <section data-tab="Stations" data-nosave><div class="card"><table><thead><tr><th>Station</th><th>Heard</th><th>Dist</th><th>Info</th></tr></thead><tbody id="stl"></tbody></table></div></section>
@@ -164,8 +176,26 @@ $('#mon').insertAdjacentHTML('afterbegin',html);const k=$('#mon').children;while
 async function stations(){const j=await (await fetch('/api/stations')).json();
 $('#stl').innerHTML=j.stations.map(s=>'<tr><td><b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+
 [s.speed,s.altitude,s.status,s.comment].filter(x=>x).map(esc).join(' · ')+(s.lat!=null?'<br><small>'+s.lat.toFixed(4)+', '+s.lon.toFixed(4)+(s.path?' via '+esc(s.path):'')+'</small>':'')+'</td></tr>').join('')||'<tr><td colspan=4><small>No stations heard yet.</small></td></tr>'}
-async function poll(){try{if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device')await sdlist()}catch(e){}}
-setInterval(()=>{if(tab=='Monitor'||tab=='Stations')poll()},3000);
+let mpeer='',mgen=-1;
+const when=m=>m.epoch?new Date(m.epoch*1000).toLocaleString():m.ageS!=null?age(m.ageS)+' ago':'';
+const stTxt={pending:'sending…',acked:'✓ delivered',rejected:'✗ rejected',failed:'✗ not delivered (click to retry)'};
+async function messages(force){const j=await (await fetch('/api/messages'+(mpeer?'?peer='+encodeURIComponent(mpeer):''))).json();
+if(!force&&j.gen==mgen)return;mgen=j.gen;
+$('#mth').innerHTML=j.threads.map(t=>'<div class="net" data-p="'+esc(t.peer)+'"><b>'+esc(t.peer)+'</b>'+(t.unread?'<span class="ur">'+t.unread+'</span>':'')+'<br><small>'+(t.lastOut?'You: ':'')+esc(t.lastText)+' · '+when(t)+'</small></div>').join('')||'<small>No messages yet.</small>';
+$$('#mth .net').forEach(e=>e.onclick=()=>mopen(e.dataset.p));
+$('#mconv').style.display=mpeer?'':'none';$('#mpeer').textContent=mpeer;
+if(mpeer){$('#mlist').innerHTML=j.messages.map(m=>'<div class="bub'+(m.out?' o':'')+'" data-s="'+m.seq+'" data-st="'+m.state+'">'+esc(m.text)+'<small>'+when(m)+(m.out?' · '+(stTxt[m.state]||'')+(m.state=='pending'&&m.tries?' (try '+m.tries+')':''):'')+'</small></div>').join('');
+$$('#mlist [data-st=failed]').forEach(e=>e.onclick=()=>post('/api/messages/retry?seq='+e.dataset.s,'Retrying…'));
+if(j.messages.some(m=>!m.out)&&j.threads.some(t=>t.peer==mpeer&&t.unread))fetch('/api/messages/read?peer='+encodeURIComponent(mpeer),{method:'POST'})}}
+function mopen(p){mpeer=p;$('#mto').value=p;messages(1);$('#mtx').focus()}
+async function msend(){const to=$('#mto').value.trim().toUpperCase(),text=$('#mtx').value;if(!to||!text)return toast('Enter a callsign and a message',1);
+const j=await (await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to,text})})).json();
+if(!j.ok)return toast(j.error,1);$('#mtx').value='';mpeer=to;messages(1)}
+async function mdel(){if(!confirm('Delete the conversation with '+mpeer+'?'))return;await fetch('/api/messages/delete?peer='+encodeURIComponent(mpeer),{method:'POST'});mpeer='';messages(1)}
+$('#mtx').addEventListener('input',()=>$('#mlen').textContent=$('#mtx').value.length+'/67');
+$('#mtx').addEventListener('keydown',e=>{if(e.key=='Enter')msend()});
+async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device')await sdlist()}catch(e){}}
+setInterval(()=>{if(tab=='Monitor'||tab=='Stations'||tab=='Messages')poll()},3000);
 const bs=()=>$('#bsec').checked?'1':'0';
 function bdl(){location.href='/api/backup?secrets='+bs()}
 async function bsd(){toast('Saving to SD…');const j=await (await fetch('/api/backup/sd?secrets='+bs(),{method:'POST'})).json();j.ok?toast('Saved '+j.name):toast(j.error,1);sdlist()}
@@ -183,7 +213,10 @@ async function scan(start){const j=await (await fetch('/api/wifi/scan'+(start?'?
 if(j.scanning){$('#nets').innerHTML='<small>Scanning…</small>';return setTimeout(()=>scan(0),1500)}
 $('#nets').innerHTML='';(j.networks||[]).sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const d=document.createElement('div');d.className='net';
 d.textContent=n.ssid+'  '+n.rssi+' dBm'+(n.secure?' 🔒':'');d.onclick=()=>{$('#wssid').value=n.ssid;$('#wpass').focus()};$('#nets').appendChild(d)})}
-async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc;
+async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc,g=s.gps,b=s.beacon;
+$$('nav button').forEach(x=>{if(x.textContent.startsWith('Messages'))x.textContent='Messages'+(s.unreadMessages?' ('+s.unreadMessages+')':'')});
+$('#bst').innerHTML='<p>GPS: '+(!g.enabled?'off':!g.alive?'<span style="color:var(--bad)">no data</span>':g.fix?'<b style="color:var(--ok)">fix</b>, '+g.sats+' sats · '+g.lat.toFixed(5)+', '+g.lon.toFixed(5)+(g.altM!=null?' · '+Math.round(g.altM)+' m':'')+' · '+Math.round(g.speedKmh)+' km/h':'searching, '+g.sats+' sats')+
+'<br>Beacon: <b>'+b.mode+'</b>'+(b.lastAgoS!=null?' · last '+age(b.lastAgoS)+' ago':'')+(b.nextInS!=null?' · next in '+age(b.nextInS):'')+(b.waitingFor?' · <span style="color:var(--mut)">waiting for '+esc(b.waitingFor)+'</span>':'')+(b.lastError?'<br><small style="color:var(--bad)">'+esc(b.lastError)+'</small>':'')+'</p>';
 $('#tst').innerHTML='<p>TNC: <b style="color:'+(t.connected?'var(--ok)':'var(--mut)')+'">'+esc(t.state)+'</b>'+(t.name||t.address?' · '+esc(t.name||'')+' <small>'+esc(t.address)+'</small>':'')+
 (t.connected?'<br><small>MTU '+t.mtu+' · RX '+t.rxFrames+' · TX '+t.txFrames+'</small>':'')+(t.lastError&&!t.connected?'<br><small>'+esc(t.lastError)+(t.retryInS?', retry in '+t.retryInS+'s':'')+'</small>':'')+'</p>';
 $('#st').innerHTML=s.callsign+' · v'+s.version+'<br>'+(w.staConnected?'Wi-Fi '+w.staSsid+' '+w.staIp:'Wi-Fi offline')+(w.apActive?' · AP on':'');

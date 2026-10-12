@@ -17,7 +17,7 @@ void boardBegin() {
     digitalWrite(PIN_PERIPH_POWER, LOW);   // rail ON
     delay(50);
 
-    // GPS held off until milestone 3 brings it up.
+    // GPS off until gpsBegin() decides (EN active-LOW; RST HIGH asserts reset).
     pinMode(PIN_GPS_EN, OUTPUT);
     digitalWrite(PIN_GPS_EN, HIGH);
     pinMode(PIN_GPS_RST, OUTPUT);

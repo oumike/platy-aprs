@@ -3,7 +3,11 @@
 #include "hal/board.h"
 #include "hal/display.h"
 #include "hal/keyboard.h"
+#include "hal/gps.h"
 #include "hal/sd_card.h"
+#include "services/alerts.h"
+#include "services/beacon.h"
+#include "services/messages.h"
 #include "services/router.h"
 #include "transport/ble_kiss.h"
 #include "net/web_server.h"
@@ -25,6 +29,9 @@ void setup() {
     keyboardBegin();
     sdBegin();
     routerBegin();
+    messagesBegin();
+    gpsBegin();
+    gpsSetEnabled(g_config.gpsEnabled);
     uiBegin();
 
     wifiBegin();
@@ -38,6 +45,11 @@ void loop() {
     wifiLoop();
     webLoop();
     routerLoop();
+    gpsSetEnabled(g_config.gpsEnabled);   // follows config changes
+    gpsLoop();
+    beaconLoop();
+    messagesLoop();
+    alertsLoop();
     displayLoop();
     uiLoop();
     delay(2);

@@ -36,6 +36,7 @@ struct AppConfig {
     int32_t fixedAltM = 0;
     uint16_t beaconIntervalS = 600;
     SmartBeaconConfig smart;
+    bool gpsEnabled = true;    // GPS receiver powered (needed for beacon mode GPS)
 
     // APRS-IS / iGate / digi
     bool aprsIsEnabled = false;

@@ -61,8 +61,9 @@ bool focusedWantsArrows() {
     if (lv_group_get_editing(g)) return true;
     lv_obj_t *f = lv_group_get_focused(g);
     if (!f) return false;
-    return lv_obj_check_type(f, &lv_textarea_class) ||
-           lv_obj_check_type(f, &lv_dropdown_class) ||
+    // One-line text fields keep up/down for moving between fields.
+    if (lv_obj_check_type(f, &lv_textarea_class)) return !lv_textarea_get_one_line(f);
+    return lv_obj_check_type(f, &lv_dropdown_class) ||
            lv_obj_check_type(f, &lv_roller_class) ||
            lv_obj_check_type(f, &lv_slider_class);
 }

@@ -36,6 +36,16 @@ Web **TNC** tab (or device **TNC** screen): Scan, pick the radio, and it connect
 Defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961f68bb`); UUIDs are configurable.
 Put the radio in BLE pairing mode for the first connection (tested with the BTECH/Vero VR-N7600).
 
+## Beaconing & messaging
+
+Position source (web **Beacon** tab): GPS (with SmartBeaconing or a fixed interval), a fixed position, or off.
+Beacons go out as `CALL-SSID>APZRHN,<path>` once a callsign is set and the TNC is connected; "Send beacon now"
+is on the home screen and the web Beacon tab. The GPS also sets the clock when there is no NTP.
+
+Messages (device **Messages** screen, the MESSAGE key, or the web **Messages** tab) are retried 5 times
+(30 s, 1, 2, 4 min) until acked; incoming messages are acked, de-duplicated, beep, and pop up a banner.
+Conversations are kept on the SD card (`/rhino/messages.json`).
+
 ## Backup & restore
 
 Web **Device** tab: download a backup JSON file, restore one by uploading it, or save backups to the SD card
@@ -46,10 +56,12 @@ Restoring reboots the device. The device Settings screen can also save a backup 
 
 `GET /api/status` · `GET/POST /api/config` · `GET /api/tnc/status` · `GET /api/tnc/scan[?start=1]` ·
 `POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
-`GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
+`POST /api/beacon` · `GET /api/messages[?peer=]` · `POST /api/messages` (`{to,text}`) ·
+`POST /api/messages/read|delete?peer=` · `POST /api/messages/retry?seq=` · `GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
 `POST /api/backup/sd/restore?name=` · `GET /api/backup/sd/download?name=` · `POST /api/backup/sd/delete?name=`
 
 ## Status
 
-Milestones 1 (skeleton, display, Wi-Fi, web config) and 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
-are done. Next: GPS, beaconing, transmit, and messaging.
+Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
+and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done. Next: APRS-IS iGate, digipeater,
+SD packet logging, map, OTA.

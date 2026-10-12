@@ -3,7 +3,10 @@
 #include "hal/board.h"
 #include "hal/display.h"
 #include "hal/sd_card.h"
+#include "hal/gps.h"
 #include "services/backup.h"
+#include "services/beacon.h"
+#include "services/messages.h"
 #include "services/data_store.h"
 #include "services/router.h"
 #include "transport/ble_kiss.h"
@@ -150,6 +153,29 @@ void handleStatus() {
     sd["usedMB"] = (uint32_t)(sdUsedBytes() / (1024 * 1024));
     doc["stations"] = stationDbCount();
     doc["packets"] = packetLogLastSeq();
+    doc["unreadMessages"] = messagesUnread();
+    doc["messagesGen"] = g_msgGen;
+    const GpsFix f = gpsFix();
+    JsonObject g = doc["gps"].to<JsonObject>();
+    g["enabled"] = f.enabled;
+    g["alive"] = f.alive;
+    g["fix"] = f.valid;
+    g["sats"] = f.sats;
+    if (f.valid) {
+        g["lat"] = f.lat;
+        g["lon"] = f.lon;
+        g["hdop"] = f.hdop;
+        g["speedKmh"] = f.speedKmh;
+        g["course"] = f.course;
+        if (f.hasAlt) g["altM"] = f.altM;
+    }
+    const BeaconStatus b = beaconStatus();
+    JsonObject bj = doc["beacon"].to<JsonObject>();
+    bj["mode"] = b.mode;
+    if (b.sentAny) bj["lastAgoS"] = b.lastAgoS;
+    if (b.nextInS >= 0) bj["nextInS"] = b.nextInS;
+    bj["waitingFor"] = b.waitingFor;
+    bj["lastError"] = b.lastError;
     sendJson(200, doc);
 }
 
@@ -217,6 +243,90 @@ void handleTncConnect() {
 void handleTncDisconnect() {
     if (!authorized()) return;
     g_ble.disconnect();
+    sendOk();
+}
+
+// ── Beacon / messages ────────────────────────────────────────────────────────
+
+void handleBeaconNow() {
+    if (!authorized()) return;
+    String err;
+    if (!beaconNow(err)) {
+        sendError(422, err);
+        return;
+    }
+    sendOk();
+}
+
+void handleMessages() {
+    if (!authorized()) return;
+    const uint32_t now = uptimeS();
+    JsonDocument doc;
+    doc["gen"] = g_msgGen;
+    doc["me"] = g_config.fullCallsign();
+    JsonArray th = doc["threads"].to<JsonArray>();
+    for (const ChatThread &t : messagesThreads()) {
+        JsonObject o = th.add<JsonObject>();
+        o["peer"] = t.peer;
+        o["lastText"] = t.lastText;
+        o["lastOut"] = t.lastOutgoing;
+        o["unread"] = t.unread;
+        o["count"] = t.count;
+        if (t.lastEpoch) o["epoch"] = (long long)t.lastEpoch;
+        else if (t.lastUptimeS) o["ageS"] = now - t.lastUptimeS;
+    }
+    const String peer = s_server.arg("peer");
+    JsonArray ms = doc["messages"].to<JsonArray>();
+    for (size_t i = 0; i < messagesCount(); i++) {
+        const ChatMsg *m = messagesAt(i);
+        if (peer.length() && !peer.equalsIgnoreCase(m->peer)) continue;
+        JsonObject o = ms.add<JsonObject>();
+        o["seq"] = m->seq;
+        o["peer"] = m->peer;
+        o["out"] = m->outgoing;
+        o["state"] = msgStateName(m->state);
+        o["tries"] = m->tries;
+        o["text"] = m->text;
+        if (m->epoch) o["epoch"] = (long long)m->epoch;
+        else if (m->uptimeS) o["ageS"] = now - m->uptimeS;
+    }
+    sendJson(200, doc);
+}
+
+void handleMessageSend() {
+    if (!authorized()) return;
+    JsonDocument in;
+    if (deserializeJson(in, s_server.arg("plain"))) {
+        sendError(400, "Bad JSON");
+        return;
+    }
+    String err;
+    if (!messagesSend(in["to"] | "", in["text"] | "", err)) {
+        sendError(422, err);
+        return;
+    }
+    sendOk();
+}
+
+void handleMessageRead() {
+    if (!authorized()) return;
+    messagesMarkRead(s_server.arg("peer"));
+    sendOk();
+}
+
+void handleMessageDelete() {
+    if (!authorized()) return;
+    messagesDeleteThread(s_server.arg("peer"));
+    sendOk();
+}
+
+void handleMessageRetry() {
+    if (!authorized()) return;
+    String err;
+    if (!messagesRetry(s_server.arg("seq").toInt(), err)) {
+        sendError(404, err);
+        return;
+    }
     sendOk();
 }
 
@@ -451,6 +561,12 @@ void webBegin() {
     s_server.on("/api/tnc/select", HTTP_POST, handleTncSelect);
     s_server.on("/api/tnc/connect", HTTP_POST, handleTncConnect);
     s_server.on("/api/tnc/disconnect", HTTP_POST, handleTncDisconnect);
+    s_server.on("/api/beacon", HTTP_POST, handleBeaconNow);
+    s_server.on("/api/messages", HTTP_GET, handleMessages);
+    s_server.on("/api/messages", HTTP_POST, handleMessageSend);
+    s_server.on("/api/messages/read", HTTP_POST, handleMessageRead);
+    s_server.on("/api/messages/delete", HTTP_POST, handleMessageDelete);
+    s_server.on("/api/messages/retry", HTTP_POST, handleMessageRetry);
     s_server.on("/api/packets", HTTP_GET, handlePackets);
     s_server.on("/api/stations", HTTP_GET, handleStations);
     s_server.on("/api/backup", HTTP_GET, handleBackupDownload);
