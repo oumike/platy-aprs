@@ -168,7 +168,10 @@ void tryConnect() {
         scheduleRetry("subscribe failed");
         return;
     }
-    s_writeNoRsp = wr->canWriteNoResponse();
+    // Prefer acknowledged writes so the radio confirms each KISS frame.
+    s_writeNoRsp = !wr->canWrite() && wr->canWriteNoResponse();
+    Serial.printf("[ble] write char props: write=%d noRsp=%d -> %s\n", wr->canWrite(), wr->canWriteNoResponse(),
+                  s_writeNoRsp ? "no-response" : "with-response");
     s_writeChr = wr;
     s_backoffS = kBackoffMinS;
     withLock([&] { s_status.mtu = s_client->getMTU(); });
@@ -187,7 +190,7 @@ void sendPending() {
             ok = s_writeChr->writeValue(enc.data() + off, min(chunk, enc.size() - off), !s_writeNoRsp);
         }
         if (ok) withLock([] { s_status.txFrames++; });
-        else Serial.println("[ble] write failed");
+        Serial.printf("[ble] tx %u bytes %s\n", (unsigned)enc.size(), ok ? "ok" : "FAILED");
     }
 }
 
