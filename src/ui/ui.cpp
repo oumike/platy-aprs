@@ -5,6 +5,7 @@
 #include "hal/pins_m9.h"
 #include "hal/gps.h"
 #include "hal/sd_card.h"
+#include "net/aprs_is.h"
 #include "net/wifi_manager.h"
 #include "services/backup.h"
 #include "services/beacon.h"
@@ -314,9 +315,10 @@ void refreshMonitor() {
     for (size_t i = 0; i < packetLogCount() && i < 40; i++) {
         const LogEntry *e = packetLogAt(i);
         char buf[300];
-        snprintf(buf, sizeof(buf), "%s%s  %s", e->tx ? "TX " : "", ageStr(e->uptimeS).c_str(), e->raw);
+        snprintf(buf, sizeof(buf), "%s%s%s  %s", e->tx ? "TX " : "", e->viaIs ? "IS " : "", ageStr(e->uptimeS).c_str(), e->raw);
         lv_obj_t *b = addWrapItem(s_mon.list, s_mon.grp, buf, nullptr, nullptr);
         if (e->tx) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
+        else if (e->viaIs) lv_obj_set_style_text_color(b, lv_color_hex(0x9aa4b2), 0);
     }
     if (lv_obj_get_child_count(s_mon.list)) lv_group_focus_obj(lv_obj_get_child(s_mon.list, 0));
 }
@@ -823,6 +825,10 @@ void refreshInfo() {
     if (w.apActive) t += "Setup AP: " + w.apSsid + "\nhttp://" + w.apIp + "\n";
     t += String("TNC: ") + bleStateName(b.state);
     if (b.peerName.length()) t += " (" + b.peerName + ")";
+    if (g_config.aprsIsEnabled) {
+        const AprsIsStatus is = aprsIsStatus();
+        t += String("\nAPRS-IS: ") + is.state + (is.connected && !is.verified ? " (unverified)" : "");
+    }
     t += "\nStations heard: " + String(stationDbCount());
     const GpsFix g = gpsFix();
     t += String("\nGPS: ") + (!g.enabled ? "off" : g.valid ? "fix, " + String(g.sats) + " sats" : g.alive ? "searching" : "no data");

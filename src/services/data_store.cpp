@@ -1,4 +1,5 @@
 #include "data_store.h"
+#include "sd_log.h"
 #include "config/config.h"
 #include <esp_heap_caps.h>
 #include <time.h>
@@ -43,6 +44,7 @@ static uint32_t s_logSeq;
 void packetLogBegin() { s_log = (LogEntry *)psAlloc(sizeof(LogEntry) * kLogCap); }
 
 void packetLogAdd(const char *tnc2, bool tx, bool viaIs) {
+    sdLogPacket(tnc2, tx, viaIs);
     if (!s_log) return;
     LogEntry &e = s_log[s_logHead];
     e.seq = ++s_logSeq;
@@ -154,6 +156,7 @@ void stationDbUpdate(const aprs::Packet &p, const char *path, const char *raw, b
     s.lastEpoch = nowEpoch();
     if (s.packets < 0xFFFF) s.packets++;
     s.viaIs = viaIs;
+    if (!viaIs && !p.thirdParty) s.lastRfS = s.lastHeardS ? s.lastHeardS : 1;
     s.lastType = p.type;
     if (p.hasPos) {
         s.hasPos = true;

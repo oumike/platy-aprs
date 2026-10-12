@@ -100,8 +100,8 @@ void beaconLoop() {
         s_waiting = "callsign not set";
         return;
     }
-    if (!g_ble.connected()) {
-        s_waiting = "TNC not connected";
+    if (!routerCanSend()) {
+        s_waiting = g_config.aprsIsEnabled ? "TNC or APRS-IS" : "TNC";
         return;
     }
     const uint32_t now = uptimeS();

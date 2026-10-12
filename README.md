@@ -39,12 +39,32 @@ Put the radio in BLE pairing mode for the first connection (tested with the BTEC
 ## Beaconing & messaging
 
 Position source (web **Beacon** tab): GPS (with SmartBeaconing or a fixed interval), a fixed position, or off.
-Beacons go out as `CALL-SSID>APZRHN,<path>` once a callsign is set and the TNC is connected; "Send beacon now"
+Beacons go out as `CALL-SSID>APZRHN,<path>` once a callsign is set and the TNC (or APRS-IS) is connected; "Send beacon now"
 is on the home screen and the web Beacon tab. The GPS also sets the clock when there is no NTP.
 
 Messages (device **Messages** screen, the MESSAGE key, or the web **Messages** tab) are retried 5 times
 (30 s, 1, 2, 4 min) until acked; incoming messages are acked, de-duplicated, beep, and pop up a banner.
 Conversations are kept on the SD card (`/rhino/messages.json`).
+
+## APRS-IS, iGate & digipeater
+
+Web **APRS-IS** tab. With "Connect to APRS-IS" on, the device logs in (passcode computed from the callsign
+unless set) whenever it is on Wi-Fi, receives packets for the server filter (default `m/50`), and sends its
+own beacons and messages to APRS-IS as well as over RF, so messaging also works without a TNC or a local iGate.
+
+- **RF → IS**: heard RF packets are gated with `qAR,<call>` (skips NOGATE/RFONLY/TCPIP/TCPXX, queries, and
+  third-party packets that came from the Internet).
+- **IS → RF messages** (off by default): messages for a station heard directly on RF in the last 30 min, from
+  a sender not on RF, are sent as third-party traffic via the configured path.
+- **Digipeater** (off by default): WIDE1-1 fill-in (`<call>*,WIDE1*`) and packets routed through our callsign,
+  with 30 s duplicate suppression.
+
+## Packet log
+
+With "Log packets to the SD card" on (web **Device** tab, default on), every RF packet and everything we send
+is appended to `/rhino/logs/YYYY-MM-DD.log` (UTC; `nodate.log` before the clock is set) as
+`2026-10-12 21:54:03Z RF< SRC>DST,PATH:info` (`RF<` heard, `RF>` sent, `IS<`/`IS>` APRS-IS). APRS-IS
+traffic is only logged if enabled. Logs can be downloaded or deleted from the Device tab.
 
 ## Backup & restore
 
@@ -58,10 +78,11 @@ Restoring reboots the device. The device Settings screen can also save a backup 
 `POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
 `POST /api/beacon` · `GET /api/messages[?peer=]` · `POST /api/messages` (`{to,text}`) ·
 `POST /api/messages/read|delete?peer=` · `POST /api/messages/retry?seq=` · `GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
-`POST /api/backup/sd/restore?name=` · `GET /api/backup/sd/download?name=` · `POST /api/backup/sd/delete?name=`
+`POST /api/backup/sd/restore?name=` · `GET /api/backup/sd/download?name=` · `POST /api/backup/sd/delete?name=` ·
+`GET /api/logs` · `GET /api/logs/download?name=` · `POST /api/logs/delete?name=`
 
 ## Status
 
 Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
-and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done. Next: APRS-IS iGate, digipeater,
-SD packet logging, map, OTA.
+and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done, plus the APRS-IS iGate, digipeater
+and SD packet log. Next: map, LoRa APRS.

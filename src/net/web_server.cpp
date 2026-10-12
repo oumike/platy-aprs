@@ -9,9 +9,11 @@
 #include "services/messages.h"
 #include "services/data_store.h"
 #include "services/router.h"
+#include "services/sd_log.h"
 #include "transport/ble_kiss.h"
 #include "util/geo.h"
 #include "net/wifi_manager.h"
+#include "net/aprs_is.h"
 #include "net/web_ui.h"
 #include "version.h"
 #include <ArduinoJson.h>
@@ -176,6 +178,18 @@ void handleStatus() {
     if (b.nextInS >= 0) bj["nextInS"] = b.nextInS;
     bj["waitingFor"] = b.waitingFor;
     bj["lastError"] = b.lastError;
+    const AprsIsStatus is = aprsIsStatus();
+    JsonObject ij = doc["aprsis"].to<JsonObject>();
+    ij["state"] = is.state;
+    ij["connected"] = is.connected;
+    ij["verified"] = is.verified;
+    ij["server"] = is.server;
+    ij["lastError"] = is.lastError;
+    ij["rxLines"] = is.rxLines;
+    ij["txLines"] = is.txLines;
+    ij["gatedRfToIs"] = is.gatedRfToIs;
+    ij["gatedIsToRf"] = is.gatedIsToRf;
+    ij["connectedForS"] = is.connectedForS;
     sendJson(200, doc);
 }
 
@@ -499,6 +513,43 @@ void handleSdBackupDelete() {
     sendOk();
 }
 
+void handleLogList() {
+    if (!authorized()) return;
+    JsonDocument doc;
+    doc["mounted"] = sdMounted();
+    JsonArray arr = doc["files"].to<JsonArray>();
+    for (const auto &f : sdLogList()) {
+        JsonObject o = arr.add<JsonObject>();
+        o["name"] = f.name;
+        o["size"] = f.size;
+    }
+    sendJson(200, doc);
+}
+
+void handleLogDownload() {
+    if (!authorized()) return;
+    sdLogList();   // flushes buffered lines
+    const String name = s_server.arg("name");
+    const String path = sdLogPath(name);
+    File f = path.length() && sdMounted() ? sdFs().open(path, FILE_READ) : File();
+    if (!f || f.isDirectory()) {
+        sendError(404, "No such log");
+        return;
+    }
+    s_server.sendHeader("Content-Disposition", "attachment; filename=\"" + name + "\"");
+    s_server.streamFile(f, "text/plain");
+    f.close();
+}
+
+void handleLogDelete() {
+    if (!authorized()) return;
+    if (!sdLogDelete(s_server.arg("name"))) {
+        sendError(404, "Delete failed");
+        return;
+    }
+    sendOk();
+}
+
 void handleWifiScan() {
     if (!authorized()) return;
     JsonDocument doc;
@@ -576,6 +627,9 @@ void webBegin() {
     s_server.on("/api/backup/sd/restore", HTTP_POST, handleSdBackupRestore);
     s_server.on("/api/backup/sd/download", HTTP_GET, handleSdBackupDownload);
     s_server.on("/api/backup/sd/delete", HTTP_POST, handleSdBackupDelete);
+    s_server.on("/api/logs", HTTP_GET, handleLogList);
+    s_server.on("/api/logs/download", HTTP_GET, handleLogDownload);
+    s_server.on("/api/logs/delete", HTTP_POST, handleLogDelete);
     s_server.on("/api/reboot", HTTP_POST, handleReboot);
     s_server.on("/api/factory-reset", HTTP_POST, handleFactoryReset);
     s_server.onNotFound(handleNotFound);

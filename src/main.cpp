@@ -9,7 +9,9 @@
 #include "services/beacon.h"
 #include "services/messages.h"
 #include "services/router.h"
+#include "services/sd_log.h"
 #include "transport/ble_kiss.h"
+#include "net/aprs_is.h"
 #include "net/web_server.h"
 #include "net/wifi_manager.h"
 #include "ui/ui.h"
@@ -36,6 +38,7 @@ void setup() {
 
     wifiBegin();
     webBegin();
+    aprsIsBegin();
     g_ble.begin();
     if (g_config.buzzer) boardBeep(2000, 60);
 }
@@ -45,10 +48,12 @@ void loop() {
     wifiLoop();
     webLoop();
     routerLoop();
+    aprsIsLoop();
     gpsSetEnabled(g_config.gpsEnabled);   // follows config changes
     gpsLoop();
     beaconLoop();
     messagesLoop();
+    sdLogLoop();
     alertsLoop();
     displayLoop();
     uiLoop();

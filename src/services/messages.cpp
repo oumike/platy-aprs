@@ -251,8 +251,8 @@ void messagesLoop() {
             changed();
             continue;
         }
-        if (!g_ble.connected()) {
-            m.nextTryMs = nowMs + 10000;   // wait for the TNC; doesn't use up a try
+        if (!routerCanSend()) {
+            m.nextTryMs = nowMs + 10000;   // wait for the TNC / APRS-IS; doesn't use up a try
             continue;
         }
         if (transmit(m)) {

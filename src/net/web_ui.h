@@ -67,6 +67,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div></section>
 
 <section data-tab="APRS-IS"><div class="card">
+<div id="ist"></div>
 <div class="chk"><input type="checkbox" data-k="aprsis.enabled" data-t="bool">Connect to APRS-IS when on Wi-Fi</div>
 <div class="row"><div><label>Server</label><input data-k="aprsis.server"></div>
 <div><label>Port</label><input data-k="aprsis.port" data-t="num" type="number"></div></div>
@@ -119,6 +120,10 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <button class="btn sec" onclick="bup()">Restore from file</button>
 <label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div>
 <small>Restoring replaces all settings and reboots. Passwords missing from a backup keep their current values.</small>
+</div><div class="card"><b>Packet log</b>
+<div class="chk"><input type="checkbox" data-k="log.enabled" data-t="bool">Log packets to the SD card (one file per UTC day)</div>
+<div class="chk"><input type="checkbox" data-k="log.includeIs" data-t="bool">Also log packets received from APRS-IS</div>
+<div id="lgl"></div>
 </div><div class="card">
 <button class="btn sec" onclick="post('/api/reboot','Rebooting…')">Reboot</button>
 <button class="btn bad" onclick="confirm('Erase all settings?')&&post('/api/factory-reset','Resetting…')">Factory reset</button>
@@ -171,7 +176,7 @@ if(j.scanning){d.insertAdjacentHTML('beforeend','<small>Scanning…</small>');se
 let lastSeq=0;
 async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();if(!j.packets.length)return;
 if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;
-const html=j.packets.map(p=>'<div class="pk'+(p.tx?' tx':'')+'"><span class="t">'+(p.epoch?new Date(p.epoch*1000).toLocaleTimeString():'-'+age(p.ageS))+(p.tx?' TX':'')+'</span>'+esc(p.raw)+'</div>').join('');
+const html=j.packets.map(p=>'<div class="pk'+(p.tx?' tx':'')+'"><span class="t">'+(p.epoch?new Date(p.epoch*1000).toLocaleTimeString():'-'+age(p.ageS))+(p.tx?' TX':'')+(p.is?' IS':'')+'</span>'+esc(p.raw)+'</div>').join('');
 $('#mon').insertAdjacentHTML('afterbegin',html);const k=$('#mon').children;while(k.length>200)k[k.length-1].remove()}
 async function stations(){const j=await (await fetch('/api/stations')).json();
 $('#stl').innerHTML=j.stations.map(s=>'<tr><td><b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+
@@ -194,7 +199,7 @@ if(!j.ok)return toast(j.error,1);$('#mtx').value='';mpeer=to;messages(1)}
 async function mdel(){if(!confirm('Delete the conversation with '+mpeer+'?'))return;await fetch('/api/messages/delete?peer='+encodeURIComponent(mpeer),{method:'POST'});mpeer='';messages(1)}
 $('#mtx').addEventListener('input',()=>$('#mlen').textContent=$('#mtx').value.length+'/67');
 $('#mtx').addEventListener('keydown',e=>{if(e.key=='Enter')msend()});
-async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device')await sdlist()}catch(e){}}
+async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device'){await sdlist();await loglist()}}catch(e){}}
 setInterval(()=>{if(tab=='Monitor'||tab=='Stations'||tab=='Messages')poll()},3000);
 const bs=()=>$('#bsec').checked?'1':'0';
 function bdl(){location.href='/api/backup?secrets='+bs()}
@@ -203,6 +208,11 @@ async function restoreRes(r){const j=await r.json().catch(()=>({ok:false,error:'
 async function bup(){const f=$('#bfile').files[0];if(!f)return toast('Choose a backup file first',1);
 if(!confirm('Replace all settings with '+f.name+' and reboot?'))return;
 restoreRes(await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:await f.text()}))}
+async function loglist(){const j=await (await fetch('/api/logs')).json();
+$('#lgl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+' <small>'+(f.size/1024).toFixed(1)+' KB</small></span><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||'<small>'+(j.mounted?'No logs yet.':'No SD card.')+'</small>';
+[...$('#lgl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+if(b.dataset.a=='d')location.href='/api/logs/download?name='+n;
+else if(confirm('Delete '+j.files[i].name+'?')){await fetch('/api/logs/delete?name='+n,{method:'POST'});loglist()}})})}
 async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
 $('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
 [...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
@@ -213,7 +223,8 @@ async function scan(start){const j=await (await fetch('/api/wifi/scan'+(start?'?
 if(j.scanning){$('#nets').innerHTML='<small>Scanning…</small>';return setTimeout(()=>scan(0),1500)}
 $('#nets').innerHTML='';(j.networks||[]).sort((a,b)=>b.rssi-a.rssi).forEach(n=>{const d=document.createElement('div');d.className='net';
 d.textContent=n.ssid+'  '+n.rssi+' dBm'+(n.secure?' 🔒':'');d.onclick=()=>{$('#wssid').value=n.ssid;$('#wpass').focus()};$('#nets').appendChild(d)})}
-async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc,g=s.gps,b=s.beacon;
+async function status(){try{const s=await (await fetch('/api/status')).json(),w=s.wifi,t=s.tnc,g=s.gps,b=s.beacon,i=s.aprsis;
+$('#ist').innerHTML='<p>APRS-IS: <b style="color:'+(i.verified?'var(--ok)':i.connected?'var(--bad)':'var(--mut)')+'">'+esc(i.state)+(i.connected&&!i.verified?' (not verified)':'')+'</b>'+(i.server?' · '+esc(i.server):'')+(i.connected?'<br><small>up '+age(i.connectedForS)+' · RX '+i.rxLines+' · TX '+i.txLines+' · gated RF→IS '+i.gatedRfToIs+' · IS→RF '+i.gatedIsToRf+'</small>':'')+(i.lastError?'<br><small style="color:var(--bad)">'+esc(i.lastError)+'</small>':'')+'</p>';
 $$('nav button').forEach(x=>{if(x.textContent.startsWith('Messages'))x.textContent='Messages'+(s.unreadMessages?' ('+s.unreadMessages+')':'')});
 $('#bst').innerHTML='<p>GPS: '+(!g.enabled?'off':!g.alive?'<span style="color:var(--bad)">no data</span>':g.fix?'<b style="color:var(--ok)">fix</b>, '+g.sats+' sats · '+g.lat.toFixed(5)+', '+g.lon.toFixed(5)+(g.altM!=null?' · '+Math.round(g.altM)+' m':'')+' · '+Math.round(g.speedKmh)+' km/h':'searching, '+g.sats+' sats')+
 '<br>Beacon: <b>'+b.mode+'</b>'+(b.lastAgoS!=null?' · last '+age(b.lastAgoS)+' ago':'')+(b.nextInS!=null?' · next in '+age(b.nextInS):'')+(b.waitingFor?' · <span style="color:var(--mut)">waiting for '+esc(b.waitingFor)+'</span>':'')+(b.lastError?'<br><small style="color:var(--bad)">'+esc(b.lastError)+'</small>':'')+'</p>';

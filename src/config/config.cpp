@@ -93,6 +93,10 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["brightness"] = c.brightness;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
+
+    JsonObject lg = o["log"].to<JsonObject>();
+    lg["enabled"] = c.sdLog;
+    lg["includeIs"] = c.sdLogIs;
 }
 
 const char *homePanelKey(HomePanel p) {
@@ -203,6 +207,11 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         if (pw.length()) c.wifiPassword = pw;
         if (w["clearPassword"] | false) c.wifiPassword = "";
         takeStr(w, "hostname", c.hostname);
+    }
+    JsonObjectConst lg = o["log"];
+    if (lg) {
+        take(lg, "enabled", c.sdLog);
+        take(lg, "includeIs", c.sdLogIs);
     }
     JsonObjectConst d = o["device"];
     if (d) {

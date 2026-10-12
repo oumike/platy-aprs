@@ -30,6 +30,7 @@ struct Station {
     bool isObject;
     char owner[10];      // for objects: the station that sent it
     uint32_t firstHeardS, lastHeardS;   // uptime seconds
+    uint32_t lastRfS;    // last heard directly on RF (not via APRS-IS / third-party), 0 = never
     time_t lastEpoch;
     uint16_t packets;
     bool viaIs;
