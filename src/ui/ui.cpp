@@ -1070,7 +1070,7 @@ void buildHome() {
     pushScreen(scr, grp, refreshHome);
 }
 
-enum class Nav : uint8_t { None, Back, Home, Messages, Map };
+enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor };
 volatile Nav s_pendingNav = Nav::None;
 
 // Runs inside LVGL's indev read; navigation is deferred to uiLoop() so no
@@ -1081,6 +1081,7 @@ bool hotkey(uint8_t key) {
         case M9_KEY_HOME: s_pendingNav = Nav::Home; return true;
         case M9_KEY_MESSAGE: s_pendingNav = Nav::Messages; return true;
         case M9_KEY_MAP: s_pendingNav = Nav::Map; return true;
+        case M9_KEY_SUB_HOME: s_pendingNav = Nav::Monitor; return true;
         default: return false;
     }
 }
@@ -1119,6 +1120,9 @@ void uiLoop() {
     } else if (nav == Nav::Map) {
         popToHome();
         openMap();
+    } else if (nav == Nav::Monitor) {
+        popToHome();
+        openMonitor();
     }
     if (s_pendingThread.length()) {
         const String peer = s_pendingThread;

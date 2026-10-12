@@ -151,6 +151,9 @@ void keyboardPoll() {
         uint8_t k = 0;
         if (!readReg(s_keyReg, k)) return;
         if (k == 0x00 || k == 0xFF) return;
+#ifdef RHINO_SERIAL_KEYS
+        Serial.printf("[kb] key 0x%02X\n", k);
+#endif
         push(k);
     }
 }

@@ -24,7 +24,8 @@ You can set an optional admin password (username `admin`) on the **Device** tab.
 
 ## Keys (M9)
 
-D-pad: move/select · Back: previous screen/close · Home: home screen · Map: map.
+D-pad: move/select · Back: previous screen/close · Home: home screen · button below Home: monitor ·
+Messages: messages · Map: map.
 
 The home screen shows a compact panel (last heard station, last received message, last packet, or nothing;
 choose in Settings or the web Device tab). Connection details and the setup QR code are under

@@ -42,8 +42,8 @@
 #define M9_KEY_RIGHT       0xB7
 #define M9_KEY_MESSAGE     0x81
 #define M9_KEY_HOME        0x82
-#define M9_KEY_SUB_MESSAGE 0x83
-#define M9_KEY_SUB_MAP     0x84
+#define M9_KEY_SUB_HOME    0x83  // function button below Home
+#define M9_KEY_SUB_BACK    0x84  // function button below Back
 #define M9_KEY_MAP         0x85
 #define M9_KEY_BACK        0x86
 #define M9_KEY_GPS_LONG    0x87
