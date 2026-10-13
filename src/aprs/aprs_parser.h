@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 
 // APRS info-field parser. Pure C++, host-testable.

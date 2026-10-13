@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include "ax25/ax25.h"
 
