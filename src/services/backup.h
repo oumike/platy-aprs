@@ -4,7 +4,7 @@
 #include <vector>
 
 // Configuration backup/restore, as a JSON document:
-//   { "format": "rhino-aprs-backup", "version": 1, "created": <epoch|0>,
+//   { "format": "platy-aprs-backup", "version": 1, "created": <epoch|0>,
 //     "app": "...", "appVersion": "...", "includesSecrets": bool, "config": {...} }
 
 void backupBuild(JsonDocument &doc, bool includeSecrets);
@@ -12,7 +12,7 @@ void backupBuild(JsonDocument &doc, bool includeSecrets);
 // from the backup keep their current values. The caller should reboot.
 bool backupRestore(JsonObjectConst root, String &err);
 
-// microSD copies under /rhino/backups.
+// microSD copies under /platy/backups.
 struct SdBackupInfo {
     String name;
     size_t size;

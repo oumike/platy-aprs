@@ -28,7 +28,7 @@ struct AppConfig {
     uint8_t ssid = 9;
     char symbolTable = '/';
     char symbolCode = '>';
-    String comment = "rhino-aprs";
+    String comment = "platy-aprs";
     String path = "WIDE1-1,WIDE2-1";
 
     // Beaconing
@@ -70,7 +70,7 @@ struct AppConfig {
     // Wi-Fi
     String wifiSsid;
     String wifiPassword;
-    String hostname = "rhino-aprs";
+    String hostname = "platy-aprs";
 
     // Device
     Units units = Units::Imperial;
@@ -81,6 +81,13 @@ struct AppConfig {
     uint8_t brightness = 160;
     String timezone = "EST5EDT,M3.2.0,M11.1.0";
     String adminPassword;
+
+    // Favorite callsigns (stations and conversations), comma-separated.
+    String favorites;
+
+    // Canned texts offered when composing a message.
+    static constexpr size_t kQuickMsgCount = 5;
+    String quickMsgs[kQuickMsgCount] = {"On my way", "Running late", "Copy, thanks", "Call me when you can", "73!"};
 
     String fullCallsign() const;
     int32_t effectivePasscode() const;

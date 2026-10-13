@@ -1,0 +1,51 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ 'README.md', 'docs/**', '.gitignore' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# Builds every board from a clean checkout and keeps the images as workflow
+# artifacts (14 days). Releases are cut by release.yml, not here.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio esptool
+
+      - name: Unit tests
+        run: pio test -e native
+
+      - name: Build firmware
+        run: |
+          for env in m9 wio-tracker-l2 tdeck-plus; do
+            pio run -e "$env" --disable-auto-clean
+          done
+
+      - name: Package
+        run: ./scripts/package.sh "dev-${GITHUB_SHA::7}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platy-aprs-${{ github.sha }}
+          path: dist/*.bin
+          retention-days: 14

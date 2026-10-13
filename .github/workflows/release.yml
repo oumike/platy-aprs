@@ -1,0 +1,90 @@
+name: Release
+
+# Manual only: Actions tab -> Release -> Run workflow. Builds every board with
+# the given version baked in, tags v<version> and publishes the images.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 0.2.0 (blank = bump the patch of the latest tag)'
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick version
+        id: ver
+        run: |
+          v="${{ inputs.version }}"
+          v="${v#v}"
+          if [ -z "$v" ]; then
+            last="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+            last="${last#v}"
+            if [ -z "$last" ]; then v="0.1.0"
+            else IFS=. read -r a b c <<<"$last"; v="$a.$b.$((c + 1))"; fi
+          fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version '$v'"; exit 1; }
+          git rev-parse -q --verify "refs/tags/v$v" >/dev/null && { echo "v$v already exists"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio esptool
+
+      - name: Unit tests
+        run: pio test -e native
+
+      - name: Build firmware
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DAPP_VERSION=\"${{ steps.ver.outputs.version }}\"
+        run: |
+          for env in m9 wio-tracker-l2 tdeck-plus; do
+            pio run -e "$env" --disable-auto-clean
+          done
+
+      - name: Package
+        run: |
+          ./scripts/package.sh "v${{ steps.ver.outputs.version }}"
+          (cd dist && sha256sum *.bin > SHA256SUMS.txt)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="v${{ steps.ver.outputs.version }}"
+          cat > notes.md <<NOTES
+          Firmware images for each board:
+
+          | Board | Full image (flash at 0x0) | App only (0x10000) |
+          |---|---|---|
+          | Elecrow ThinkNode M9 | \`platy-aprs-m9-$v.bin\` | \`platy-aprs-m9-$v-app.bin\` |
+          | Seeed Wio Tracker L2 | \`platy-aprs-wio-tracker-l2-$v.bin\` | \`platy-aprs-wio-tracker-l2-$v-app.bin\` |
+          | LilyGo T-Deck Plus | \`platy-aprs-tdeck-plus-$v.bin\` | \`platy-aprs-tdeck-plus-$v-app.bin\` |
+
+          Flash a full image with \`esptool.py --chip esp32s3 write_flash 0x0 <file>\` or https://espressif.github.io/esptool-js/.
+          The app-only image updates firmware without touching settings.
+          NOTES
+          gh release create "$v" dist/*.bin dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "platy-aprs $v" \
+            --notes-file notes.md --generate-notes \
+            ${{ inputs.prerelease && '--prerelease' || '' }}

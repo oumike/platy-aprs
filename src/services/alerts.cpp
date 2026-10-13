@@ -1,6 +1,6 @@
 #include "alerts.h"
 #include "config/config.h"
-#include "hal/pins_m9.h"
+#include "hal/board_pins.h"
 #include <Arduino.h>
 
 namespace {
@@ -18,7 +18,7 @@ uint32_t s_noteEndMs = 0;
 }  // namespace
 
 void alertPlay(Alert a) {
-    if (!g_config.buzzer) return;
+    if (!HAS_BUZZER || !g_config.buzzer) return;
     switch (a) {
         case Alert::Message: s_seq = kMessage; break;
         case Alert::Ack: s_seq = kAck; break;
@@ -30,6 +30,7 @@ void alertPlay(Alert a) {
 }
 
 void alertsLoop() {
+#if HAS_BUZZER
     if (!s_seq || (s_noteEndMs && (int32_t)(millis() - s_noteEndMs) < 0)) return;
     if (s_seq->ms == 0) {
         noTone(PIN_BUZZER);
@@ -42,4 +43,5 @@ void alertsLoop() {
     s_noteEndMs = millis() + s_seq->ms;
     if (!s_noteEndMs) s_noteEndMs = 1;
     s_seq++;
+#endif
 }

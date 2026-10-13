@@ -1,6 +1,7 @@
 #include "data_store.h"
 #include "sd_log.h"
 #include "config/config.h"
+#include "favorites.h"
 #include <esp_heap_caps.h>
 #include <time.h>
 
@@ -140,8 +141,12 @@ void stationDbUpdate(const aprs::Packet &p, const char *path, const char *raw, b
             memmove(&s_order[1], &s_order[0], s_stCount * sizeof(uint16_t));
             s_stCount++;
         } else {
-            slot = s_order[s_stCount - 1];   // evict the least recently heard
-            memmove(&s_order[1], &s_order[0], (s_stCount - 1) * sizeof(uint16_t));
+            // Evict the least recently heard station that isn't a favorite.
+            size_t victim = s_stCount - 1;
+            for (size_t i = s_stCount; i-- > 0;)
+                if (!favIs(s_st[s_order[i]].call)) { victim = i; break; }
+            slot = s_order[victim];
+            memmove(&s_order[1], &s_order[0], victim * sizeof(uint16_t));
         }
         memset(&s_st[slot], 0, sizeof(Station));
         strcpy(s_st[slot].call, call);

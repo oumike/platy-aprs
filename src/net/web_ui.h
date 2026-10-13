@@ -5,7 +5,7 @@
 // JSON; data-t selects how it is read back (num | bool | str).
 static const char kWebUiHtml[] PROGMEM = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>rhino-aprs</title>
+<title>platy-aprs</title>
 <style>
 :root{--bg:#111418;--card:#1b2027;--fg:#e6e6e6;--mut:#8a94a3;--acc:#3fa7ff;--bad:#ff6b6b;--ok:#4cd07d}
 *{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
@@ -32,9 +32,9 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 .fl{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a313b}.fl span{flex:1}
 .fl .btn{margin:0;padding:6px 10px}
 .bub{max-width:80%;padding:6px 10px;border-radius:10px;margin:6px 0;background:#2a313b}.bub.o{margin-left:auto;background:#1d4a73}
-.bub small{display:block;font-size:11px}.ur{background:var(--acc);color:#000;border-radius:9px;padding:0 6px;font-size:12px;margin-left:6px}
+.bub small{display:block;font-size:11px}.star{cursor:pointer;color:#777;font-size:16px}.star.on{color:#ffb347}.ur{background:var(--acc);color:#000;border-radius:9px;padding:0 6px;font-size:12px;margin-left:6px}
 </style></head><body>
-<header><b>rhino-aprs</b><div id="st">…</div></header>
+<header><b>platy-aprs</b><div id="st">…</div></header>
 <nav id="tabs"></nav>
 
 <section data-tab="Station"><div class="card">
@@ -45,6 +45,9 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <small>Examples: / &gt; car, / [ jogger, / - house, / k truck, \ n overlay triangle</small>
 <label>Comment</label><input data-k="station.comment" maxlength="43">
 <label>Path</label><input data-k="station.path">
+</div><div class="card"><b>Quick messages</b><br><small>Offered when composing a message on the device.</small>
+<input data-k="quickMessages.m1" maxlength="67"><input data-k="quickMessages.m2" maxlength="67"><input data-k="quickMessages.m3" maxlength="67">
+<input data-k="quickMessages.m4" maxlength="67"><input data-k="quickMessages.m5" maxlength="67">
 </div></section>
 
 <section data-tab="Beacon"><div class="card">
@@ -190,17 +193,23 @@ async function monitor(){const j=await (await fetch('/api/packets?since='+lastSe
 if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;
 const html=j.packets.map(p=>'<div class="pk'+(p.tx?' tx':'')+'"><span class="t">'+(p.epoch?new Date(p.epoch*1000).toLocaleTimeString():'-'+age(p.ageS))+(p.tx?' TX':'')+(p.is?' IS':'')+'</span>'+esc(p.raw)+'</div>').join('');
 $('#mon').insertAdjacentHTML('afterbegin',html);const k=$('#mon').children;while(k.length>200)k[k.length-1].remove()}
+const favFirst=a=>a.filter(x=>x.fav).concat(a.filter(x=>!x.fav));
+const star=(c,on)=>'<span class="star'+(on?' on':'')+'" data-c="'+esc(c)+'" title="Favorite">'+(on?'★':'☆')+'</span>';
+async function favT(e,c,after){e.stopPropagation();const r=await (await fetch('/api/favorites/toggle?call='+encodeURIComponent(c),{method:'POST'})).json();if(r.ok)after()}
 async function stations(){const j=await (await fetch('/api/stations')).json();
-$('#stl').innerHTML=j.stations.map(s=>'<tr><td><b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+
-[s.speed,s.altitude,s.status,s.comment].filter(x=>x).map(esc).join(' · ')+(s.lat!=null?'<br><small>'+s.lat.toFixed(4)+', '+s.lon.toFixed(4)+(s.path?' via '+esc(s.path):'')+'</small>':'')+'</td></tr>').join('')||'<tr><td colspan=4><small>No stations heard yet.</small></td></tr>'}
+$('#stl').innerHTML=favFirst(j.stations).map(s=>'<tr><td>'+star(s.call,s.fav)+' <b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+
+[s.speed,s.altitude,s.status,s.comment].filter(x=>x).map(esc).join(' · ')+(s.lat!=null?'<br><small>'+s.lat.toFixed(4)+', '+s.lon.toFixed(4)+(s.path?' via '+esc(s.path):'')+'</small>':'')+'</td></tr>').join('')||'<tr><td colspan=4><small>No stations heard yet.</small></td></tr>';
+$$('#stl .star').forEach(e=>e.onclick=ev=>favT(ev,e.dataset.c,stations))}
 let mpeer='',mgen=-1;
 const when=m=>m.epoch?new Date(m.epoch*1000).toLocaleString():m.ageS!=null?age(m.ageS)+' ago':'';
 const stTxt={pending:'sending…',acked:'✓ delivered',rejected:'✗ rejected',failed:'✗ not delivered (click to retry)'};
 async function messages(force){const j=await (await fetch('/api/messages'+(mpeer?'?peer='+encodeURIComponent(mpeer):''))).json();
 if(!force&&j.gen==mgen)return;mgen=j.gen;
-$('#mth').innerHTML=j.threads.map(t=>'<div class="net" data-p="'+esc(t.peer)+'"><b>'+esc(t.peer)+'</b>'+(t.unread?'<span class="ur">'+t.unread+'</span>':'')+'<br><small>'+(t.lastOut?'You: ':'')+esc(t.lastText)+' · '+when(t)+'</small></div>').join('')||'<small>No messages yet.</small>';
+$('#mth').innerHTML=favFirst(j.threads).map(t=>'<div class="net" data-p="'+esc(t.peer)+'">'+star(t.peer,t.fav)+' <b>'+esc(t.peer)+'</b>'+(t.unread?'<span class="ur">'+t.unread+'</span>':'')+'<br><small>'+(t.lastOut?'You: ':'')+esc(t.lastText)+' · '+when(t)+'</small></div>').join('')||'<small>No messages yet.</small>';
 $$('#mth .net').forEach(e=>e.onclick=()=>mopen(e.dataset.p));
-$('#mconv').style.display=mpeer?'':'none';$('#mpeer').textContent=mpeer;
+$$('#mth .star').forEach(e=>e.onclick=ev=>favT(ev,e.dataset.c,()=>messages(1)));
+$('#mconv').style.display=mpeer?'':'none';$('#mpeer').innerHTML=mpeer?star(mpeer,j.threads.some(t=>t.peer==mpeer&&t.fav))+' '+esc(mpeer):'';
+$$('#mpeer .star').forEach(e=>e.onclick=ev=>favT(ev,e.dataset.c,()=>messages(1)));
 if(mpeer){$('#mlist').innerHTML=j.messages.map(m=>'<div class="bub'+(m.out?' o':'')+'" data-s="'+m.seq+'" data-st="'+m.state+'">'+esc(m.text)+'<small>'+when(m)+(m.out?' · '+(stTxt[m.state]||'')+(m.state=='pending'&&m.tries?' (try '+m.tries+')':''):'')+'</small></div>').join('');
 $$('#mlist [data-st=failed]').forEach(e=>e.onclick=()=>post('/api/messages/retry?seq='+e.dataset.s,'Retrying…'));
 if(j.messages.some(m=>!m.out)&&j.threads.some(t=>t.peer==mpeer&&t.unread))fetch('/api/messages/read?peer='+encodeURIComponent(mpeer),{method:'POST'})}}

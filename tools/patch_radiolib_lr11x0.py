@@ -22,13 +22,13 @@
 Import("env")
 import os
 
-MARKER = "rhino-lr1110-oldfw-patch"
+MARKER = "platy-lr1110-oldfw-patch"
 
 OLD = """  state = this->driveDiosInSleepMode(true);
   RADIOLIB_ASSERT(state);"""
 
 NEW = """  state = this->driveDiosInSleepMode(true);
-  // rhino-lr1110-oldfw-patch: LR11x0 transceiver firmware older than 0x0308
+  // platy-lr1110-oldfw-patch: LR11x0 transceiver firmware older than 0x0308
   // does not implement DriveDiosInSleepMode (0x012A) and answers CMD_PERR,
   // which would abort begin() with -706 on a healthy radio. The command only
   // suppresses DIO glitches in sleep mode, so skipping it is safe.
@@ -47,7 +47,7 @@ if not os.path.isfile(path):
 else:
     with open(path) as f:
         src = f.read()
-    if MARKER in src:
+    if MARKER in src or "rhino-lr1110-oldfw-patch" in src:
         print("[patch_radiolib_lr11x0] already patched")
     elif OLD in src:
         with open(path, "w") as f:

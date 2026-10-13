@@ -6,7 +6,7 @@
 
 namespace {
 
-constexpr const char *kDir = "/rhino/logs";
+constexpr const char *kDir = "/platy/logs";
 constexpr size_t kFlushBytes = 4096;
 constexpr uint32_t kFlushMs = 5000;
 

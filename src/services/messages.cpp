@@ -17,7 +17,7 @@ uint32_t g_msgGen = 1;
 namespace {
 
 constexpr size_t kCap = 150;
-constexpr const char *kFile = "/rhino/messages.json";
+constexpr const char *kFile = "/platy/messages.json";
 constexpr uint8_t kMaxTries = 5;
 constexpr uint32_t kRetryS[kMaxTries] = {30, 60, 120, 240, 240};   // wait after try n
 
@@ -80,7 +80,7 @@ void sendAck(const char *to, const std::string &id) {
 void save() {
     s_dirty = false;
     if (!sdMounted()) return;
-    sdMakeDirs("/rhino");
+    sdMakeDirs("/platy");
     JsonDocument doc;
     doc["nextId"] = s_nextId;
     JsonArray a = doc["messages"].to<JsonArray>();

@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 
-// Packet log files on the SD card: /rhino/logs/YYYY-MM-DD.log (UTC), one line
+// Packet log files on the SD card: /platy/logs/YYYY-MM-DD.log (UTC), one line
 // per packet: "2026-10-12 21:54:03Z RF< SRC>DST,PATH:info". Loop task only.
 
 void sdLogPacket(const char *tnc2, bool tx, bool viaIs);

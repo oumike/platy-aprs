@@ -2,7 +2,8 @@
 #include <stdint.h>
 #include <lvgl.h>
 
-// M9 I2C keyboard + d-pad, exposed to LVGL as a keypad input device.
+// Board keys (M9 keyboard + d-pad, T-Deck keyboard + trackball, Wio buttons),
+// exposed to LVGL as a keypad input device using the codes in keys.h.
 void keyboardBegin();
 void keyboardPoll();   // call from the UI loop
 

@@ -1,4 +1,5 @@
 #include "map_view.h"
+#include "hal/board_pins.h"
 
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -57,7 +58,7 @@ bool fetchTile(Job &j) {
     http.setConnectTimeout(5000);
     http.setTimeout(10000);
     if (!http.begin(client, url)) return false;
-    http.addHeader("User-Agent", "rhino-aprs/" APP_VERSION);
+    http.addHeader("User-Agent", "platy-aprs/" APP_VERSION);
     const char *hdrs[] = {"x-blocked"};
     http.collectHeaders(hdrs, 1);
     const int code = http.GET();
@@ -201,7 +202,7 @@ TileSlot *allocSlot() {
 }
 
 void tilePath(char *out, size_t n, int z, int32_t x, int32_t y) {
-    snprintf(out, n, "/rhino/tiles/%d/%ld/%ld.png", z, (long)x, (long)y);
+    snprintf(out, n, "/platy/tiles/%d/%ld/%ld.png", z, (long)x, (long)y);
 }
 
 double viewLeft() { return s_map->cx - s_map->w / 2.0; }
@@ -336,7 +337,7 @@ void markFailed(int z, int32_t x, int32_t y) {
 void saveToSd(const Job &j) {
     if (!sdMounted()) return;
     char dir[48], path[64], tmp[70];
-    snprintf(dir, sizeof(dir), "/rhino/tiles/%d/%ld", j.z, (long)j.x);
+    snprintf(dir, sizeof(dir), "/platy/tiles/%d/%ld", j.z, (long)j.x);
     if (!sdMakeDirs(dir)) return;
     tilePath(path, sizeof(path), j.z, j.x, j.y);
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -526,10 +527,11 @@ void updateInfo() {
     else if (m.failed) state = "some tiles failed";
     else state = "";
     if (m.selected[0])
-        snprintf(buf, sizeof(buf), "z%d  %s  " LV_SYMBOL_RIGHT " Enter=details", m.zoom, m.selected);
+        snprintf(buf, sizeof(buf), "z%d  %s  " LV_SYMBOL_RIGHT " %s", m.zoom, m.selected,
+                 HAS_KEYBOARD ? "Enter=details" : "tap again for details");
     else
         snprintf(buf, sizeof(buf), "z%d  %s%s%s", m.zoom, state, state[0] ? "  " : "",
-                 "+/- zoom, N next, C me");
+                 HAS_KEYBOARD ? "+/- zoom, N next, C me" : "drag to pan, tap a station");
     lv_label_set_text(m.info, buf);
 }
 
@@ -618,8 +620,76 @@ void keyCb(lv_event_t *e) {
     lv_timer_ready(s_map->timer);
 }
 
+#if HAS_TOUCH
+bool s_dragged = false;
+
+void pressedCb(lv_event_t *) { s_dragged = false; }
+
+void pressingCb(lv_event_t *) {
+    lv_indev_t *in = lv_indev_active();
+    if (!in || lv_indev_get_type(in) != LV_INDEV_TYPE_POINTER) return;
+    lv_point_t v;
+    lv_indev_get_vect(in, &v);
+    if (!v.x && !v.y) return;
+    s_dragged = true;
+    s_map->selected[0] = 0;
+    pan(-v.x, -v.y);
+    lv_timer_ready(s_map->timer);
+}
+
+// A tap selects the nearest station; tapping the selected one opens it.
+bool tapAt(int px, int py) {
+    Map &m = *s_map;
+    const Station *best = nullptr;
+    int bestD = 28 * 28;
+    for (size_t i = 0; i < stationDbCount(); i++) {
+        const Station *s = stationDbAt(i);
+        int sx, sy;
+        if (!s || !s->hasPos || !toScreen(s->lat, s->lon, sx, sy)) continue;
+        const int d = (sx - px) * (sx - px) + (sy - py) * (sy - py);
+        if (d < bestD) {
+            bestD = d;
+            best = s;
+        }
+    }
+    if (!best) {
+        m.selected[0] = 0;
+    } else if (strcmp(best->call, m.selected) == 0) {
+        if (m.onStation) m.onStation(m.selected);
+    } else {
+        strlcpy(m.selected, best->call, sizeof(m.selected));
+    }
+    m.markersDirty = true;
+    lv_timer_ready(m.timer);
+    return true;
+}
+
+lv_obj_t *mapButton(lv_obj_t *parent, const char *sym, lv_event_cb_t cb) {
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_set_size(b, 40, 36);
+    lv_obj_set_style_bg_opa(b, LV_OPA_80, 0);
+    lv_obj_t *l = lv_label_create(b);
+    lv_label_set_text(l, sym);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
+    return b;
+}
+#endif
+
 void clickCb(lv_event_t *) {
     Map &m = *s_map;
+#if HAS_TOUCH
+    lv_indev_t *in = lv_indev_active();
+    if (in && lv_indev_get_type(in) == LV_INDEV_TYPE_POINTER) {
+        if (s_dragged) return;
+        lv_point_t p;
+        lv_indev_get_point(in, &p);
+        lv_area_t a;
+        lv_obj_get_coords(m.root, &a);
+        tapAt(p.x - a.x1, p.y - a.y1);
+        return;
+    }
+#endif
     if (m.selected[0] && m.onStation) m.onStation(m.selected);
     else if (!centerOnMe()) selectNext();
     lv_timer_ready(m.timer);
@@ -671,6 +741,12 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
     lv_obj_add_flag(root, LV_OBJ_FLAG_USER_1);   // keyboard: deliver UP/DOWN as arrows
     lv_obj_add_event_cb(root, keyCb, LV_EVENT_KEY, nullptr);
     lv_obj_add_event_cb(root, clickCb, LV_EVENT_CLICKED, nullptr);
+#if HAS_TOUCH
+    lv_obj_add_event_cb(root, pressedCb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(root, pressingCb, LV_EVENT_PRESSING, nullptr);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLL_CHAIN);
+#endif
     lv_obj_add_event_cb(root, deleteCb, LV_EVENT_DELETE, nullptr);
     lv_group_add_obj(grp, root);
 
@@ -692,6 +768,27 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
     lv_obj_set_style_bg_opa(m->info, LV_OPA_60, 0);
     lv_obj_set_style_pad_hor(m->info, 4, 0);
     lv_label_set_long_mode(m->info, LV_LABEL_LONG_CLIP);
+
+#if HAS_TOUCH
+    lv_obj_t *col = lv_obj_create(root);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(col, 6, 0);
+    lv_obj_align(col, LV_ALIGN_TOP_RIGHT, -4, 4);
+    mapButton(col, LV_SYMBOL_PLUS, [](lv_event_t *) {
+        setZoom(s_map->zoom + 1);
+        lv_timer_ready(s_map->timer);
+    });
+    mapButton(col, LV_SYMBOL_MINUS, [](lv_event_t *) {
+        setZoom(s_map->zoom - 1);
+        lv_timer_ready(s_map->timer);
+    });
+    mapButton(col, LV_SYMBOL_GPS, [](lv_event_t *) {
+        centerOnMe();
+        lv_timer_ready(s_map->timer);
+    });
+#endif
 
     // A job left over from a previous visit is discarded (its tile may be off-screen).
     if (s_job.state == JobState::Done) s_job.state = JobState::Idle;

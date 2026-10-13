@@ -1,5 +1,8 @@
 #include "gps.h"
-#include "pins_m9.h"
+#include "board_pins.h"
+#if defined(DEVICE_WIO_TRACKER_L2)
+#include "wio_l2_io.h"
+#endif
 #include <TinyGPSPlus.h>
 #include <sys/time.h>
 #include <time.h>
@@ -10,27 +13,46 @@ static uint32_t s_lastCharsMs = 0;
 static uint32_t s_lastChars = 0;
 static bool s_clockSet = false;
 
+static void gpsPower(bool on) {
+#if defined(DEVICE_M9)
+    if (on) digitalWrite(PIN_GPS_RST, LOW);   // released
+    digitalWrite(PIN_GPS_EN, on ? LOW : HIGH);
+#elif defined(DEVICE_WIO_TRACKER_L2)
+    wioIoSet(EXP_GNSS_POWER, on);
+    if (on) {
+        // Reset is active high: pulse it after power-up.
+        delay(10);
+        wioIoSet(EXP_GNSS_RST, true);
+        delay(10);
+        wioIoSet(EXP_GNSS_RST, false);
+    }
+#else
+    (void)on;   // T-Deck: the GPS is on the main peripheral rail
+#endif
+}
+
 void gpsSetEnabled(bool on) {
     if (on == s_on) return;
     s_on = on;
     if (on) {
-        digitalWrite(PIN_GPS_RST, LOW);   // released
-        digitalWrite(PIN_GPS_EN, LOW);    // powered
+        gpsPower(true);
         Serial1.setRxBufferSize(2048);
         Serial1.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
         Serial.println("[gps] on");
     } else {
         Serial1.end();
-        digitalWrite(PIN_GPS_EN, HIGH);
+        gpsPower(false);
         Serial.println("[gps] off");
     }
 }
 
 void gpsBegin() {
+#if defined(DEVICE_M9)
     pinMode(PIN_GPS_EN, OUTPUT);
     pinMode(PIN_GPS_RST, OUTPUT);
     digitalWrite(PIN_GPS_RST, LOW);
     digitalWrite(PIN_GPS_EN, HIGH);
+#endif
 }
 
 // Set the system clock from GPS when NTP hasn't (no Wi-Fi in the field).

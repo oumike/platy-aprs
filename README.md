@@ -1,23 +1,42 @@
-# rhino-aprs
+# platy-aprs
 
-APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radio (Mobilinkd TNC3/TNC4, Vero VR-N76/VR-N7600, or any BLE KISS device with configurable UUIDs), or LoRa APRS on the M9's built-in LR1110. It has an LVGL UI and a web config page.
+APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radio (Mobilinkd TNC3/TNC4, Vero VR-N76/VR-N7600, or any BLE KISS device with configurable UUIDs), or LoRa APRS on the board's built-in radio. It has an LVGL UI and a web config page.
 
-First target: **Elecrow ThinkNode M9** (ESP32-S3).
+## Supported boards
+
+| Board | Env | Radio | Input |
+|---|---|---|---|
+| Elecrow ThinkNode M9 | `m9` | LR1110 | keypad |
+| Seeed Wio Tracker L2 | `wio-tracker-l2` | SX1262 | touch, BOOT button (Back, hold = Home) |
+| LilyGo T-Deck Plus | `tdeck-plus` | SX1262 | keyboard, trackball, touch |
+
+## Install
+
+Download the image for your board from [Releases](../../releases) and flash it at 0x0, either with
+`esptool.py --chip esp32s3 write_flash 0x0 platy-aprs-<board>-<version>.bin` or in the browser with
+[esptool-js](https://espressif.github.io/esptool-js/). The `-app.bin` images (at 0x10000) update the firmware and keep your settings.
 
 ## Build & flash
 
 ```sh
-pio run -e m9 -t upload --upload-port /dev/cu.wchusbserial10
-pio device monitor -p /dev/cu.wchusbserial10
-pio test -e native        # host-side unit tests
+scripts/build-upload-monitor.sh            # pick a board from a menu, build, flash, monitor
+scripts/build-upload-monitor.sh -w -p /dev/cu.usbmodem101   # Wio Tracker L2 (-9 M9, -t T-Deck Plus)
+scripts/build-upload-monitor.sh -B         # build every board, print a summary
+pio test -e native                         # host-side unit tests
 ```
+
+Other flags: `-e` erase flash, `-c` clean build, `-d` debug build, `-n` don't open the monitor.
+`scripts/package.sh <version>` turns built envs into release images in `dist/`.
+
+CI (`.github/workflows/build.yml`) builds every board on each push and keeps the images as workflow artifacts.
+To release, run the **Release** workflow from the Actions tab: it builds with the version baked in, tags `v<version>` and publishes the images.
 
 ## First-time setup
 
-1. On first boot the device opens an open access point named `RHINO-APRS-XXXX`. The home screen shows its name and a join QR code.
+1. On first boot the device opens an open access point named `PLATY-APRS-XXXX`. The home screen shows its name and a join QR code.
 2. Join that network and browse to `http://192.168.4.1`. There is no captive portal.
 3. Enter your callsign and other settings, then set your Wi-Fi network on the **Wi-Fi** tab and save.
-4. Once the device joins your network, the setup AP shuts down after about 15 s. Config is then served at `http://<device-ip>` and `http://rhino-aprs.local`.
+4. Once the device joins your network, the setup AP shuts down after about 15 s. Config is then served at `http://<device-ip>` and `http://platy-aprs.local`.
 5. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device.
 
 You can set an optional admin password (username `admin`) on the **Device** tab.
@@ -57,7 +76,13 @@ is on the home screen and the web Beacon tab. The GPS also sets the clock when t
 
 Messages (device **Messages** screen, the MESSAGE key, or the web **Messages** tab) are retried 5 times
 (30 s, 1, 2, 4 min) until acked; incoming messages are acked, de-duplicated, beep, and pop up a banner.
-Conversations are kept on the SD card (`/rhino/messages.json`).
+Conversations are kept on the SD card (`/platy/messages.json`).
+
+The list button left of the message input opens your five quick messages; picking one fills in the text.
+Edit them under **Settings → Quick messages** on the device or on the web **Station** tab.
+
+Stations and conversations can be favorited with the star on their detail screen (or in the web Stations/Messages tabs).
+Favorites are listed first and are never dropped from the station list when it fills up.
 
 ## APRS-IS, iGate & digipeater
 
@@ -75,7 +100,7 @@ own beacons and messages to APRS-IS as well as over RF, so messaging also works 
 ## Map
 
 Home → **Map** (or the MAP key). OpenStreetMap tiles come from `maps.camillia.sumat.org` when on Wi-Fi and are
-cached on the SD card (`/rhino/tiles/z/x/y.png`), so areas you have viewed work offline. Stations with a
+cached on the SD card (`/platy/tiles/z/x/y.png`), so areas you have viewed work offline. Stations with a
 position are drawn as dots (amber RF, grey APRS-IS, blue weather, purple objects; "me" in blue).
 
 D-pad: pan · `+`/`i`: zoom in · `-`/`o`: zoom out · `N`: select the next station in view (and centre on it) ·
@@ -84,26 +109,26 @@ D-pad: pan · `+`/`i`: zoom in · `-`/`o`: zoom out · `N`: select the next stat
 ## Packet log
 
 With "Log packets to the SD card" on (web **Device** tab, default on), every RF packet and everything we send
-is appended to `/rhino/logs/YYYY-MM-DD.log` (UTC; `nodate.log` before the clock is set) as
+is appended to `/platy/logs/YYYY-MM-DD.log` (UTC; `nodate.log` before the clock is set) as
 `2026-10-12 21:54:03Z RF< SRC>DST,PATH:info` (`RF<` heard, `RF>` sent, `IS<`/`IS>` APRS-IS). APRS-IS
 traffic is only logged if enabled. Logs can be downloaded or deleted from the Device tab.
 
 ## Backup & restore
 
 Web **Device** tab: download a backup JSON file, restore one by uploading it, or save backups to the SD card
-(`/rhino/backups/`) and restore, download, or delete them there. Passwords are only included if you tick the box.
+(`/platy/backups/`) and restore, download, or delete them there. Passwords are only included if you tick the box.
 Restoring reboots the device. The device Settings screen can also save a backup (no passwords) to SD.
 
 ## API (selection)
 
-Debug builds (`PLATFORMIO_BUILD_FLAGS=-DRHINO_SERIAL_KEYS`) also accept raw M9 key codes on the serial
+Debug builds (`PLATFORMIO_BUILD_FLAGS=-DPLATY_SERIAL_KEYS`) also accept raw M9 key codes on the serial
 console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
 
 
 `GET /api/status` · `GET/POST /api/config` · `GET /api/tnc/status` · `GET /api/tnc/scan[?start=1]` ·
 `POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
 `POST /api/beacon` · `GET /api/messages[?peer=]` · `POST /api/messages` (`{to,text}`) ·
-`POST /api/messages/read|delete?peer=` · `POST /api/messages/retry?seq=` · `GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
+`POST /api/messages/read|delete?peer=` · `POST /api/favorites/toggle?call=` · `POST /api/messages/retry?seq=` · `GET /api/backup[?secrets=1]` · `POST /api/restore` · `GET|POST /api/backup/sd` ·
 `POST /api/backup/sd/restore?name=` · `GET /api/backup/sd/download?name=` · `POST /api/backup/sd/delete?name=` ·
 `GET /api/logs` · `GET /api/logs/download?name=` · `POST /api/logs/delete?name=`
 
@@ -111,4 +136,4 @@ console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
 
 Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
 and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done, plus the APRS-IS iGate, digipeater
-SD packet log, map and LoRa APRS (milestone 4).
+SD packet log, map and LoRa APRS (milestone 4). The T-Deck Plus build has not been tested on hardware yet.

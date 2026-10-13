@@ -80,7 +80,7 @@ void wifiBegin() {
     uint8_t mac[6];
     WiFi.macAddress(mac);
     char buf[24];
-    snprintf(buf, sizeof(buf), "RHINO-APRS-%02X%02X", mac[4], mac[5]);
+    snprintf(buf, sizeof(buf), "PLATY-APRS-%02X%02X", mac[4], mac[5]);
     s_apSsid = buf;
 
     WiFi.persistent(false);

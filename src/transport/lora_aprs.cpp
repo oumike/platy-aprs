@@ -7,19 +7,20 @@
 #include "ax25/ax25.h"
 #include "ble_kiss.h"
 #include "config/config.h"
-#include "hal/pins_m9.h"
+#include "hal/board_pins.h"
 #include "services/data_store.h"
 
 LoraAprsTransport g_lora;
 
 namespace {
 
+#if LORA_CHIP_LR1110
 // RadioLib keeps the raw RX-buffer accessors and packet params protected; two
 // LR11x0 quirks need them (see readPacket() and armRx()). Same workaround as
 // camillia-mt's MeshLR1110.
-class Lr1110 : public LR1110 {
+class Radio : public LR1110 {
 public:
-    explicit Lr1110(Module *m) : LR1110(m) {}
+    explicit Radio(Module *m) : LR1110(m) {}
     using LR11x0::clearRxBuffer;
     using LR11x0::readBuffer8;
     int16_t restoreRxMaxPayload() {
@@ -27,14 +28,16 @@ public:
                                    crcTypeLoRa, (uint8_t)invertIQEnabled);
     }
 };
+#else
+using Radio = SX1262;
+#endif
 
 constexpr uint8_t kSyncWord = 0x12;      // LoRa "private" sync word, used by LoRa APRS
 constexpr uint16_t kPreamble = 8;
-constexpr float kTcxoV = 3.3f;           // the M9's TCXO; 0 leaves the chip on its RC oscillator
 constexpr uint32_t kTxTimeoutMs = 20000;
 constexpr uint32_t kBusyHoldMs = 4000;   // max wait for an incoming packet before we transmit anyway
 
-Lr1110 *s_radio = nullptr;
+Radio *s_radio = nullptr;
 volatile bool s_irq = false;
 bool s_wantReconfig = false;
 bool s_active = false;
@@ -67,9 +70,17 @@ void fail(const char *what, int code) {
 int armRx() {
     // The LR11x0 uses the payload-length packet param as the RX maximum too, and
     // RadioLib leaves it at the last TX length, so restore it before every RX.
-    s_radio->restoreRxMaxPayload();
     s_irq = false;
+#if LORA_CHIP_LR1110
+    s_radio->restoreRxMaxPayload();
     const int st = s_radio->startReceive();
+#else
+    // Latch preamble detection too (DIO1 still fires only on RX done) so
+    // startTx() can see a packet arriving.
+    const int st = s_radio->startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF,
+                                         RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED),
+                                         RADIOLIB_IRQ_RX_DEFAULT_MASK, 0);
+#endif
     if (st == RADIOLIB_ERR_NONE) s_status.state = LoraState::Rx;
     else fail("startReceive failed", st);
     s_busySinceMs = 0;
@@ -89,16 +100,17 @@ void stopRadio() {
 bool startRadio() {
     const AppConfig &c = g_config;
     if (!s_radio) {
-        SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI);
-        s_radio = new Lr1110(new Module(PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY));
+        SPI.begin(PIN_LORA_SCK, PIN_LORA_MISO, PIN_LORA_MOSI);
+        s_radio = new Radio(new Module(PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY));
     }
     s_radio->reset();
     int st = s_radio->begin(c.loraFreqMhz, c.loraBwKhz, c.loraSf, c.loraCr, kSyncWord, c.loraPowerDbm,
-                            kPreamble, kTcxoV);
+                            kPreamble, LORA_TCXO_V);
     if (st != RADIOLIB_ERR_NONE) {
         fail("radio init failed", st);
         return false;
     }
+#if LORA_CHIP_LR1110
     // The antenna switch is driven by the LR1110's DIO5/DIO6 and only after it
     // has been given a table (schematic-confirmed in camillia-mt's hw_m9.h).
     static const uint32_t kPins[Module::RFSWITCH_MAX_PINS] = {
@@ -110,10 +122,15 @@ bool startRadio() {
         {LR11x0::MODE_WIFI, {LOW, LOW}},   END_OF_MODE_TABLE,
     };
     s_radio->setRfSwitchTable(kPins, kTable);
+    s_radio->setIrqAction(onIrq);
+#else
+    s_radio->setDio2AsRfSwitch(true);
+    s_radio->setCurrentLimit(140);
+    s_radio->setDio1Action(onIrq);
+#endif
     s_radio->setOutputPower(c.loraPowerDbm);
     s_radio->setCRC(2);
     s_radio->setRxBoostedGainMode(true);
-    s_radio->setIrqAction(onIrq);
     s_active = true;
     s_status.lastError = "";
     s_status.freqMhz = c.loraFreqMhz;
@@ -123,6 +140,7 @@ bool startRadio() {
     return true;
 }
 
+#if LORA_CHIP_LR1110
 // Reads one packet. The LR11x0 RX buffer is a 256-byte ring whose start offset
 // creeps forward with every packet; RadioLib's readData() does not handle the
 // wrap, so read the two halves ourselves.
@@ -143,6 +161,30 @@ bool readPacket(uint8_t *buf, size_t cap, size_t &len) {
     s_radio->clearIrqFlags(RADIOLIB_LR11X0_IRQ_ALL);
     return ok;
 }
+
+bool rxInProgress() {
+    const uint32_t irq = s_radio->getIrqFlags();
+    return irq & (RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED | RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID);
+}
+
+void clearIrqs() { s_radio->clearIrqFlags(RADIOLIB_LR11X0_IRQ_ALL); }
+#else
+bool readPacket(uint8_t *buf, size_t cap, size_t &len) {
+    len = s_radio->getPacketLength(true);
+    if (len == 0 || len > cap) {
+        s_radio->clearIrqFlags(RADIOLIB_SX126X_IRQ_ALL);
+        return false;
+    }
+    return s_radio->readData(buf, len) == RADIOLIB_ERR_NONE;   // checks CRC, clears IRQs
+}
+
+bool rxInProgress() {
+    const uint32_t irq = s_radio->getIrqFlags();
+    return irq & (RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED | RADIOLIB_SX126X_IRQ_HEADER_VALID);
+}
+
+void clearIrqs() { s_radio->clearIrqFlags(RADIOLIB_SX126X_IRQ_ALL); }
+#endif
 
 void handleRx() {
     uint8_t buf[256];
@@ -181,11 +223,10 @@ void handleRx() {
 void startTx() {
     // Hold off while a packet is being received; the IRQ status latches preamble
     // and header detection even though only RX/TX-done drive DIO.
-    const uint32_t irq = s_radio->getIrqFlags();
-    if (irq & (RADIOLIB_LR11X0_IRQ_PREAMBLE_DETECTED | RADIOLIB_LR11X0_IRQ_SYNC_WORD_HEADER_VALID)) {
+    if (rxInProgress()) {
         if (!s_busySinceMs) s_busySinceMs = millis() | 1;
         if (millis() - s_busySinceMs < kBusyHoldMs) return;
-        s_radio->clearIrqFlags(RADIOLIB_LR11X0_IRQ_ALL);
+        clearIrqs();
     }
     const TxLine &t = s_txq[s_txTail];
     s_irq = false;

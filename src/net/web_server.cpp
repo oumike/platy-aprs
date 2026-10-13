@@ -7,6 +7,7 @@
 #include "hal/gps.h"
 #include "services/backup.h"
 #include "services/beacon.h"
+#include "services/favorites.h"
 #include "services/messages.h"
 #include "services/data_store.h"
 #include "services/router.h"
@@ -32,7 +33,7 @@ bool s_factoryReset = false;
 bool authorized() {
     if (g_config.adminPassword.length() == 0) return true;
     if (s_server.authenticate("admin", g_config.adminPassword.c_str())) return true;
-    s_server.requestAuthentication(BASIC_AUTH, "rhino-aprs");
+    s_server.requestAuthentication(BASIC_AUTH, "platy-aprs");
     return false;
 }
 
@@ -305,6 +306,7 @@ void handleMessages() {
     for (const ChatThread &t : messagesThreads()) {
         JsonObject o = th.add<JsonObject>();
         o["peer"] = t.peer;
+        if (favIs(t.peer.c_str())) o["fav"] = true;
         o["lastText"] = t.lastText;
         o["lastOut"] = t.lastOutgoing;
         o["unread"] = t.unread;
@@ -349,6 +351,21 @@ void handleMessageRead() {
     if (!authorized()) return;
     messagesMarkRead(s_server.arg("peer"));
     sendOk();
+}
+
+void handleFavoriteToggle() {
+    if (!authorized()) return;
+    const String call = s_server.arg("call");
+    if (!call.length() || call.length() > 9) {
+        s_server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad call\"}");
+        return;
+    }
+    JsonDocument doc;
+    doc["ok"] = true;
+    doc["fav"] = favToggle(call.c_str());
+    String out;
+    serializeJson(doc, out);
+    s_server.send(200, "application/json", out);
 }
 
 void handleMessageDelete() {
@@ -401,6 +418,7 @@ void handleStations() {
         const Station *s = stationDbAt(i);
         JsonObject o = arr.add<JsonObject>();
         o["call"] = s->call;
+        if (favIs(s->call)) o["fav"] = true;
         if (s->isObject) o["owner"] = s->owner;
         o["ageS"] = uptimeS() - s->lastHeardS;
         o["packets"] = s->packets;
@@ -432,9 +450,9 @@ String backupFileName() {
     if (now > 1700000000) {
         struct tm tm;
         localtime_r(&now, &tm);
-        strftime(name, sizeof(name), "rhino-aprs-%Y%m%d-%H%M%S.json", &tm);
+        strftime(name, sizeof(name), "platy-aprs-%Y%m%d-%H%M%S.json", &tm);
     } else {
-        snprintf(name, sizeof(name), "rhino-aprs-backup.json");
+        snprintf(name, sizeof(name), "platy-aprs-backup.json");
     }
     return name;
 }
@@ -640,6 +658,7 @@ void webBegin() {
     s_server.on("/api/messages", HTTP_POST, handleMessageSend);
     s_server.on("/api/messages/read", HTTP_POST, handleMessageRead);
     s_server.on("/api/messages/delete", HTTP_POST, handleMessageDelete);
+    s_server.on("/api/favorites/toggle", HTTP_POST, handleFavoriteToggle);
     s_server.on("/api/messages/retry", HTTP_POST, handleMessageRetry);
     s_server.on("/api/packets", HTTP_GET, handlePackets);
     s_server.on("/api/stations", HTTP_GET, handleStations);
@@ -650,7 +669,7 @@ void webBegin() {
     s_server.on("/api/backup/sd/restore", HTTP_POST, handleSdBackupRestore);
     s_server.on("/api/backup/sd/download", HTTP_GET, handleSdBackupDownload);
     s_server.on("/api/backup/sd/delete", HTTP_POST, handleSdBackupDelete);
-#ifdef RHINO_SERIAL_KEYS
+#ifdef PLATY_SERIAL_KEYS
     // Debug builds: raw RGB565 dump of the active screen (240x320, little endian).
     s_server.on("/api/debug/screen", HTTP_GET, [] {
         lv_draw_buf_t *b = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);

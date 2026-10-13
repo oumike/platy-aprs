@@ -1,6 +1,6 @@
 #ifndef LV_CONF_H
 #define LV_CONF_H
-// LVGL 9.2 configuration for rhino-aprs. Unlisted options take LVGL defaults.
+// LVGL 9.2 configuration for platy-aprs. Unlisted options take LVGL defaults.
 
 #define LV_COLOR_DEPTH 16
 
@@ -29,7 +29,7 @@
 
 #define LV_USE_QRCODE 1
 #define LV_USE_LODEPNG 1
-#ifdef RHINO_SERIAL_KEYS
+#ifdef PLATY_SERIAL_KEYS
 #define LV_USE_SNAPSHOT 1
 #endif   // map tiles (decoded by map_view.cpp)
 

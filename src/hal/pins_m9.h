@@ -2,6 +2,13 @@
 // Elecrow ThinkNode M9 pin map. Sources: camillia-mt src/hal/hw_m9.h and
 // wadamesh variants/thinknode_m9/M9_PORT.md (hardware-verified there).
 
+#define BOARD_NAME         "ThinkNode M9"
+#define HAS_TOUCH          0
+#define HAS_KEYBOARD       1
+#define HAS_BUZZER         1
+#define LORA_CHIP_LR1110   1
+#define SD_USE_MMC         0
+
 // Power rails — both active LOW.
 #define PIN_PERIPH_POWER   18   // P-MOS: LCD / GPS / sensor rail
 #define PIN_TFT_BL         17   // PNP backlight
@@ -18,6 +25,10 @@
 #define PIN_LORA_RST       45
 #define PIN_LORA_BUSY      41
 #define PIN_LORA_DIO1      42
+#define PIN_LORA_SCK       PIN_SPI_SCK
+#define PIN_LORA_MISO      PIN_SPI_MISO
+#define PIN_LORA_MOSI      PIN_SPI_MOSI
+#define LORA_TCXO_V        3.3f
 
 #define TFT_PANEL_W        240
 #define TFT_PANEL_H        320

@@ -2,7 +2,8 @@
 #include "config/config.h"
 #include "hal/board.h"
 #include "hal/keyboard.h"
-#include "hal/pins_m9.h"
+#include "hal/board_pins.h"
+#include "hal/keys.h"
 #include "hal/gps.h"
 #include "hal/sd_card.h"
 #include "net/aprs_is.h"
@@ -10,6 +11,7 @@
 #include "services/backup.h"
 #include "services/beacon.h"
 #include "services/messages.h"
+#include "services/favorites.h"
 #include "services/data_store.h"
 #include "services/router.h"
 #include "transport/ble_kiss.h"
@@ -20,6 +22,9 @@
 #include <Arduino.h>
 #include <lvgl.h>
 #include <time.h>
+#include <algorithm>
+
+LV_FONT_DECLARE(font_star_14);
 
 namespace {
 
@@ -39,7 +44,11 @@ constexpr int kMaxDepth = 6;
 Screen s_stack[kMaxDepth];
 int s_depth = 0;
 
+enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor };
+volatile Nav s_pendingNav = Nav::None;
+
 volatile bool s_pendingCloseInfo = false;
+lv_obj_t *s_sbBack = nullptr;   // touch boards: Back (hold = Home) in the status bar
 lv_obj_t *s_sbCall, *s_sbMsg, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
 
 // ── Screen stack ─────────────────────────────────────────────────────────────
@@ -60,17 +69,68 @@ lv_obj_t *newScreen(const char *title, lv_group_t **grpOut) {
     return scr;
 }
 
+// ── On-screen keyboard (touch boards without a physical keyboard) ────────────
+
+#if HAS_TOUCH && !HAS_KEYBOARD
+lv_obj_t *s_osk = nullptr;
+
+void oskHide() {
+    if (!s_osk || lv_obj_has_flag(s_osk, LV_OBJ_FLAG_HIDDEN)) return;
+    lv_keyboard_set_textarea(s_osk, nullptr);
+    lv_obj_add_flag(s_osk, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_pad_bottom(lv_screen_active(), 4, 0);
+}
+
+void oskShow(lv_obj_t *ta) {
+    const int h = lv_display_get_vertical_resolution(nullptr) / 2;
+    if (!s_osk) {
+        s_osk = lv_keyboard_create(lv_layer_top());
+        lv_obj_set_size(s_osk, lv_pct(100), h);
+        lv_obj_align(s_osk, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_add_event_cb(s_osk, [](lv_event_t *) { oskHide(); }, LV_EVENT_READY, nullptr);
+        lv_obj_add_event_cb(s_osk, [](lv_event_t *) { oskHide(); }, LV_EVENT_CANCEL, nullptr);
+    }
+    lv_keyboard_set_textarea(s_osk, ta);
+    lv_obj_remove_flag(s_osk, LV_OBJ_FLAG_HIDDEN);
+    // Shrink the screen's content area so the field stays above the keyboard.
+    lv_obj_t *scr = lv_obj_get_screen(ta);
+    lv_obj_set_style_pad_bottom(scr, h + 4, 0);
+    lv_obj_update_layout(scr);
+    lv_obj_scroll_to_view_recursive(ta, LV_ANIM_OFF);
+}
+
+void oskAttach(lv_obj_t *ta) {
+    lv_obj_add_event_cb(ta, [](lv_event_t *e) { oskShow((lv_obj_t *)lv_event_get_target(e)); },
+                        LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(ta, [](lv_event_t *e) {
+        if (s_osk && lv_keyboard_get_textarea(s_osk) == lv_event_get_target(e)) oskHide();
+    }, LV_EVENT_DELETE, nullptr);
+}
+#else
+void oskHide() {}
+void oskAttach(lv_obj_t *) {}
+#endif
+
+void updateBackButton() {
+    if (!s_sbBack) return;
+    if (s_depth > 1) lv_obj_remove_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+}
+
 void pushScreen(lv_obj_t *scr, lv_group_t *grp, void (*refresh)() = nullptr) {
     if (s_depth == kMaxDepth) return;
+    oskHide();
     s_stack[s_depth++] = {scr, grp, refresh};
     lv_group_set_default(grp);
     lv_indev_set_group(keyboardIndev(), grp);
     lv_screen_load(scr);
+    updateBackButton();
     if (refresh) refresh();
 }
 
 void popScreen() {
     if (s_depth <= 1) return;
+    oskHide();
     Screen top = s_stack[--s_depth];
     Screen &prev = s_stack[s_depth - 1];
     lv_group_set_default(prev.grp);
@@ -78,6 +138,7 @@ void popScreen() {
     lv_screen_load(prev.scr);
     lv_group_delete(top.grp);
     lv_obj_delete(top.scr);
+    updateBackButton();
     if (prev.refresh) prev.refresh();
 }
 
@@ -123,6 +184,18 @@ void buildStatusBar() {
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(bar, 8, 0);
 
+#if HAS_TOUCH
+    s_sbBack = lv_button_create(bar);
+    lv_obj_set_size(s_sbBack, 40, kStatusH - 2);
+    lv_obj_set_style_pad_all(s_sbBack, 0, 0);
+    lv_obj_set_ext_click_area(s_sbBack, 8);
+    lv_obj_t *bl = lv_label_create(s_sbBack);
+    lv_label_set_text(bl, LV_SYMBOL_LEFT);
+    lv_obj_center(bl);
+    lv_obj_add_event_cb(s_sbBack, [](lv_event_t *) { s_pendingNav = Nav::Back; }, LV_EVENT_SHORT_CLICKED, nullptr);
+    lv_obj_add_event_cb(s_sbBack, [](lv_event_t *) { s_pendingNav = Nav::Home; }, LV_EVENT_LONG_PRESSED, nullptr);
+    lv_obj_add_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+#endif
     s_sbCall = sbLabel(bar, "");
     lv_obj_set_flex_grow(s_sbCall, 1);
     s_sbMsg = sbLabel(bar, "");
@@ -299,6 +372,66 @@ lv_obj_t *makeNote(lv_obj_t *parent, const char *text) {
     return l;
 }
 
+constexpr const char *kStar = "\xE2\x98\x85";       // U+2605, in font_star_14
+constexpr const char *kStarOpen = "\xE2\x98\x86";   // U+2606
+
+lv_obj_t *makeStar(lv_obj_t *parent, bool on) {
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, &font_star_14, 0);
+    lv_obj_set_style_text_color(l, on ? kAmber : kGrey, 0);
+    lv_label_set_text(l, on ? kStar : kStarOpen);
+    return l;
+}
+
+// Puts a favorite star in front of a list item's label.
+void markFavorite(lv_obj_t *item) { lv_obj_move_to_index(makeStar(item, true), 0); }
+
+// One-line list item: [star] text ........ right (grey).
+lv_obj_t *addRow(lv_obj_t *list, lv_group_t *grp, bool fav, const char *text, const char *right,
+                 lv_event_cb_t cb, void *ud) {
+    lv_obj_t *b = lv_list_add_button(list, nullptr, nullptr);
+    lv_obj_set_style_pad_ver(b, 6, 0);
+    lv_obj_set_style_pad_column(b, 6, 0);
+    if (fav) makeStar(b, true);
+    lv_obj_t *l = lv_label_create(b);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_label_set_text(l, text);
+    lv_obj_set_flex_grow(l, 1);
+    lv_obj_t *r = lv_label_create(b);
+    lv_obj_set_style_text_font(r, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(r, lv_color_hex(0x9aa4b2), 0);
+    lv_label_set_text(r, right);
+    if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
+    lv_group_add_obj(grp, b);
+    return b;
+}
+
+// "Favorite" toggle button for the callsign in buf (which must outlive the button).
+lv_obj_t *makeFavButton(lv_obj_t *parent, lv_group_t *grp, char *call) {
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(b, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(b, 6, 0);
+    lv_obj_set_style_pad_ver(b, 4, 0);
+    lv_obj_set_height(b, LV_SIZE_CONTENT);
+    lv_obj_set_width(b, LV_SIZE_CONTENT);
+    const bool on = favIs(call);
+    makeStar(b, on);
+    lv_obj_t *l = lv_label_create(b);
+    lv_label_set_text(l, on ? "Favorite" : "Add to favorites");
+    lv_obj_add_event_cb(b, [](lv_event_t *e) {
+        lv_obj_t *btn = (lv_obj_t *)lv_event_get_current_target(e);
+        const bool now = favToggle((const char *)lv_event_get_user_data(e));
+        lv_obj_t *star = lv_obj_get_child(btn, 0);
+        lv_label_set_text(star, now ? kStar : kStarOpen);
+        lv_obj_set_style_text_color(star, now ? kAmber : kGrey, 0);
+        lv_label_set_text(lv_obj_get_child(btn, 1), now ? "Favorite" : "Add to favorites");
+        toast(now ? "Added to favorites" : "Removed from favorites");
+    }, LV_EVENT_CLICKED, call);
+    lv_group_add_obj(grp, b);
+    return b;
+}
+
 String ageStr(uint32_t heardS) { return geo::formatAge(uptimeS() - heardS).c_str(); }
 
 // ── Monitor ──────────────────────────────────────────────────────────────────
@@ -396,6 +529,7 @@ void openStationDetail(const char *call) {
     strlcpy(s_stDetailCall, call, sizeof(s_stDetailCall));
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(call, &grp);
+    makeFavButton(scr, grp, s_stDetailCall);
     // Focusable container so the d-pad can scroll long details.
     lv_obj_t *box = lv_obj_create(scr);
     lv_obj_set_width(box, lv_pct(100));
@@ -431,6 +565,7 @@ struct {
     lv_obj_t *list, *empty;
     lv_group_t *grp;
     uint32_t gen;
+    uint32_t favGen;
     uint32_t lastBuildS;
     char calls[60][10];
 } s_sta;
@@ -438,8 +573,9 @@ struct {
 void refreshStations() {
     if (!s_sta.list) return;
     // Rebuild on new data, and every 30 s so the ages stay current.
-    if (s_sta.gen == g_dataGen && uptimeS() - s_sta.lastBuildS < 30) return;
+    if (s_sta.gen == g_dataGen && s_sta.favGen == g_favGen && uptimeS() - s_sta.lastBuildS < 30) return;
     s_sta.gen = g_dataGen;
+    s_sta.favGen = g_favGen;
     s_sta.lastBuildS = uptimeS();
 
     char keep[10] = "";
@@ -447,27 +583,23 @@ void refreshStations() {
     if (fi >= 0) strlcpy(keep, s_sta.calls[fi], sizeof(keep));
 
     lv_obj_clean(s_sta.list);
-    double myLat, myLon;
-    const bool havePos = myPosition(myLat, myLon);
-    const bool metric = g_config.units == Units::Metric;
     lv_obj_t *refocus = nullptr;
-    const size_t n = std::min<size_t>(stationDbCount(), 60);
-    for (size_t i = 0; i < n; i++) {
-        const Station *s = stationDbAt(i);
-        strlcpy(s_sta.calls[i], s->call, sizeof(s_sta.calls[i]));
-        String line = String(s->call) + "  " + ageStr(s->lastHeardS);
-        if (s->hasPos && havePos) {
-            const double km = geo::distanceKm(myLat, myLon, s->lat, s->lon);
-            line += "  " + String(geo::formatDistance(km, metric).c_str()) + " " +
-                    geo::compassPoint(geo::bearingDeg(myLat, myLon, s->lat, s->lon));
+    const size_t total = stationDbCount();
+    size_t n = 0;
+    // Favorites first, then everyone else; each most recently heard first.
+    for (int pass = 0; pass < 2; pass++) {
+        for (size_t i = 0; i < total && n < 60; i++) {
+            const Station *s = stationDbAt(i);
+            const bool fav = favIs(s->call);
+            if (fav != (pass == 0)) continue;
+            strlcpy(s_sta.calls[n], s->call, sizeof(s_sta.calls[n]));
+            lv_obj_t *b = addRow(s_sta.list, s_sta.grp, fav, s->call, ageStr(s->lastHeardS).c_str(), [](lv_event_t *e) {
+                const size_t idx = (size_t)(uintptr_t)lv_event_get_user_data(e);
+                openStationDetail(s_sta.calls[idx]);
+            }, (void *)(uintptr_t)n);
+            if (keep[0] && !strcmp(keep, s->call)) refocus = b;
+            n++;
         }
-        const char *extra = s->status[0] ? s->status : s->comment;
-        if (extra[0]) line += String("\n") + extra;
-        lv_obj_t *b = addWrapItem(s_sta.list, s_sta.grp, line.c_str(), [](lv_event_t *e) {
-            const size_t idx = (size_t)(uintptr_t)lv_event_get_user_data(e);
-            openStationDetail(s_sta.calls[idx]);
-        }, (void *)(uintptr_t)i);
-        if (keep[0] && !strcmp(keep, s->call)) refocus = b;
     }
     if (refocus) lv_group_focus_obj(refocus);
     if (n) lv_obj_add_flag(s_sta.empty, LV_OBJ_FLAG_HIDDEN);
@@ -496,6 +628,100 @@ lv_obj_t *makeInput(lv_obj_t *parent, lv_group_t *grp, const char *placeholder, 
     lv_textarea_set_max_length(ta, maxLen);
     lv_obj_set_width(ta, lv_pct(100));
     lv_group_add_obj(grp, ta);
+    oskAttach(ta);
+    return ta;
+}
+
+// ── Quick messages ───────────────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *bg, *target;
+    lv_group_t *grp;
+} s_qm;
+volatile int s_pendingQuick = -2;   // -2 none, -1 cancel, else the picked index
+
+void openQuickPicker(lv_obj_t *target) {
+    if (s_qm.bg) return;
+    oskHide();
+    s_qm.target = target;
+    s_qm.bg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_qm.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_align(s_qm.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_radius(s_qm.bg, 0, 0);
+    lv_obj_set_style_border_width(s_qm.bg, 0, 0);
+    lv_obj_set_style_bg_color(s_qm.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_qm.bg, LV_OPA_70, 0);
+    lv_obj_clear_flag(s_qm.bg, LV_OBJ_FLAG_SCROLLABLE);
+    // Tapping the backdrop cancels.
+    lv_obj_add_event_cb(s_qm.bg, [](lv_event_t *e) {
+        if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingQuick = -1;
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *box = lv_obj_create(s_qm.bg);
+    lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(box, lv_pct(96), 0);
+    lv_obj_center(box);
+    lv_obj_set_style_pad_all(box, 6, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 4, 0);
+    lv_obj_t *title = lv_label_create(box);
+    lv_label_set_text(title, LV_SYMBOL_LIST " Quick messages");
+
+    s_qm.grp = lv_group_create();
+    lv_obj_t *list = lv_list_create(box);
+    lv_obj_set_size(list, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(list, 170, 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) {
+        if (!g_config.quickMsgs[i].length()) continue;
+        addWrapItem(list, s_qm.grp, g_config.quickMsgs[i].c_str(),
+                    [](lv_event_t *e) { s_pendingQuick = (int)(uintptr_t)lv_event_get_user_data(e); },
+                    (void *)(uintptr_t)i, &lv_font_montserrat_14);
+    }
+    if (!lv_obj_get_child_count(list))
+        makeNote(box, "No quick messages set. Add them under Settings > Quick messages or in the web config.");
+    lv_obj_t *cancel = lv_button_create(box);
+    lv_label_set_text(lv_label_create(cancel), "Cancel");
+    lv_obj_add_event_cb(cancel, [](lv_event_t *) { s_pendingQuick = -1; }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(s_qm.grp, cancel);
+
+    lv_group_set_default(s_qm.grp);
+    lv_indev_set_group(keyboardIndev(), s_qm.grp);
+}
+
+// Called from uiLoop, never from an event callback (it deletes objects).
+void closeQuickPicker(int pick) {
+    if (!s_qm.bg) return;
+    lv_obj_delete(s_qm.bg);
+    lv_group_delete(s_qm.grp);
+    lv_group_t *g = s_stack[s_depth - 1].grp;
+    lv_group_set_default(g);
+    lv_indev_set_group(keyboardIndev(), g);
+    if (pick >= 0 && pick < (int)AppConfig::kQuickMsgCount) lv_textarea_set_text(s_qm.target, g_config.quickMsgs[pick].c_str());
+    lv_group_focus_obj(s_qm.target);
+    s_qm = {};
+}
+
+// Text input with a quick-message button on its left.
+lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeholder) {
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    lv_obj_set_style_pad_column(row, 4, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *btn = lv_button_create(row);
+    lv_obj_set_style_pad_hor(btn, 8, 0);
+    lv_label_set_text(lv_label_create(btn), LV_SYMBOL_LIST);
+    lv_group_add_obj(grp, btn);
+    lv_obj_t *ta = makeInput(row, grp, placeholder, 67);
+    lv_obj_set_width(ta, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(ta, 1);
+    lv_obj_add_event_cb(btn, [](lv_event_t *e) { openQuickPicker((lv_obj_t *)lv_event_get_user_data(e)); },
+                        LV_EVENT_CLICKED, ta);
     return ta;
 }
 
@@ -559,8 +785,9 @@ void openThread(const char *peer) {
     lv_obj_t *scr = newScreen((String(LV_SYMBOL_ENVELOPE " ") + peer).c_str(), &grp);
     s_thr.grp = grp;
     s_thr.gen = 0;
+    makeFavButton(scr, grp, s_thr.peer);
     s_thr.list = makeList(scr);
-    s_thr.input = makeInput(scr, grp, "Type, Enter to send", 67);
+    s_thr.input = makeMessageInput(scr, grp, "Type, Enter to send");
     lv_obj_add_event_cb(s_thr.input, [](lv_event_t *) { sendFromThread(); }, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_thr.list = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshThread);
@@ -589,7 +816,7 @@ void openNewMessage(const char *to = "") {
     s_new.to = makeInput(scr, grp, "To (callsign)", 9);
     lv_textarea_set_accepted_chars(s_new.to, kCallChars);
     lv_textarea_set_text(s_new.to, to);
-    s_new.text = makeInput(scr, grp, "Message", 67);
+    s_new.text = makeMessageInput(scr, grp, "Message");
     lv_obj_add_event_cb(s_new.to, [](lv_event_t *) { lv_group_focus_obj(s_new.text); }, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(s_new.text, [](lv_event_t *) { sendNew(); }, LV_EVENT_READY, nullptr);
     lv_obj_t *b = lv_button_create(scr);
@@ -606,19 +833,23 @@ struct {
     lv_obj_t *list;
     lv_group_t *grp;
     uint32_t gen;
+    uint32_t favGen;
     uint32_t lastBuildS;
     char peers[40][10];
 } s_msgs;
 
 void refreshMessages() {
     if (!s_msgs.list) return;
-    if (s_msgs.gen == g_msgGen && uptimeS() - s_msgs.lastBuildS < 30) return;
+    if (s_msgs.gen == g_msgGen && s_msgs.favGen == g_favGen && uptimeS() - s_msgs.lastBuildS < 30) return;
     s_msgs.gen = g_msgGen;
+    s_msgs.favGen = g_favGen;
     s_msgs.lastBuildS = uptimeS();
     const int fi = focusedIndex(s_msgs.list);
     lv_obj_clean(s_msgs.list);
     addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
-    const auto threads = messagesThreads();
+    auto threads = messagesThreads();
+    std::stable_partition(threads.begin(), threads.end(),
+                          [](const ChatThread &t) { return favIs(t.peer.c_str()); });
     size_t n = 0;
     for (const ChatThread &t : threads) {
         strlcpy(s_msgs.peers[n], t.peer.c_str(), sizeof(s_msgs.peers[n]));
@@ -630,6 +861,7 @@ void refreshMessages() {
             openThread(s_msgs.peers[(size_t)(uintptr_t)lv_event_get_user_data(e)]);
         }, (void *)(uintptr_t)n);
         if (t.unread) lv_obj_set_style_text_color(b, kAmber, 0);
+        if (favIs(t.peer.c_str())) markFavorite(b);
         if (++n == 40) break;
     }
     if (!n) makeNote(s_msgs.list, "No conversations yet.");
@@ -822,7 +1054,7 @@ void openTnc() {
 void backupToSdNow() {
     String name, err;
     if (backupSaveToSd(false, name, err))
-        openPlaceholder("Backup", ("Saved to SD card:\n/rhino/backups/" + name +
+        openPlaceholder("Backup", ("Saved to SD card:\n/platy/backups/" + name +
                                    "\n\nPasswords are not included. Restore from the web config (Device tab).")
                                       .c_str());
     else openPlaceholder("Backup", ("Backup failed: " + err).c_str());
@@ -837,6 +1069,37 @@ void openAbout() {
              (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(),
              (unsigned)boardBatteryMilliVolts());
     openPlaceholder("About", buf);
+}
+
+lv_obj_t *s_quickTa[AppConfig::kQuickMsgCount];
+
+void saveQuickMsgs() {
+    for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) {
+        String t = lv_textarea_get_text(s_quickTa[i]);
+        t.trim();
+        g_config.quickMsgs[i] = t;
+    }
+    toast(configSave() ? "Quick messages saved" : "Save failed");
+}
+
+void openQuickMsgs() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_EDIT " Quick messages", &grp);
+    for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) {
+        s_quickTa[i] = makeInput(scr, grp, (String("Quick message ") + (i + 1)).c_str(), 67);
+        lv_textarea_set_text(s_quickTa[i], g_config.quickMsgs[i].c_str());
+        lv_obj_add_event_cb(s_quickTa[i], [](lv_event_t *e) {
+            const size_t i = (size_t)(uintptr_t)lv_event_get_user_data(e);
+            if (i + 1 < AppConfig::kQuickMsgCount) lv_group_focus_obj(s_quickTa[i + 1]);
+            else saveQuickMsgs();
+        }, LV_EVENT_READY, (void *)(uintptr_t)i);
+    }
+    lv_obj_t *b = lv_button_create(scr);
+    lv_label_set_text(lv_label_create(b), LV_SYMBOL_SAVE " Save");
+    lv_obj_add_event_cb(b, [](lv_event_t *) { saveQuickMsgs(); }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, b);
+    makeNote(scr, "Shown as shortcuts when writing a message. Leave blank to hide one.");
+    pushScreen(scr, grp);
 }
 
 void openSettings() {
@@ -855,6 +1118,7 @@ void openSettings() {
                               homePanelName(g_config.homePanel));
     });
     lv_label_set_text_fmt(lv_obj_get_child(hp, -1), "Home panel: %s", homePanelName(g_config.homePanel));
+    addItem(list, grp, LV_SYMBOL_EDIT, "Quick messages", [](lv_event_t *) { openQuickMsgs(); });
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
@@ -1070,18 +1334,15 @@ void buildHome() {
     pushScreen(scr, grp, refreshHome);
 }
 
-enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor };
-volatile Nav s_pendingNav = Nav::None;
-
 // Runs inside LVGL's indev read; navigation is deferred to uiLoop() so no
 // screen is deleted while LVGL is still processing input for it.
 bool hotkey(uint8_t key) {
     switch (key) {
-        case M9_KEY_BACK: s_pendingNav = Nav::Back; return true;
-        case M9_KEY_HOME: s_pendingNav = Nav::Home; return true;
-        case M9_KEY_MESSAGE: s_pendingNav = Nav::Messages; return true;
-        case M9_KEY_MAP: s_pendingNav = Nav::Map; return true;
-        case M9_KEY_SUB_HOME: s_pendingNav = Nav::Monitor; return true;
+        case RK_BACK: s_pendingNav = Nav::Back; return true;
+        case RK_HOME: s_pendingNav = Nav::Home; return true;
+        case RK_MESSAGE: s_pendingNav = Nav::Messages; return true;
+        case RK_MAP: s_pendingNav = Nav::Map; return true;
+        case RK_MONITOR: s_pendingNav = Nav::Monitor; return true;
         default: return false;
     }
 }
@@ -1106,6 +1367,12 @@ void uiBegin() {
 void uiLoop() {
     const Nav nav = s_pendingNav;
     s_pendingNav = Nav::None;
+    if (s_qm.bg && (s_pendingQuick != -2 || nav != Nav::None)) {
+        const int pick = s_pendingQuick;
+        s_pendingQuick = -2;
+        closeQuickPicker(pick);
+        if (nav == Nav::Back || nav == Nav::None) return;
+    }
     if (s_pendingCloseInfo || (nav != Nav::None && s_info.bg)) {
         s_pendingCloseInfo = false;
         closeInfo();

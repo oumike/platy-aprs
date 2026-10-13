@@ -105,6 +105,11 @@ void configToJson(const AppConfig &c, JsonObject o) {
     JsonObject lg = o["log"].to<JsonObject>();
     lg["enabled"] = c.sdLog;
     lg["includeIs"] = c.sdLogIs;
+
+    o["favorites"] = c.favorites;
+
+    JsonObject q = o["quickMessages"].to<JsonObject>();
+    for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) q["m" + String(i + 1)] = c.quickMsgs[i];
 }
 
 const char *homePanelKey(HomePanel p) {
@@ -251,6 +256,13 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         if (pw.length()) c.adminPassword = pw;
         if (d["clearAdminPassword"] | false) c.adminPassword = "";
     }
+    takeStr(o, "favorites", c.favorites);
+    JsonObjectConst q = o["quickMessages"];
+    if (q)
+        for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) {
+            takeStr(q, ("m" + String(i + 1)).c_str(), c.quickMsgs[i]);
+            c.quickMsgs[i].trim();
+        }
 }
 
 String configValidate(const AppConfig &c) {
@@ -263,6 +275,8 @@ String configValidate(const AppConfig &c) {
         return "Symbol table must be '/', '\\' or an overlay character";
     if (c.symbolCode < '!' || c.symbolCode > '~') return "Invalid symbol code";
     if (c.comment.length() > 43) return "Comment is limited to 43 characters";
+    for (const String &m : c.quickMsgs)
+        if (m.length() > 67) return "Quick messages are limited to 67 characters";
     if (c.fixedLat < -90 || c.fixedLat > 90) return "Latitude out of range";
     if (c.fixedLon < -180 || c.fixedLon > 180) return "Longitude out of range";
     if (c.beaconIntervalS != 0 && c.beaconIntervalS < 60) return "Beacon interval must be at least 60 s";

@@ -5,8 +5,8 @@
 #include "hal/sd_card.h"
 #include "version.h"
 
-static const char *kFormat = "rhino-aprs-backup";
-static const char *kDir = "/rhino/backups";
+static const char *kFormat = "platy-aprs-backup";
+static const char *kDir = "/platy/backups";
 static constexpr int kVersion = 1;
 
 void backupBuild(JsonDocument &doc, bool includeSecrets) {
@@ -27,8 +27,10 @@ void backupBuild(JsonDocument &doc, bool includeSecrets) {
 }
 
 bool backupRestore(JsonObjectConst root, String &err) {
-    if (strcmp(root["format"] | "", kFormat) != 0) {
-        err = "Not a rhino-aprs backup file";
+    // Backups from before the rename carry the old format name.
+    const char *fmt = root["format"] | "";
+    if (strcmp(fmt, kFormat) != 0 && strcmp(fmt, "rhino-aprs-backup") != 0) {
+        err = "Not a platy-aprs backup file";
         return false;
     }
     if ((root["version"] | 0) > kVersion) {
@@ -78,11 +80,11 @@ bool backupSaveToSd(bool includeSecrets, String &nameOut, String &err) {
     if (now > 1700000000) {
         struct tm tm;
         localtime_r(&now, &tm);
-        strftime(name, sizeof(name), "rhino-aprs-%Y%m%d-%H%M%S.json", &tm);
+        strftime(name, sizeof(name), "platy-aprs-%Y%m%d-%H%M%S.json", &tm);
     } else {
         // Clock not set: number the files instead.
         for (int n = 1; n < 1000; n++) {
-            snprintf(name, sizeof(name), "rhino-aprs-backup-%03d.json", n);
+            snprintf(name, sizeof(name), "platy-aprs-backup-%03d.json", n);
             if (!sdFs().exists(String(kDir) + "/" + name)) break;
         }
     }
