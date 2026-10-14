@@ -33,11 +33,13 @@ To release, run the **Release** workflow from the Actions tab: it builds with th
 
 ## First-time setup
 
-1. On first boot the device opens an open access point named `PLATY-APRS-XXXX`. The home screen shows its name and a join QR code.
-2. Join that network and browse to `http://192.168.4.1`. There is no captive portal.
-3. Enter your callsign and other settings, then set your Wi-Fi network on the **Wi-Fi** tab and save.
-4. Once the device joins your network, the setup AP shuts down after about 15 s. Config is then served at `http://<device-ip>` and `http://platy-aprs.local`.
-5. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device.
+1. If the device has no settings (new or erased flash) but the SD card has backups in `/platy/backups`, it first asks
+   whether to restore one (it reboots with those settings) or start fresh.
+2. On first boot the device opens an open access point named `PLATY-APRS-XXXX`. The home screen shows its name and a join QR code.
+3. Join that network and browse to `http://192.168.4.1`. There is no captive portal.
+4. Enter your callsign and other settings, then set your Wi-Fi network on the **Wi-Fi** tab and save.
+5. Once the device joins your network, the setup AP shuts down after about 15 s. Config is then served at `http://<device-ip>` and `http://platy-aprs.local`.
+6. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device.
 
 You can set an optional admin password (username `admin`) on the **Device** tab.
 

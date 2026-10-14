@@ -298,6 +298,9 @@ String configValidate(const AppConfig &c) {
 
 void configResetToDefaults() { g_config = AppConfig(); }
 
+static bool s_fresh = false;
+bool configIsFresh() { return s_fresh; }
+
 bool configBegin() {
     if (!LittleFS.begin(true)) {
         Serial.println("[config] LittleFS mount failed; using defaults");
@@ -308,6 +311,7 @@ bool configBegin() {
     File f = stat("/littlefs/config.json", &st) == 0 ? LittleFS.open(kPath, "r") : File();
     if (!f) {
         Serial.println("[config] no config yet; using defaults");
+        s_fresh = true;
         return true;
     }
     JsonDocument doc;

@@ -1060,6 +1060,58 @@ void backupToSdNow() {
     else openPlaceholder("Backup", ("Backup failed: " + err).c_str());
 }
 
+// ── Restore prompt (new flash, backups on the SD card) ──────────────────────
+
+struct {
+    std::vector<String> names;
+    uint32_t rebootAtMs;
+} s_restore;
+
+void restoreFromSd(size_t idx) {
+    if (idx >= s_restore.names.size() || s_restore.rebootAtMs) return;
+    const String &name = s_restore.names[idx];
+    JsonDocument doc;
+    String err;
+    if (!backupReadSd(name, doc, err) || !backupRestore(doc.as<JsonObjectConst>(), err)) {
+        toast("Restore failed: " + err, 6000);
+        return;
+    }
+    Serial.printf("[backup] restored %s; rebooting\n", name.c_str());
+    toast("Restored " + name + ". Rebooting...", 5000);
+    s_restore.rebootAtMs = millis() + 1500;
+}
+
+void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_SD_CARD " Restore settings?", &grp);
+    makeNote(scr, "This device has no settings yet, but the SD card has backups. Pick one to restore "
+                  "(the device reboots), or start fresh. Passwords are only restored if the backup includes them.");
+    lv_obj_t *list = makeList(scr);
+    s_restore.names.clear();
+    lv_obj_t *first = nullptr;
+    for (const auto &f : files) {
+        String line = f.name;
+        JsonDocument doc;
+        String err;
+        if (backupReadSd(f.name, doc, err)) {
+            const char *call = doc["callsign"] | "";
+            if (*call) line += String("\n") + call;
+        }
+        lv_obj_t *b = addWrapItem(list, grp, line.c_str(), [](lv_event_t *e) {
+            restoreFromSd((size_t)(uintptr_t)lv_event_get_user_data(e));
+        }, (void *)(uintptr_t)s_restore.names.size(), &lv_font_montserrat_14);
+        if (!first) first = b;
+        s_restore.names.push_back(f.name);
+    }
+    addItem(list, grp, LV_SYMBOL_CLOSE, "Start fresh (don't ask again)", [](lv_event_t *) {
+        if (s_restore.rebootAtMs) return;
+        configSave();   // a saved config means this prompt won't come back
+        s_pendingNav = Nav::Back;
+    });
+    if (first) lv_group_focus_obj(first);
+    pushScreen(scr, grp);
+}
+
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 void openAbout() {
@@ -1359,6 +1411,10 @@ void uiBegin() {
     keyboardSetHotkeyHandler(hotkey);
     buildStatusBar();
     buildHome();
+    if (configIsFresh()) {
+        const auto files = backupListSd();
+        if (!files.empty()) openRestorePrompt(files);
+    }
     updateStatusBar();
     messagesSetIncomingHook(onIncomingMessage);
     lv_timer_create(tick, 1000, nullptr);
@@ -1402,5 +1458,6 @@ void uiLoop() {
         popScreen();
         openTnc();
     }
+    if (s_restore.rebootAtMs && (int32_t)(millis() - s_restore.rebootAtMs) >= 0) ESP.restart();
     toastLoop();
 }

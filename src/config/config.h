@@ -96,6 +96,8 @@ struct AppConfig {
 extern AppConfig g_config;
 
 bool configBegin();   // mounts LittleFS and loads /config.json
+// True when there was no saved config at boot (new or erased flash).
+bool configIsFresh();
 bool configSave();
 void configResetToDefaults();
 
