@@ -16,6 +16,7 @@ enum : uint32_t {
     CMD_RECONFIGURE = 1 << 1,
     CMD_CONNECT = 1 << 2,
     CMD_DISCONNECT = 1 << 3,
+    CMD_FORGET = 1 << 4,
 };
 
 SemaphoreHandle_t s_mtx;
@@ -38,6 +39,8 @@ uint32_t s_backoffS = kBackoffMinS;
 uint32_t s_nextAttemptMs;
 String s_addr, s_svcUuid, s_wrUuid, s_ntUuid, s_name;
 uint8_t s_addrType;
+String s_forgetAddr;          // guarded by s_mtx; empty = all bonds
+uint8_t s_forgetAddrType;
 
 template <typename F>
 void withLock(F fn) {
@@ -229,6 +232,28 @@ void task(void *) {
             }
         }
 
+        if (cmds & CMD_FORGET) {
+            String addr;
+            uint8_t type;
+            withLock([&] {
+                addr = s_forgetAddr;
+                type = s_forgetAddrType;
+            });
+            addr.toLowerCase();
+            // The link's encryption keys come from the bond, so reconnect to re-pair.
+            const bool hitsLink = s_client && s_client->isConnected() && (!addr.length() || addr == s_addr);
+            if (hitsLink) dropLink();
+            const bool ok = addr.length()
+                                ? NimBLEDevice::deleteBond(NimBLEAddress(std::string(addr.c_str()), type))
+                                : NimBLEDevice::deleteAllBonds();
+            Serial.printf("[ble] forget bond %s: %s\n", addr.length() ? addr.c_str() : "(all)", ok ? "ok" : "failed");
+            if (hitsLink) {
+                s_backoffS = kBackoffMinS;
+                s_nextAttemptMs = millis() + 1000;
+                setState(s_wantConnected ? BleState::Waiting : BleState::Idle);
+            }
+        }
+
         if (cmds & CMD_SCAN) {
             withLock([] {
                 s_results.clear();
@@ -326,6 +351,24 @@ std::vector<BleScanResult> BleKissTransport::scanResults() {
 void BleKissTransport::reconfigure() { post(CMD_RECONFIGURE); }
 void BleKissTransport::connectNow() { post(CMD_CONNECT); }
 void BleKissTransport::disconnect() { post(CMD_DISCONNECT); }
+
+std::vector<BleBond> BleKissTransport::bonds() {
+    std::vector<BleBond> r;
+    const int n = NimBLEDevice::getNumBonds();
+    for (int i = 0; i < n; i++) {
+        const NimBLEAddress a = NimBLEDevice::getBondedAddress(i);
+        r.push_back({String(a.toString().c_str()), a.getType()});
+    }
+    return r;
+}
+
+void BleKissTransport::forgetBond(const String &address, uint8_t addressType) {
+    withLock([&] {
+        s_forgetAddr = address;
+        s_forgetAddrType = addressType;
+    });
+    post(CMD_FORGET);
+}
 
 BleStatus BleKissTransport::status() {
     BleStatus s;

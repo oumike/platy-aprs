@@ -19,6 +19,11 @@ struct BleScanResult {
     bool kissService;   // advertises the configured KISS service UUID
 };
 
+struct BleBond {
+    String address;
+    uint8_t addressType;
+};
+
 struct BleStatus {
     BleState state;
     bool scanning;
@@ -47,6 +52,11 @@ public:
     void disconnect();   // stays disconnected until connectNow()/reconfigure()
 
     BleStatus status();
+
+    // Pairing (bond) keys stored on this device.
+    std::vector<BleBond> bonds();
+    // Deletes one bond (empty address = all); drops the link if it uses that bond.
+    void forgetBond(const String &address = String(), uint8_t addressType = 0);
 };
 
 extern BleKissTransport g_ble;

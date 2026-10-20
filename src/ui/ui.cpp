@@ -21,6 +21,7 @@
 #include "version.h"
 #include <Arduino.h>
 #include <lvgl.h>
+#include <src/themes/lv_theme_private.h>
 #include <time.h>
 #include <algorithm>
 
@@ -44,12 +45,75 @@ constexpr int kMaxDepth = 6;
 Screen s_stack[kMaxDepth];
 int s_depth = 0;
 
-enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor };
+enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor, Stations };
 volatile Nav s_pendingNav = Nav::None;
 
 volatile bool s_pendingCloseInfo = false;
 lv_obj_t *s_sbBack = nullptr;   // touch boards: Back (hold = Home) in the status bar
 lv_obj_t *s_sbCall, *s_sbMsg, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
+lv_obj_t *s_sbTnc, *s_sbTncTx;         // connected-TNC radio icon + transmit arrow
+uint32_t s_sbTncLastTx = 0;
+uint32_t s_rxSeenBle = 0, s_rxSeenLora = 0, s_rxBlinkMs = 0;
+constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, however busy the channel
+
+// ── Theme: high-contrast keypad focus + glowing buttons ──────────────────────
+
+lv_theme_t s_theme;
+lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor;
+
+void themeApply(lv_theme_t *, lv_obj_t *obj) {
+    const bool isBtn = lv_obj_check_type(obj, &lv_button_class);
+    const bool isItem = lv_obj_check_type(obj, &lv_list_button_class);
+    if (isBtn) {
+        lv_obj_add_style(obj, &s_stBtnGlow, 0);
+        lv_obj_add_style(obj, &s_stBtnGlowFocus, LV_STATE_FOCUS_KEY);
+    }
+    if (isItem) lv_obj_add_style(obj, &s_stItemFocus, LV_STATE_FOCUS_KEY);
+    if (lv_obj_check_type(obj, &lv_textarea_class)) {
+        lv_obj_add_style(obj, &s_stCursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
+    }
+    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
+}
+
+void themeInit() {
+    lv_style_init(&s_stFocus);
+    lv_style_set_outline_color(&s_stFocus, kAmber);
+    lv_style_set_outline_opa(&s_stFocus, LV_OPA_COVER);
+    lv_style_set_outline_width(&s_stFocus, 2);
+    lv_style_set_outline_pad(&s_stFocus, 0);
+
+    lv_style_init(&s_stItemFocus);
+    lv_style_set_bg_color(&s_stItemFocus, lv_color_hex(0x4a3410));
+    lv_style_set_bg_opa(&s_stItemFocus, LV_OPA_COVER);
+    lv_style_set_text_color(&s_stItemFocus, lv_color_white());
+
+    lv_style_init(&s_stBtnGlow);
+    lv_style_set_shadow_color(&s_stBtnGlow, lv_palette_main(LV_PALETTE_BLUE));
+    lv_style_set_shadow_width(&s_stBtnGlow, 10);
+    lv_style_set_shadow_spread(&s_stBtnGlow, 0);
+    lv_style_set_shadow_offset_x(&s_stBtnGlow, 0);
+    lv_style_set_shadow_offset_y(&s_stBtnGlow, 0);
+    lv_style_set_shadow_opa(&s_stBtnGlow, LV_OPA_50);
+
+    lv_style_init(&s_stBtnGlowFocus);
+    lv_style_set_shadow_color(&s_stBtnGlowFocus, kAmber);
+    lv_style_set_shadow_width(&s_stBtnGlowFocus, 16);
+    lv_style_set_shadow_spread(&s_stBtnGlowFocus, 2);
+    lv_style_set_shadow_opa(&s_stBtnGlowFocus, LV_OPA_80);
+    lv_style_set_text_color(&s_stBtnGlowFocus, lv_color_white());
+
+    lv_style_init(&s_stCursor);
+    lv_style_set_border_color(&s_stCursor, kAmber);
+    lv_style_set_border_width(&s_stCursor, 3);
+    lv_style_set_border_side(&s_stCursor, LV_BORDER_SIDE_LEFT);
+    lv_style_set_border_opa(&s_stCursor, LV_OPA_COVER);
+
+    lv_theme_t *base = lv_display_get_theme(nullptr);
+    s_theme = *base;
+    lv_theme_set_parent(&s_theme, base);
+    lv_theme_set_apply_cb(&s_theme, themeApply);
+    lv_display_set_theme(nullptr, &s_theme);
+}
 
 // ── Screen stack ─────────────────────────────────────────────────────────────
 
@@ -163,11 +227,53 @@ lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char 
 
 // ── Status bar ───────────────────────────────────────────────────────────────
 
+lv_obj_t *sbRect(lv_obj_t *parent, int x, int y, int w, int h, int r, lv_color_t c) {
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_style_radius(o, r, 0);
+    lv_obj_set_style_bg_color(o, c, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    return o;
+}
+
+// Handheld radio drawn from rectangles: antenna, body, display, speaker grille.
+void buildTncIcon(lv_obj_t *bar) {
+    const lv_color_t bg = lv_color_hex(0x1b2027);
+    s_sbTnc = lv_obj_create(bar);
+    lv_obj_remove_style_all(s_sbTnc);
+    lv_obj_set_size(s_sbTnc, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(s_sbTnc, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_sbTnc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(s_sbTnc, 2, 0);
+    lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *radio = lv_obj_create(s_sbTnc);
+    lv_obj_remove_style_all(radio);
+    lv_obj_set_size(radio, 10, 16);
+    lv_obj_remove_flag(radio, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(radio, LV_OBJ_FLAG_SCROLLABLE);
+    sbRect(radio, 1, 0, 2, 5, 1, kGreen);
+    sbRect(radio, 0, 4, 10, 12, 2, kGreen);
+    sbRect(radio, 2, 6, 6, 3, 0, bg);
+    sbRect(radio, 2, 11, 6, 1, 0, bg);
+    sbRect(radio, 2, 13, 6, 1, 0, bg);
+    s_sbTncTx = lv_label_create(s_sbTnc);
+    lv_label_set_text(s_sbTncTx, LV_SYMBOL_UPLOAD);
+    lv_obj_set_style_text_color(s_sbTncTx, kAmber, 0);
+    lv_obj_add_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
+}
+
 lv_obj_t *sbLabel(lv_obj_t *bar, const char *txt) {
     lv_obj_t *l = lv_label_create(bar);
     lv_label_set_text(l, txt);
     return l;
 }
+
+void rxBlinkTimer(lv_timer_t *);
 
 void buildStatusBar() {
     lv_obj_t *bar = lv_obj_create(lv_layer_top());
@@ -200,6 +306,7 @@ void buildStatusBar() {
     lv_obj_set_flex_grow(s_sbCall, 1);
     s_sbMsg = sbLabel(bar, "");
     lv_obj_set_style_text_color(s_sbMsg, kAmber, 0);
+    buildTncIcon(bar);
     s_sbBt = sbLabel(bar, LV_SYMBOL_BLUETOOTH);
     s_sbGps = sbLabel(bar, LV_SYMBOL_GPS);
     s_sbWifi = sbLabel(bar, LV_SYMBOL_WIFI);
@@ -207,6 +314,57 @@ void buildStatusBar() {
     s_sbTime = sbLabel(bar, "--:--");
     lv_obj_set_style_text_color(s_sbBt, kGrey, 0);
     lv_obj_set_style_text_color(s_sbGps, kGrey, 0);
+    s_rxSeenBle = g_ble.status().rxFrames;
+    s_rxSeenLora = g_lora.status().rxFrames;
+    lv_timer_create(rxBlinkTimer, 250, nullptr);
+}
+
+void setOpa(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0); }
+
+// Fade out and back in; repeat = LV_ANIM_REPEAT_INFINITE keeps pulsing until stopped.
+void blink(lv_obj_t *obj, uint32_t halfMs, uint32_t repeat) {
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, obj);
+    lv_anim_set_exec_cb(&a, setOpa);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_10);
+    lv_anim_set_duration(&a, halfMs);
+    lv_anim_set_playback_duration(&a, halfMs);
+    lv_anim_set_repeat_count(&a, repeat);
+    lv_anim_start(&a);
+}
+
+void stopBlink(lv_obj_t *obj) {
+    lv_anim_delete(obj, setOpa);
+    lv_obj_set_style_opa(obj, LV_OPA_COVER, 0);
+}
+
+// Unread messages: the envelope pulses until they are read.
+void updateMsgIcon() {
+    const uint32_t unread = messagesUnread();
+    const bool pulsing = lv_anim_get(s_sbMsg, setOpa) != nullptr;
+    if (unread) {
+        lv_label_set_text_fmt(s_sbMsg, LV_SYMBOL_ENVELOPE " %lu", (unsigned long)unread);
+        if (!pulsing) blink(s_sbMsg, 450, LV_ANIM_REPEAT_INFINITE);
+    } else {
+        lv_label_set_text(s_sbMsg, "");
+        if (pulsing) stopBlink(s_sbMsg);
+    }
+}
+
+// Received packets: blink the radio indicator once, rate-limited.
+void rxBlinkTimer(lv_timer_t *) {
+    const bool lora = g_config.rfLink == RfLink::Lora;
+    const uint32_t rx = lora ? g_lora.status().rxFrames : g_ble.status().rxFrames;
+    uint32_t &seen = lora ? s_rxSeenLora : s_rxSeenBle;
+    if (rx == seen) return;
+    seen = rx;
+    const uint32_t now = lv_tick_get();
+    if (s_rxBlinkMs && now - s_rxBlinkMs < kRxBlinkGapMs) return;
+    lv_obj_t *icon = lora ? s_sbBt : s_sbTnc;
+    if (lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN) || lv_anim_get(icon, setOpa)) return;
+    s_rxBlinkMs = now;
+    blink(icon, 150, 0);
 }
 
 void updateStatusBar() {
@@ -218,6 +376,20 @@ void updateStatusBar() {
     else if (w.apActive) wc = kAmber;
     lv_obj_set_style_text_color(s_sbWifi, wc, 0);
     lv_label_set_text(s_sbWifi, w.apActive ? LV_SYMBOL_WIFI " AP" : LV_SYMBOL_WIFI);
+
+    const BleStatus tnc = g_ble.status();
+    const bool tncUp = g_config.rfLink == RfLink::Ble && tnc.state == BleState::Connected;
+    if (tncUp) {
+        lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_sbBt, LV_OBJ_FLAG_HIDDEN);
+        // Flash the arrow for one status tick after each frame sent to the radio.
+        if (tnc.txFrames != s_sbTncLastTx) lv_obj_remove_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_sbBt, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_sbTncLastTx = tnc.txFrames;
 
     if (g_config.rfLink == RfLink::Lora) {
         const LoraState ls = g_lora.status().state;
@@ -236,9 +408,7 @@ void updateStatusBar() {
     const GpsFix g = gpsFix();
     lv_obj_set_style_text_color(s_sbGps, g.valid ? kGreen : g.alive ? kAmber : kGrey, 0);
 
-    const uint32_t unread = messagesUnread();
-    if (unread) lv_label_set_text_fmt(s_sbMsg, LV_SYMBOL_ENVELOPE " %lu", (unsigned long)unread);
-    else lv_label_set_text(s_sbMsg, "");
+    updateMsgIcon();
 
     const int pct = boardBatteryPercent();
     const char *sym = pct < 0    ? LV_SYMBOL_BATTERY_EMPTY
@@ -308,38 +478,6 @@ void openPlaceholder(const char *title, const char *note) {
     lv_obj_set_style_text_color(l, kGrey, 0);
     pushScreen(scr, grp);
 }
-
-// ── Wi-Fi status screen ──────────────────────────────────────────────────────
-
-lv_obj_t *s_wifiInfo = nullptr;
-
-void refreshWifiInfo() {
-    if (!s_wifiInfo) return;
-    const WifiStatus w = wifiStatus();
-    String t;
-    t += "Network: " + (w.staConfigured ? w.staSsid : String("(not set)")) + "\n";
-    t += w.staConnected ? "Connected  IP " + w.staIp + "  " + String(w.rssi) + " dBm\n"
-                        : String("Not connected\n");
-    t += "Web: http://" + w.hostname + ".local\n\n";
-    if (w.apActive) {
-        t += "Setup AP: " + w.apSsid + " (" + apReasonStr(w.apReason) + ")\n";
-        t += "Open http://" + w.apIp + "  clients: " + String(w.apClients);
-    } else {
-        t += "Setup AP: off";
-    }
-    lv_label_set_text(s_wifiInfo, t.c_str());
-}
-
-void openWifiStatus() {
-    lv_group_t *grp;
-    lv_obj_t *scr = newScreen(LV_SYMBOL_WIFI " Wi-Fi", &grp);
-    s_wifiInfo = lv_label_create(scr);
-    lv_label_set_long_mode(s_wifiInfo, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(s_wifiInfo, lv_pct(100));
-    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_wifiInfo = nullptr; }, LV_EVENT_DELETE, nullptr);
-    pushScreen(scr, grp, refreshWifiInfo);
-}
-
 
 // ── List helpers ─────────────────────────────────────────────────────────────
 
@@ -880,6 +1018,7 @@ void openMessages() {
 }
 
 void onIncomingMessage(const ChatMsg &m) {
+    updateMsgIcon();
     // No banner when that conversation is already on screen.
     if (s_thr.list && !strcasecmp(s_thr.peer, m.peer)) return;
     toast(String(LV_SYMBOL_ENVELOPE " ") + m.peer + ": " + m.text, 6000);
@@ -930,6 +1069,157 @@ void openGps() {
     lv_label_set_text(lv_obj_get_child(gb, -1), g_config.gpsEnabled ? "Turn GPS off" : "Turn GPS on");
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_gpsInfo = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshGps);
+}
+
+// ── Wi-Fi ────────────────────────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *info, *list;
+    lv_group_t *grp;
+    std::vector<WifiNetwork> shown;
+    bool wasScanning;
+} s_wifi;
+
+struct {
+    lv_obj_t *ssid, *pass;
+    String fixedSsid;   // empty: the user types the name (hidden network)
+} s_wifiJoin;
+
+void wifiJoinConnect() {
+    const String ssid = s_wifiJoin.ssid ? String(lv_textarea_get_text(s_wifiJoin.ssid)) : s_wifiJoin.fixedSsid;
+    const String pass = s_wifiJoin.pass ? String(lv_textarea_get_text(s_wifiJoin.pass)) : String();
+    String err;
+    if (!wifiConnectTo(ssid, pass, err)) {
+        toast(err);
+        return;
+    }
+    toast(LV_SYMBOL_WIFI " Connecting to " + ssid + "...");
+    s_pendingNav = Nav::Back;
+}
+
+// Password (and, for hidden networks, name) entry. ssid empty = hidden network.
+void openWifiJoin(const String &ssid) {
+    s_wifiJoin = {};
+    s_wifiJoin.fixedSsid = ssid;
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(ssid.length() ? (String(LV_SYMBOL_WIFI " ") + ssid).c_str() : LV_SYMBOL_WIFI " Other network", &grp);
+    if (!ssid.length()) s_wifiJoin.ssid = makeInput(scr, grp, "Network name (SSID)", 32);
+    s_wifiJoin.pass = makeInput(scr, grp, "Password", 64);
+    lv_textarea_set_password_mode(s_wifiJoin.pass, true);
+    if (s_wifiJoin.ssid)
+        lv_obj_add_event_cb(s_wifiJoin.ssid, [](lv_event_t *) { lv_group_focus_obj(s_wifiJoin.pass); }, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(s_wifiJoin.pass, [](lv_event_t *) { wifiJoinConnect(); }, LV_EVENT_READY, nullptr);
+
+    lv_obj_t *show = lv_button_create(scr);
+    lv_label_set_text(lv_label_create(show), LV_SYMBOL_EYE_OPEN " Show password");
+    lv_obj_add_event_cb(show, [](lv_event_t *e) {
+        const bool hidden = !lv_textarea_get_password_mode(s_wifiJoin.pass);
+        lv_textarea_set_password_mode(s_wifiJoin.pass, hidden);
+        lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 0),
+                          hidden ? LV_SYMBOL_EYE_OPEN " Show password" : LV_SYMBOL_EYE_CLOSE " Hide password");
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, show);
+
+    lv_obj_t *b = lv_button_create(scr);
+    lv_label_set_text(lv_label_create(b), LV_SYMBOL_OK " Connect");
+    lv_obj_add_event_cb(b, [](lv_event_t *) { wifiJoinConnect(); }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, b);
+
+    const bool saved = ssid.length() && ssid == g_config.wifiSsid && g_config.wifiPassword.length();
+    makeNote(scr, saved ? "Leave the password blank to keep the saved one."
+                        : "Leave the password blank for an open network.");
+    pushScreen(scr, grp);
+    lv_group_focus_obj(s_wifiJoin.ssid ? s_wifiJoin.ssid : s_wifiJoin.pass);
+}
+
+void wifiPick(size_t idx) {
+    if (idx >= s_wifi.shown.size()) return;
+    const WifiNetwork w = s_wifi.shown[idx];
+    if (w.secure) {
+        openWifiJoin(w.ssid);
+        return;
+    }
+    String err;
+    if (wifiConnectTo(w.ssid, "", err)) toast(LV_SYMBOL_WIFI " Connecting to " + w.ssid + "...");
+    else toast(err);
+}
+
+void rebuildWifiList(bool scanning) {
+    lv_obj_clean(s_wifi.list);
+    if (scanning) {
+        makeNote(s_wifi.list, "Scanning...");
+    } else {
+        for (size_t i = 0; i < s_wifi.shown.size(); i++) {
+            const WifiNetwork &w = s_wifi.shown[i];
+            const bool current = w.ssid == g_config.wifiSsid;
+            const String name = (current ? String(LV_SYMBOL_OK " ") : String()) + w.ssid;
+            const String right = String(w.rssi) + " dBm" + (w.secure ? "" : " open");
+            addRow(s_wifi.list, s_wifi.grp, false, name.c_str(), right.c_str(), [](lv_event_t *e) {
+                wifiPick((size_t)(uintptr_t)lv_event_get_user_data(e));
+            }, (void *)(uintptr_t)i);
+        }
+        if (s_wifi.shown.empty()) makeNote(s_wifi.list, "No networks found.");
+    }
+    addItem(s_wifi.list, s_wifi.grp, LV_SYMBOL_EDIT, "Other network...", [](lv_event_t *) { openWifiJoin(""); });
+}
+
+void refreshWifi() {
+    if (!s_wifi.info) return;
+    const WifiStatus w = wifiStatus();
+    String t;
+    t += "Network: " + (w.staConfigured ? w.staSsid : String("(not set)")) + "\n";
+    t += w.staConnected   ? "Connected  IP " + w.staIp + "  " + String(w.rssi) + " dBm\n"
+         : w.staConfigured ? String("Connecting...\n")
+                           : String("Not connected\n");
+    t += "Web: http://" + w.hostname + ".local\n";
+    if (w.apActive) {
+        t += "Setup AP: " + w.apSsid + " (" + apReasonStr(w.apReason) + ")\n";
+        t += "Open http://" + w.apIp + "  clients: " + String(w.apClients);
+    } else {
+        t += "Setup AP: off";
+    }
+    lv_label_set_text(s_wifi.info, t.c_str());
+
+    // Show results once the scan finishes, unless the user is already moving through them.
+    const bool scanning = wifiScanRunning();
+    if (s_wifi.wasScanning && !scanning && focusedIndex(s_wifi.list) < 0) {
+        wifiScanResults(s_wifi.shown);
+        rebuildWifiList(false);
+    }
+    s_wifi.wasScanning = scanning;
+}
+
+void wifiScanUi() {
+    s_wifi.shown.clear();
+    if (!wifiScanStart()) {
+        toast("Wi-Fi scan failed, try again");
+        return;
+    }
+    s_wifi.wasScanning = true;
+    rebuildWifiList(true);
+}
+
+// scan: start a network scan right away (not when opened for the setup AP,
+// since scanning briefly disturbs clients on it).
+void openWifi(bool scan) {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_WIFI " Wi-Fi", &grp);
+    s_wifi.grp = grp;
+    s_wifi.shown.clear();
+    s_wifi.wasScanning = false;
+    s_wifi.info = lv_label_create(scr);
+    lv_label_set_long_mode(s_wifi.info, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_wifi.info, lv_pct(100));
+    lv_obj_set_style_text_font(s_wifi.info, &lv_font_montserrat_12, 0);
+    lv_obj_t *b = lv_button_create(scr);
+    lv_label_set_text(lv_label_create(b), LV_SYMBOL_REFRESH " Scan for networks");
+    lv_obj_add_event_cb(b, [](lv_event_t *) { wifiScanUi(); }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, b);
+    s_wifi.list = makeList(scr);
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_wifi.info = nullptr; }, LV_EVENT_DELETE, nullptr);
+    if (scan) wifiScanUi();
+    else rebuildWifiList(false);
+    pushScreen(scr, grp, refreshWifi);
 }
 
 // ── TNC ──────────────────────────────────────────────────────────────────────
@@ -1011,16 +1301,26 @@ void openTnc() {
 
     lv_obj_t *row = lv_obj_create(scr);
     lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(row, 0, 0);
+    // Padding leaves room for the focus outline and glow, which the row would otherwise clip.
+    lv_obj_set_style_pad_all(row, 5, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_style_pad_row(row, 4, 0);
-    lv_obj_set_style_pad_column(row, 4, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(row, 6, 0);
     auto btn = [&](const char *txt, lv_event_cb_t cb) {
         lv_obj_t *b = lv_button_create(row);
+        lv_obj_set_flex_grow(b, 1);
+        lv_obj_set_height(b, LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_hor(b, 4, 0);
+        lv_obj_set_style_pad_ver(b, 4, 0);
+        lv_obj_set_style_radius(b, 4, 0);
         lv_obj_t *l = lv_label_create(b);
         lv_label_set_text(l, txt);
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(l, lv_pct(100));
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
         lv_group_add_obj(grp, b);
     };
@@ -1047,6 +1347,78 @@ void openTnc() {
     s_tnc.list = makeList(scr);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_tnc.info = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshTnc);
+}
+
+// ── Paired radios (BLE bonds) ────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *list;
+    lv_group_t *grp;
+    std::vector<BleBond> shown;
+    uint8_t rebuildIn;   // ticks until the list re-reads the bond store
+} s_bonds;
+
+void rebuildBonds() {
+    if (!s_bonds.list) return;
+    s_bonds.shown = g_ble.bonds();
+    lv_obj_clean(s_bonds.list);
+    String saved = g_config.tncAddress;
+    saved.toLowerCase();
+    for (size_t i = 0; i < s_bonds.shown.size(); i++) {
+        const auto &b = s_bonds.shown[i];
+        String line = LV_SYMBOL_TRASH " ";
+        if (saved.length() && b.address.equalsIgnoreCase(saved) && g_config.tncName.length()) {
+            line += g_config.tncName + "  " + b.address;
+        } else {
+            line += b.address;
+        }
+        addWrapItem(s_bonds.list, s_bonds.grp, line.c_str(), [](lv_event_t *e) {
+            const size_t idx = (uintptr_t)lv_event_get_user_data(e);
+            if (idx >= s_bonds.shown.size()) return;
+            g_ble.forgetBond(s_bonds.shown[idx].address, s_bonds.shown[idx].addressType);
+            toast("Pairing deleted");
+            s_bonds.rebuildIn = 1;
+        }, (void *)(uintptr_t)i);
+    }
+    if (s_bonds.shown.empty()) addWrapItem(s_bonds.list, s_bonds.grp, "No paired radios", nullptr, nullptr);
+    if (s_bonds.shown.size() > 1) {
+        addWrapItem(s_bonds.list, s_bonds.grp, LV_SYMBOL_TRASH " Forget all pairings", [](lv_event_t *) {
+            g_ble.forgetBond();
+            toast("All pairings deleted");
+            s_bonds.rebuildIn = 1;
+        }, nullptr);
+    }
+    if (g_config.tncAddress.length()) {
+        const String l = String(LV_SYMBOL_CLOSE " Remove saved radio (") +
+                         (g_config.tncName.length() ? g_config.tncName : g_config.tncAddress) + ")";
+        addWrapItem(s_bonds.list, s_bonds.grp, l.c_str(), [](lv_event_t *) {
+            g_ble.forgetBond(g_config.tncAddress, g_config.tncAddressType);
+            g_config.tncAddress = "";
+            g_config.tncName = "";
+            configSave();
+            g_ble.reconfigure();
+            toast("Saved radio removed");
+            s_bonds.rebuildIn = 1;
+        }, nullptr);
+    }
+    if (lv_obj_get_child_count(s_bonds.list)) lv_group_focus_obj(lv_obj_get_child(s_bonds.list, 0));
+}
+
+void refreshBonds() {
+    // Deletion runs on the BLE task; re-read the store on the next tick.
+    if (s_bonds.rebuildIn && --s_bonds.rebuildIn == 0) rebuildBonds();
+}
+
+void openBonds() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_BLUETOOTH " Paired radios", &grp);
+    s_bonds.grp = grp;
+    s_bonds.rebuildIn = 0;
+    makeNote(scr, "Select one to delete it. Also remove this device from the radio's Bluetooth list, then Connect to pair again.");
+    s_bonds.list = makeList(scr);
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_bonds.list = nullptr; }, LV_EVENT_DELETE, nullptr);
+    rebuildBonds();
+    pushScreen(scr, grp, refreshBonds);
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────
@@ -1159,20 +1531,14 @@ void openSettings() {
     lv_obj_t *scr = newScreen(LV_SYMBOL_SETTINGS " Settings", &grp);
     lv_obj_t *list = makeList(scr);
     addItem(list, grp, LV_SYMBOL_WIFI, "Open setup access point", [](lv_event_t *) {
-        wifiOpenSetupAp();
-        openWifiStatus();
+        if (!wifiOpenSetupAp()) toast("Connected to Wi-Fi; setup AP stays off");
+        openWifi(false);
     });
-    addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi status", [](lv_event_t *) { openWifiStatus(); });
-    lv_obj_t *hp = addItem(list, grp, LV_SYMBOL_HOME, "", [](lv_event_t *e) {
-        g_config.homePanel = (HomePanel)(((uint8_t)g_config.homePanel + 1) % ((uint8_t)HomePanel::None + 1));
-        configSave();
-        lv_label_set_text_fmt(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), -1), "Home panel: %s",
-                              homePanelName(g_config.homePanel));
-    });
-    lv_label_set_text_fmt(lv_obj_get_child(hp, -1), "Home panel: %s", homePanelName(g_config.homePanel));
+    addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi networks", [](lv_event_t *) { openWifi(true); });
     addItem(list, grp, LV_SYMBOL_EDIT, "Quick messages", [](lv_event_t *) { openQuickMsgs(); });
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
+    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Paired radios", [](lv_event_t *) { openBonds(); });
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
@@ -1281,60 +1647,8 @@ void openInfo() {
 // ── Home ─────────────────────────────────────────────────────────────────────
 
 struct {
-    lv_obj_t *panel, *title, *body;
-    String key;
-    char call[10];   // station the panel links to
     bool apWasActive;
 } s_home;
-
-void refreshHomePanel() {
-    const HomePanel mode = g_config.homePanel;
-    if (mode == HomePanel::None) {
-        lv_obj_add_flag(s_home.panel, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    lv_obj_remove_flag(s_home.panel, LV_OBJ_FLAG_HIDDEN);
-
-    String title, body;
-    s_home.call[0] = 0;
-    if (mode == HomePanel::LastHeard) {
-        const Station *st = stationDbCount() ? stationDbAt(0) : nullptr;
-        if (st) {
-            title = "Last heard, " + ageStr(st->lastHeardS) + " ago";
-            body = st->call;
-            double myLat, myLon;
-            if (st->hasPos && myPosition(myLat, myLon))
-                body += "  " + String(geo::formatDistance(geo::distanceKm(myLat, myLon, st->lat, st->lon),
-                                                          g_config.units == Units::Metric).c_str()) +
-                        " " + geo::compassPoint(geo::bearingDeg(myLat, myLon, st->lat, st->lon));
-            const char *extra = st->status[0] ? st->status : st->comment;
-            if (extra[0]) body += String("\n") + extra;
-            strlcpy(s_home.call, st->call, sizeof(s_home.call));
-        } else {
-            title = "Last heard";
-            body = "No stations heard yet.";
-        }
-    } else if (mode == HomePanel::LastMessage) {
-        const HeardMessage &m = lastMessage();
-        if (m.valid) {
-            title = "Last message, " + ageStr(m.uptimeS) + " ago" + (m.forMe ? "  (to you)" : "");
-            body = String(m.from) + " > " + m.to + "\n" + m.text;
-            strlcpy(s_home.call, m.from, sizeof(s_home.call));
-        } else {
-            title = "Last message";
-            body = "No messages received yet.";
-        }
-    } else {
-        const LogEntry *e = packetLogCount() ? packetLogAt(0) : nullptr;
-        title = e ? "Last packet, " + ageStr(e->uptimeS) + " ago" : String("Last packet");
-        body = e ? e->raw : "No packets yet.";
-    }
-    const String key = title + body;
-    if (key == s_home.key) return;
-    s_home.key = key;
-    lv_label_set_text(s_home.title, title.c_str());
-    lv_label_set_text(s_home.body, body.c_str());
-}
 
 void refreshHome() {
     // Pop the info up by itself whenever the setup AP comes on, so the QR code
@@ -1342,34 +1656,11 @@ void refreshHome() {
     const bool ap = wifiStatus().apActive;
     if (ap && !s_home.apWasActive && s_depth == 1) openInfo();
     s_home.apWasActive = ap;
-    refreshHomePanel();
 }
 
 void buildHome() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(nullptr, &grp);
-
-    s_home.panel = lv_obj_create(scr);
-    lv_obj_set_size(s_home.panel, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(s_home.panel, 5, 0);
-    lv_obj_set_flex_flow(s_home.panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(s_home.panel, 1, 0);
-    lv_obj_clear_flag(s_home.panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_home.panel, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(s_home.panel, [](lv_event_t *) {
-        if (g_config.homePanel == HomePanel::LastPacket) openMonitor();
-        else if (s_home.call[0]) openStationDetail(s_home.call);
-    }, LV_EVENT_CLICKED, nullptr);
-
-    s_home.title = lv_label_create(s_home.panel);
-    lv_obj_set_style_text_font(s_home.title, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(s_home.title, kGrey, 0);
-    s_home.body = lv_label_create(s_home.panel);
-    lv_obj_set_width(s_home.body, lv_pct(100));
-    // Fixed two lines so the panel never grows over the menu.
-    lv_label_set_long_mode(s_home.body, LV_LABEL_LONG_DOT);
-    lv_obj_set_height(s_home.body, 2 * lv_font_get_line_height(&lv_font_montserrat_14));
-    lv_group_add_obj(grp, s_home.panel);
 
     lv_obj_t *list = makeList(scr);
     lv_obj_t *first = addItem(list, grp, LV_SYMBOL_LIST, "Stations", [](lv_event_t *) { openStations(); });
@@ -1381,6 +1672,7 @@ void buildHome() {
     });
     addItem(list, grp, LV_SYMBOL_WIFI, "Status & connection info", [](lv_event_t *) { openInfo(); });
     addItem(list, grp, LV_SYMBOL_SETTINGS, "Settings", [](lv_event_t *) { openSettings(); });
+
     lv_group_focus_obj(first);
 
     pushScreen(scr, grp, refreshHome);
@@ -1394,6 +1686,7 @@ bool hotkey(uint8_t key) {
         case RK_HOME: s_pendingNav = Nav::Home; return true;
         case RK_MESSAGE: s_pendingNav = Nav::Messages; return true;
         case RK_MAP: s_pendingNav = Nav::Map; return true;
+        case RK_SUB_BACK: s_pendingNav = Nav::Stations; return true;
         case RK_MONITOR: s_pendingNav = Nav::Monitor; return true;
         default: return false;
     }
@@ -1409,6 +1702,7 @@ void tick(lv_timer_t *) {
 
 void uiBegin() {
     keyboardSetHotkeyHandler(hotkey);
+    themeInit();
     buildStatusBar();
     buildHome();
     if (configIsFresh()) {
@@ -1446,6 +1740,9 @@ void uiLoop() {
     } else if (nav == Nav::Monitor) {
         popToHome();
         openMonitor();
+    } else if (nav == Nav::Stations) {
+        popToHome();
+        openStations();
     }
     if (s_pendingThread.length()) {
         const String peer = s_pendingThread;

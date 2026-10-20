@@ -8,6 +8,8 @@
 #include <soc/usb_serial_jtag_reg.h>
 #elif defined(DEVICE_WIO_TRACKER_L2)
 #include "wio_l2_io.h"
+#elif defined(DEVICE_MESH_DECK)
+#include "mesh_deck_io.h"
 #endif
 
 namespace {
@@ -91,14 +93,71 @@ bool focusedIsTextarea() {
     return f && lv_obj_check_type(f, &lv_textarea_class);
 }
 
+bool hiddenInTree(lv_obj_t *o) {
+    for (; o; o = lv_obj_get_parent(o)) {
+        if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+    }
+    return false;
+}
+
+// Moves focus to the nearest control on screen in the arrow's direction.
+// Returns false when there is none (caller falls back to group order).
+bool spatialMove(uint8_t dir) {
+    lv_group_t *g = lv_group_get_default();
+    lv_obj_t *f = g ? lv_group_get_focused(g) : nullptr;
+    if (!f) return false;
+    lv_obj_update_layout(f);
+    lv_area_t fa;
+    lv_obj_get_coords(f, &fa);
+    const int32_t fcx = (fa.x1 + fa.x2) / 2, fcy = (fa.y1 + fa.y2) / 2;
+    const bool vert = dir == RK_UP || dir == RK_DOWN;
+    lv_obj_t *best = nullptr;
+    int64_t bestScore = INT64_MAX;
+    const uint32_t n = lv_group_get_obj_count(g);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *o = lv_group_get_obj_by_index(g, i);
+        if (o == f || hiddenInTree(o) || lv_obj_has_state(o, LV_STATE_DISABLED)) continue;
+        lv_area_t a;
+        lv_obj_get_coords(o, &a);
+        const int32_t cx = (a.x1 + a.x2) / 2, cy = (a.y1 + a.y2) / 2;
+        int32_t gap, off;
+        if (vert) {
+            gap = dir == RK_DOWN ? a.y1 - fa.y2 : fa.y1 - a.y2;
+            if (gap < -2) continue;   // not below/above
+            off = abs(cx - fcx);
+        } else {
+            if (a.y1 >= fa.y2 || a.y2 <= fa.y1) continue;   // left/right stay in the same row
+            gap = dir == RK_RIGHT ? a.x1 - fa.x2 : fa.x1 - a.x2;
+            if (gap < -2) continue;
+            off = abs(cy - fcy);
+        }
+        // Nearest row/column first, then the closest one across.
+        const int64_t score = (int64_t)max<int32_t>(gap, 0) * 8 + off;
+        if (score < bestScore) {
+            bestScore = score;
+            best = o;
+        }
+    }
+    if (!best) return false;
+    lv_group_focus_obj(best);
+    return true;
+}
+
 uint32_t mapKey(uint8_t k) {
     switch (k) {
-        case RK_UP:    return focusedWantsArrows() ? LV_KEY_UP : LV_KEY_PREV;
-        case RK_DOWN:  return focusedWantsArrows() ? LV_KEY_DOWN : LV_KEY_NEXT;
-        case RK_LEFT:  return LV_KEY_LEFT;
-        case RK_RIGHT: return LV_KEY_RIGHT;
+        case RK_UP:
+        case RK_DOWN:
+            if (focusedWantsArrows()) return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
+            if (spatialMove(k)) return 0;
+            return k == RK_UP ? LV_KEY_PREV : LV_KEY_NEXT;   // wrap around at the ends
+        case RK_LEFT:
+        case RK_RIGHT:
+            // Text fields move their cursor; everything else moves between controls in a row.
+            if (!focusedWantsArrows() && !focusedIsTextarea() && spatialMove(k)) return 0;
+            return k == RK_LEFT ? LV_KEY_LEFT : LV_KEY_RIGHT;
         case RK_ENTER: return LV_KEY_ENTER;
         case RK_BKSP:  return LV_KEY_BACKSPACE;
+        case RK_TAB:   return LV_KEY_NEXT;
         case RK_BACK:  return LV_KEY_ESC;
         default:
             if (k >= 0x20 && k < 0x7F) return k;
@@ -161,6 +220,15 @@ bool s_btnDown = false, s_btnLong = false, s_wakeDown = false;
 uint32_t s_btnSinceMs = 0, s_nextWakePollMs = 0;
 #endif
 
+#if defined(DEVICE_MESH_DECK)
+// D-pad on expander port 0 (active low). Arrows auto-repeat while held; Select
+// is Enter on release, or Back when held (there are no navigation keys).
+constexpr uint32_t kMdPollMs = 40, kMdRepeatDelayMs = 450, kMdRepeatMs = 130, kMdHoldBackMs = 700;
+uint8_t s_mdPrev = 0xFF;
+uint32_t s_mdNextPollMs = 0, s_mdRepeatAtMs = 0, s_mdSelSinceMs = 0;
+bool s_mdSelLong = false;
+#endif
+
 void hwBegin() {
 #if defined(DEVICE_M9)
     // GPIO20 is the S3's USB D+ pad; the USB-Serial-JTAG PHY holds it until released.
@@ -185,6 +253,12 @@ void hwBegin() {
     attachInterrupt(digitalPinToInterrupt(PIN_TB_UP), tbUp, FALLING);
 #elif defined(DEVICE_WIO_TRACKER_L2)
     pinMode(PIN_USER_BUTTON, INPUT_PULLUP);
+#elif defined(DEVICE_MESH_DECK)
+    // The d-pad expander was brought up in boardBegin(); the keyboard module
+    // shares its bus. One matrix walk is ten transfers, so run it at 400 kHz.
+    Wire.setClock(400000UL);
+    s_present = meshDeckKeyboardBegin();
+    Serial.printf("[kb] Mesh Deck keyboard %s\n", s_present ? "found" : "not found; will retry");
 #endif
 }
 
@@ -260,6 +334,54 @@ void hwPoll(uint32_t now) {
             s_wakeDown = w;
         }
     }
+#elif defined(DEVICE_MESH_DECK)
+    if (!s_present && (int32_t)(now - s_nextProbeMs) >= 0) {
+        s_nextProbeMs = now + 2000;
+        s_present = meshDeckKeyboardBegin();
+        if (s_present) Serial.println("[kb] Mesh Deck keyboard found");
+    }
+    if (s_present) {
+        uint8_t keys[8];
+        const int n = meshDeckKeyboardScan(keys, (int)sizeof(keys));
+        for (int i = 0; i < n; i++) {
+#ifdef PLATY_SERIAL_KEYS
+            Serial.printf("[kb] key 0x%02X\n", keys[i]);
+#endif
+            push(keys[i]);
+        }
+    }
+    if ((int32_t)(now - s_mdNextPollMs) < 0) return;
+    s_mdNextPollMs = now + kMdPollMs;
+    uint8_t port;
+    if (!meshDeckReadButtons(port)) return;
+    const uint8_t down = (uint8_t)~port, pressed = (uint8_t)(down & s_mdPrev);
+    s_mdPrev = port;
+    static const struct { uint8_t bit, key; } kArrows[] = {
+        {MD_BTN_UP, RK_UP}, {MD_BTN_DOWN, RK_DOWN}, {MD_BTN_LEFT, RK_LEFT}, {MD_BTN_RIGHT, RK_RIGHT}};
+    bool held = false;
+    for (const auto &a : kArrows) {
+        const uint8_t m = (uint8_t)(1u << a.bit);
+        if (pressed & m) {
+            push(a.key);
+            s_mdRepeatAtMs = now + kMdRepeatDelayMs;
+        } else if ((down & m) && !held && (int32_t)(now - s_mdRepeatAtMs) >= 0) {
+            push(a.key);
+            s_mdRepeatAtMs = now + kMdRepeatMs;
+        }
+        if (down & m) held = true;
+    }
+    const uint8_t sel = (uint8_t)(1u << MD_BTN_SELECT);
+    if (pressed & sel) {
+        s_mdSelSinceMs = now;
+        s_mdSelLong = false;
+    } else if ((down & sel) && !s_mdSelLong && now - s_mdSelSinceMs >= kMdHoldBackMs) {
+        s_mdSelLong = true;
+        push(RK_BACK);
+    } else if (!(down & sel) && s_mdSelSinceMs && !s_mdSelLong) {
+        push(RK_ENTER);
+        s_mdSelSinceMs = 0;
+    }
+    if (!(down & sel)) s_mdSelSinceMs = 0;
 #else
     (void)now;
 #endif

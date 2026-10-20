@@ -47,7 +47,7 @@ if not os.path.isfile(path):
 else:
     with open(path) as f:
         src = f.read()
-    if MARKER in src or "rhino-lr1110-oldfw-patch" in src:
+    if MARKER in src:
         print("[patch_radiolib_lr11x0] already patched")
     elif OLD in src:
         with open(path, "w") as f:

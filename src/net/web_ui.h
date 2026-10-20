@@ -99,6 +99,10 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <button class="btn sec" onclick="post('/api/tnc/disconnect','Disconnecting…')">Disconnect</button>
 <div id="tnets"></div>
 <small>Turn on the TNC's Bluetooth and keep it near the device. Devices that advertise the KISS service are listed first.</small>
+<label>Paired radios</label><div id="tbonds"></div>
+<button class="btn sec" onclick="tforget({address:''},'Forgetting all pairings…')">Forget all pairings</button>
+<button class="btn bad" onclick="confirm('Remove the saved radio?')&&tforget({removeSaved:true},'Removing saved radio…')">Remove saved radio</button>
+<small>Deleting a pairing makes the device pair again on the next connect. Also remove this device from the radio's Bluetooth list.</small>
 </div><div class="card" id="tncc3">
 <label>Device name</label><input data-k="tnc.name">
 <label>BLE address</label><input data-k="tnc.address" placeholder="aa:bb:cc:dd:ee:ff">
@@ -120,7 +124,6 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
-<label>Home screen panel</label><select data-k="device.homePanel"><option value="lastHeard">Last heard station</option><option value="lastMessage">Last received message</option><option value="lastPacket">Last received packet</option><option value="none">Nothing</option></select>
 <div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
@@ -157,6 +160,8 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <div style="padding:0 12px 60px" id="savebar"><button class="btn" onclick="save()">Save</button></div>
 <div id="msg"></div>
 <script>
+// Every POST carries X-Platy; the device refuses POSTs without it (CSRF guard).
+{const f=window.fetch;window.fetch=(u,o={})=>{if(o.method==='POST')o.headers=Object.assign({'X-Platy':'1'},o.headers);return f(u,o)}}
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let cfg={},tab='';
 const esc=t=>String(t??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -172,7 +177,7 @@ function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
-$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname)}
+$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);set(o,e.dataset.k,v)});
@@ -188,6 +193,12 @@ async function tscan(start){const j=await (await fetch('/api/tnc/scan'+(start?'?
 e.onclick=async()=>{toast('Selecting '+n.name+'…');const r=await (await fetch('/api/tnc/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})).json();
 r.ok?(toast('Selected '+n.name+'; connecting'),load()):toast(r.error,1)};d.appendChild(e)});
 if(j.scanning){d.insertAdjacentHTML('beforeend','<small>Scanning…</small>');setTimeout(()=>tscan(0),1500)}else if(!(j.devices||[]).length)d.innerHTML='<small>No devices found.</small>'}
+async function tbonds(){const j=await (await fetch('/api/tnc/bonds')).json();const d=$('#tbonds');d.innerHTML='';
+(j.bonds||[]).forEach(b=>{const e=document.createElement('div');e.className='net';e.innerHTML=(b.saved&&j.savedName?esc(j.savedName)+' ':'')+'<small>'+esc(b.address)+'</small> <button class="btn sec">Delete</button>';
+e.querySelector('button').onclick=()=>tforget({address:b.address,addressType:b.addressType},'Deleting pairing…');d.appendChild(e)});
+if(!(j.bonds||[]).length)d.innerHTML='<small>No paired radios.</small>'}
+async function tforget(body,t){toast(t);const r=await (await fetch('/api/tnc/forget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json().catch(()=>({}));
+if(r.ok===false)toast(r.error,1);else if(body.removeSaved)load();setTimeout(()=>{tbonds();status()},800)}
 let lastSeq=0;
 async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();if(!j.packets.length)return;
 if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;

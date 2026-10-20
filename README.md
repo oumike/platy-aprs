@@ -9,27 +9,46 @@ APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radi
 | Elecrow ThinkNode M9 | `m9` | LR1110 | keypad |
 | Seeed Wio Tracker L2 | `wio-tracker-l2` | SX1262 | touch, BOOT button (Back, hold = Home) |
 | LilyGo T-Deck Plus | `tdeck-plus` | SX1262 | keyboard, trackball, touch |
+| Attaky Mesh Deck | `mesh-deck` | SX1262 | keyboard module, touch, d-pad (Select = Enter, hold = Back) |
 
 ## Install
 
 Download the image for your board from [Releases](../../releases) and flash it at 0x0, either with
-`esptool.py --chip esp32s3 write_flash 0x0 platy-aprs-<board>-<version>.bin` or in the browser with
-[esptool-js](https://espressif.github.io/esptool-js/). The `-app.bin` images (at 0x10000) update the firmware and keep your settings.
+`./flash.sh platy-aprs-<board>-<version>.bin [port]` (also attached to each release),
+`esptool.py --chip esp32s3 write_flash 0x0 platy-aprs-<board>-<version>.bin`, or in the browser with
+[esptool-js](https://espressif.github.io/esptool-js/). The `-ota.bin` images (app only, at 0x10000) update the firmware and keep your settings.
 
 ## Build & flash
 
 ```sh
 scripts/build-upload-monitor.sh            # pick a board from a menu, build, flash, monitor
-scripts/build-upload-monitor.sh -w -p /dev/cu.usbmodem101   # Wio Tracker L2 (-9 M9, -t T-Deck Plus)
+scripts/build-upload-monitor.sh -w -p /dev/cu.usbmodem101   # Wio Tracker L2 (-9 M9, -t T-Deck Plus, -m Mesh Deck)
 scripts/build-upload-monitor.sh -B         # build every board, print a summary
 pio test -e native                         # host-side unit tests
 ```
 
-Other flags: `-e` erase flash, `-c` clean build, `-d` debug build, `-n` don't open the monitor.
-`scripts/package.sh <version>` turns built envs into release images in `dist/`.
+Other flags: `-e` erase flash (on the M9, erase and write in one esptool session via `-t upload_erase`),
+`-c` clean build, `-d` debug build, `-n` don't open the monitor. It prints the build time and firmware SHA256s,
+and in a non-interactive shell picks the first board instead of showing the menu.
+## Releases
 
-CI (`.github/workflows/build.yml`) builds every board on each push and keeps the images as workflow artifacts.
-To release, run the **Release** workflow from the Actions tab: it builds with the version baked in, tags `v<version>` and publishes the images.
+```sh
+scripts/release.sh --dist-only                 # build release images for every board into dist/, release nothing
+scripts/release.sh --dist-only --only m9,mesh-deck --version 0.2.0+test
+scripts/release.sh --notes-only                # draft RELEASE_NOTES.md from the commits since the last tag
+scripts/release.sh -y                          # release: bump the patch of the latest tag, dispatch the Release workflow
+scripts/release.sh --version 0.2.0 [--alpha]   # an exact version; --alpha publishes vX.Y.Z-alpha.N as a prerelease
+```
+
+`dist/` holds, per board, `platy-aprs-<board>-vX.Y.Z.bin` (factory image, 0x0), `-ota.bin` (app only, 0x10000)
+and `.elf` (symbols), plus `flash.sh`, `BUILD-INFO.txt` and `SHA256SUMS`. A dist-only build is versioned from
+`VERSION`, with `+<commit>` (and `.custom` for uncommitted changes) unless it is the tagged release commit.
+
+A release ships only committed work on a branch in sync with origin. The script picks the version and
+dispatches `.github/workflows/release.yml`, which builds every board, commits `VERSION`, tags `v<version>` and
+publishes the images with `RELEASE_NOTES.md` (or GitHub's generated notes). `--build-local` does all of that on
+this machine instead. CI (`.github/workflows/build.yml`) builds the same images on each push and keeps them as
+workflow artifacts. `scripts/release.sh --help` lists every option.
 
 ## First-time setup
 
@@ -38,15 +57,25 @@ To release, run the **Release** workflow from the Actions tab: it builds with th
 2. On first boot the device opens an open access point named `PLATY-APRS-XXXX`. The home screen shows its name and a join QR code.
 3. Join that network and browse to `http://192.168.4.1`. There is no captive portal.
 4. Enter your callsign and other settings, then set your Wi-Fi network on the **Wi-Fi** tab and save.
+   You can also join a network on the device: **Settings → Wi-Fi networks** scans, then pick a network and
+   enter its password (**Other network...** for hidden ones).
 5. Once the device joins your network, the setup AP shuts down after about 15 s. Config is then served at `http://<device-ip>` and `http://platy-aprs.local`.
-6. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device.
+6. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device while it is not connected to a network. The AP never stays up once the device is connected.
 
 You can set an optional admin password (username `admin`) on the **Device** tab.
+
+## Keys (Mesh Deck keyboard)
+
+Letters, digits, `,` `.` and Space type as labelled; Shift gives capitals and `!@#$%^&*()` on the number row.
+Hold **Sym** for punctuation: `q`–`p` → `? / - _ = + [ ] { }`, `a`–`l` → `: ; ' " `` ` `` ~ \ | &`,
+`z`–`m` → `< > * @ # % ^`, `,` → `!`, `.` → `?`. Tab moves to the next field.
+**Alt** chords: Alt+H home, Alt+M messages, Alt+P map, Alt+S stations, Alt+L monitor, Alt+Backspace back.
+The on-screen keyboard is not used on this board.
 
 ## Keys (M9)
 
 D-pad: move/select · Back: previous screen/close · Home: home screen · button below Home: monitor ·
-Messages: messages · Map: map.
+button below Back: stations · Messages: messages · Map: map (station heat map).
 
 The home screen shows a compact panel (last heard station, last received message, last packet, or nothing;
 choose in Settings or the web Device tab). Connection details and the setup QR code are under
@@ -57,6 +86,7 @@ choose in Settings or the web Device tab). Connection details and the setup QR c
 Web **Radio** tab (or device **Settings > Radio link** screen): Scan, pick the radio, and it connects and reconnects automatically.
 Defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961f68bb`); UUIDs are configurable.
 Put the radio in BLE pairing mode for the first connection (tested with the BTECH/Vero VR-N7600).
+If receive works but sends fail (for example after a full erase), the pairing keys no longer match: delete the pairing under device **Settings > Paired radios** or the web **Radio** tab (**Paired radios**), remove the device from the radio's Bluetooth list too, then connect again.
 
 ## LoRa APRS
 
@@ -103,7 +133,9 @@ own beacons and messages to APRS-IS as well as over RF, so messaging also works 
 
 Home → **Map** (or the MAP key). OpenStreetMap tiles come from `maps.camillia.sumat.org` when on Wi-Fi and are
 cached on the SD card (`/platy/tiles/z/x/y.png`), so areas you have viewed work offline. Stations with a
-position are drawn as dots (amber RF, grey APRS-IS, blue weather, purple objects; "me" in blue).
+position are drawn as dots (amber RF, grey APRS-IS, blue weather, purple objects; "me" in blue) over a
+heat map of every heard station: blobs merge from blue to red as stations cluster, so busy areas stand out
+when zoomed out.
 
 D-pad: pan · `+`/`i`: zoom in · `-`/`o`: zoom out · `N`: select the next station in view (and centre on it) ·
 `C`: centre on me · Enter: details of the selected station.
@@ -127,6 +159,9 @@ Debug builds (`PLATFORMIO_BUILD_FLAGS=-DPLATY_SERIAL_KEYS`) also accept raw M9 k
 console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
 
 
+Every `POST` must carry an `X-Platy: 1` header (cross-site request guard); with an admin password set, all
+endpoints need HTTP Basic auth as `admin`.
+
 `GET /api/status` · `GET/POST /api/config` · `GET /api/tnc/status` · `GET /api/tnc/scan[?start=1]` ·
 `POST /api/tnc/select|connect|disconnect` · `GET /api/packets?since=N` · `GET /api/stations` ·
 `POST /api/beacon` · `GET /api/messages[?peer=]` · `POST /api/messages` (`{to,text}`) ·
@@ -138,4 +173,10 @@ console and serve a raw RGB565 screen dump at `GET /api/debug/screen`.
 
 Milestones 1 (skeleton, display, Wi-Fi, web config), 2 (BLE KISS, APRS decode, monitor/stations, SD, backup/restore)
 and 3 (GPS, beaconing/SmartBeaconing, messaging, buzzer alerts) are done, plus the APRS-IS iGate, digipeater
-SD packet log, map and LoRa APRS (milestone 4). The T-Deck Plus build has not been tested on hardware yet.
+SD packet log, map and LoRa APRS (milestone 4). The T-Deck Plus and Mesh Deck builds have not been tested on hardware yet. The Mesh Deck has no SD slot, so map tiles are not cached and there is no packet log; after flashing it stays halted until power-cycled.
+
+## License
+
+GPL-3.0-or-later; see [LICENSE](LICENSE). Board pin maps and bring-up sequences follow camillia-mt, and the
+Mesh Deck keyboard matrix layout comes from the [wadamesh](https://github.com/ALLFATHER-BV/wadamesh) MeshCore
+port, both GPL-3.0-or-later.

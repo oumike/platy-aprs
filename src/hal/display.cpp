@@ -7,6 +7,8 @@
 #include <Wire.h>
 #if defined(DEVICE_WIO_TRACKER_L2)
 #include <lgfx/v1/panel/Panel_NV3031B.hpp>
+#elif defined(DEVICE_MESH_DECK)
+#include "mesh_deck_io.h"
 #endif
 #include <lvgl.h>
 
@@ -116,6 +118,59 @@ public:
             cfg.freq = I2C_FREQ;
             _touch.config(cfg);
             _panel.setTouch(&_touch);
+        }
+        setPanel(&_panel);
+    }
+};
+
+#elif defined(DEVICE_MESH_DECK)
+
+// ST7789 alone on SPI3, write-only. Touch is read over Wire in touchCb rather
+// than by LovyanGFX (see mesh_deck_io.cpp).
+class LGFX_Board : public lgfx::LGFX_Device {
+    lgfx::Panel_ST7789 _panel;
+    lgfx::Bus_SPI _bus;
+    lgfx::Light_PWM _light;
+
+public:
+    LGFX_Board() {
+        {
+            auto cfg = _bus.config();
+            cfg.spi_host = SPI3_HOST;
+            cfg.spi_mode = 0;
+            cfg.freq_write = 40000000;
+            cfg.freq_read = 16000000;
+            cfg.spi_3wire = false;
+            cfg.use_lock = true;
+            cfg.dma_channel = SPI_DMA_CH_AUTO;
+            cfg.pin_sclk = PIN_TFT_SCK;
+            cfg.pin_mosi = PIN_TFT_MOSI;
+            cfg.pin_miso = -1;
+            cfg.pin_dc = PIN_TFT_DC;
+            _bus.config(cfg);
+            _panel.setBus(&_bus);
+        }
+        {
+            auto cfg = _panel.config();
+            cfg.pin_cs = PIN_TFT_CS;
+            cfg.pin_rst = PIN_TFT_RST;
+            cfg.pin_busy = -1;
+            cfg.panel_width = TFT_PANEL_W;
+            cfg.panel_height = TFT_PANEL_H;
+            cfg.invert = true;
+            cfg.rgb_order = false;
+            cfg.readable = false;
+            cfg.bus_shared = false;
+            _panel.config(cfg);
+        }
+        {
+            auto cfg = _light.config();
+            cfg.pin_bl = PIN_TFT_BL;
+            cfg.invert = false;
+            cfg.freq = 12000;
+            cfg.pwm_channel = TFT_BL_PWM_CH;
+            _light.config(cfg);
+            _panel.setLight(&_light);
         }
         setPanel(&_panel);
     }
@@ -233,9 +288,16 @@ void touchCb(lv_indev_t *, lv_indev_data_t *data) {
     const uint32_t now = millis();
     if ((int32_t)(now - s_nextTouchMs) >= 0) {
         s_nextTouchMs = now + 25;
+#if defined(DEVICE_MESH_DECK)
+        // Native portrait -> rotation 3 landscape.
+        int16_t x, y;
+        s_lastPressed = meshDeckReadTouch(x, y);
+        if (s_lastPressed) s_lastPt = {(int32_t)(TFT_PANEL_H - 1 - y), (int32_t)x};
+#else
         lgfx::touch_point_t tp;
         s_lastPressed = lcd.getTouch(&tp, 1) > 0;
         if (s_lastPressed) s_lastPt = {tp.x, tp.y};
+#endif
     }
     data->point = s_lastPt;
     data->state = s_lastPressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;

@@ -31,6 +31,14 @@ uint32_t s_rebootAtMs = 0;
 bool s_factoryReset = false;
 
 bool authorized() {
+    // CSRF guard: a page on another origin cannot add a custom header without a
+    // CORS preflight, which this server never answers. Browsers resend cached
+    // Basic auth credentials cross-site, so the password alone does not stop
+    // a forged POST.
+    if (s_server.method() == HTTP_POST && !s_server.hasHeader("X-Platy")) {
+        s_server.send(403, "text/plain", "Missing X-Platy header");
+        return false;
+    }
     if (g_config.adminPassword.length() == 0) return true;
     if (s_server.authenticate("admin", g_config.adminPassword.c_str())) return true;
     s_server.requestAuthentication(BASIC_AUTH, "platy-aprs");
@@ -281,6 +289,57 @@ void handleTncConnect() {
 void handleTncDisconnect() {
     if (!authorized()) return;
     g_ble.disconnect();
+    sendOk();
+}
+
+void handleTncBonds() {
+    if (!authorized()) return;
+    JsonDocument doc;
+    JsonArray arr = doc["bonds"].to<JsonArray>();
+    for (const auto &b : g_ble.bonds()) {
+        JsonObject o = arr.add<JsonObject>();
+        o["address"] = b.address;
+        o["addressType"] = b.addressType;
+        o["saved"] = b.address.equalsIgnoreCase(g_config.tncAddress);
+    }
+    doc["savedAddress"] = g_config.tncAddress;
+    doc["savedName"] = g_config.tncName;
+    sendJson(200, doc);
+}
+
+// Body: {"address": "...", "addressType": n} deletes one bond; empty address deletes all.
+// {"removeSaved": true} also clears the saved radio selection.
+void handleTncForget() {
+    if (!authorized()) return;
+    JsonDocument in;
+    if (s_server.arg("plain").length() && deserializeJson(in, s_server.arg("plain"))) {
+        sendError(400, "Bad JSON");
+        return;
+    }
+    if (in["removeSaved"] | false) {
+        if (!g_config.tncAddress.length()) {
+            sendError(422, "No saved radio");
+            return;
+        }
+        g_ble.forgetBond(g_config.tncAddress, g_config.tncAddressType);
+        g_config.tncAddress = "";
+        g_config.tncName = "";
+        if (!configSave()) {
+            sendError(500, "Failed to write config");
+            return;
+        }
+        g_ble.reconfigure();
+        sendOk();
+        return;
+    }
+    String addr = in["address"] | "";
+    addr.trim();
+    addr.toLowerCase();
+    if (addr.length() && addr.length() != 17) {
+        sendError(422, "Invalid BLE address");
+        return;
+    }
+    g_ble.forgetBond(addr, in["addressType"] | 0);
     sendOk();
 }
 
@@ -594,30 +653,20 @@ void handleLogDelete() {
 void handleWifiScan() {
     if (!authorized()) return;
     JsonDocument doc;
-    const int16_t n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING) {
+    std::vector<WifiNetwork> nets;
+    if (wifiScanRunning()) {
         doc["scanning"] = true;
-    } else if (n == WIFI_SCAN_FAILED || s_server.hasArg("start")) {
-        WiFi.scanNetworks(true, false);
+    } else if (s_server.hasArg("start") || !wifiScanResults(nets)) {
+        wifiScanStart();
         doc["scanning"] = true;
     } else {
         doc["scanning"] = false;
         JsonArray arr = doc["networks"].to<JsonArray>();
-        for (int i = 0; i < n; i++) {
-            const String ssid = WiFi.SSID(i);
-            if (ssid.length() == 0) continue;
-            bool dup = false;
-            for (JsonObject o : arr) {
-                if (ssid == o["ssid"].as<const char *>()) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (dup) continue;
+        for (const WifiNetwork &w : nets) {
             JsonObject o = arr.add<JsonObject>();
-            o["ssid"] = ssid;
-            o["rssi"] = WiFi.RSSI(i);
-            o["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+            o["ssid"] = w.ssid;
+            o["rssi"] = w.rssi;
+            o["secure"] = w.secure;
         }
     }
     sendJson(200, doc);
@@ -643,6 +692,8 @@ void handleNotFound() {
 }  // namespace
 
 void webBegin() {
+    static const char *kHeaders[] = {"X-Platy"};
+    s_server.collectHeaders(kHeaders, 1);
     s_server.on("/", HTTP_GET, handleRoot);
     s_server.on("/api/config", HTTP_GET, handleGetConfig);
     s_server.on("/api/config", HTTP_POST, handlePostConfig);
@@ -653,6 +704,8 @@ void webBegin() {
     s_server.on("/api/tnc/select", HTTP_POST, handleTncSelect);
     s_server.on("/api/tnc/connect", HTTP_POST, handleTncConnect);
     s_server.on("/api/tnc/disconnect", HTTP_POST, handleTncDisconnect);
+    s_server.on("/api/tnc/bonds", HTTP_GET, handleTncBonds);
+    s_server.on("/api/tnc/forget", HTTP_POST, handleTncForget);
     s_server.on("/api/beacon", HTTP_POST, handleBeaconNow);
     s_server.on("/api/messages", HTTP_GET, handleMessages);
     s_server.on("/api/messages", HTTP_POST, handleMessageSend);
@@ -672,6 +725,7 @@ void webBegin() {
 #ifdef PLATY_SERIAL_KEYS
     // Debug builds: raw RGB565 dump of the active screen (240x320, little endian).
     s_server.on("/api/debug/screen", HTTP_GET, [] {
+        if (!authorized()) return;
         lv_draw_buf_t *b = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
         if (!b) { s_server.send(500, "text/plain", "snapshot failed"); return; }
         s_server.setContentLength(b->header.h * b->header.stride);

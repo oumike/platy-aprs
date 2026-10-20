@@ -12,13 +12,24 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-# Builds every board from a clean checkout and keeps the images as workflow
-# artifacts (14 days). Releases are cut by release.yml, not here.
+# Builds every board from a clean checkout, which is what catches an
+# uncommitted header or a .gitignore'd dependency that a local build can see.
+# The images are built with `release.sh --dist-only`, so they are laid out
+# exactly as a release's (versioned VERSION+<commit>), and kept as workflow
+# artifacts for 14 days.
+#
+# This workflow must NOT publish release assets; release.yml is the only
+# thing that does. Release commits carry [skip ci] and do not run this.
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # dist-only names the build from VERSION and the tags
+
+      - name: Validate release targets
+        run: ./scripts/release.sh --check-targets
 
       - uses: actions/setup-python@v5
         with:
@@ -28,24 +39,23 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        run: pip install platformio esptool
+        run: pip install platformio 'esptool==4.11.0'
 
       - name: Unit tests
         run: pio test -e native
 
       - name: Build firmware
-        run: |
-          for env in m9 wio-tracker-l2 tdeck-plus; do
-            pio run -e "$env" --disable-auto-clean
-          done
-
-      - name: Package
-        run: ./scripts/package.sh "dev-${GITHUB_SHA::7}"
+        run: ./scripts/release.sh --dist-only --no-clean
 
       - uses: actions/upload-artifact@v4
         with:
           name: platy-aprs-${{ github.sha }}
-          path: dist/*.bin
+          path: |
+            dist/*.bin
+            dist/flash.sh
+            dist/BUILD-INFO.txt
+            dist/SHA256SUMS
           retention-days: 14
