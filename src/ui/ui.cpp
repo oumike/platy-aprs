@@ -6,6 +6,7 @@
 #include "hal/keys.h"
 #include "hal/gps.h"
 #include "hal/sd_card.h"
+#include "hal/screen.h"
 #include "net/aprs_is.h"
 #include "net/wifi_manager.h"
 #include "services/backup.h"
@@ -1539,6 +1540,18 @@ void openSettings() {
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Paired radios", [](lv_event_t *) { openBonds(); });
+    // Cycles through the timeout choices; the label shows the current one.
+    lv_obj_t *to = addItem(list, grp, LV_SYMBOL_EYE_CLOSE, "", [](lv_event_t *e) {
+        int i = 0;
+        while (i < kScreenTimeoutCount && kScreenTimeoutSecs[i] != g_config.screenOnSecs) i++;
+        g_config.screenOnSecs = kScreenTimeoutSecs[(i + 1) % kScreenTimeoutCount];
+        configSave();
+        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
+        lv_label_set_text(lv_obj_get_child(b, 1),
+                          (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
+    });
+    lv_label_set_text(lv_obj_get_child(to, 1),
+                      (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });

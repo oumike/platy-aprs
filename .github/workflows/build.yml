@@ -2,60 +2,79 @@ name: Build
 
 on:
   push:
-    branches: [ main ]
-    paths-ignore: [ 'README.md', 'docs/**', '.gitignore' ]
+    branches: [ main ]          # catch breakage while it's cheap to fix
+    # Skip the build for pushes that cannot change a binary.
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'RELEASE_NOTES.md'
+      - '.gitignore'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
+# Only the newest push on a ref is worth checking.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-# Builds every board from a clean checkout, which is what catches an
-# uncommitted header or a .gitignore'd dependency that a local build can see.
-# The images are built with `release.sh --dist-only`, so they are laid out
-# exactly as a release's (versioned VERSION+<commit>), and kept as workflow
-# artifacts for 14 days.
+# What this job is for: building from a CLEAN CHECKOUT.
 #
-# This workflow must NOT publish release assets; release.yml is the only
-# thing that does. Release commits carry [skip ci] and do not run this.
+# A local `pio run` reuses .pio caches and can see untracked files, so it cannot
+# catch an uncommitted header or a .gitignore'd dependency. This job can.
+#
+# It is a breakage check on ordinary work, not a release gate. Releases are cut
+# by .github/workflows/release.yml, which does its own clean build of every
+# board. Release commits carry [skip ci] and do not run this, so a release's
+# build log is in its release.yml run, not here.
+#
+# This workflow must NOT publish release assets; release.yml is the single
+# source of truth for them. Its images are deliberately not archived either:
+# they are not byte-identical to what ships. For images of an unreleased tree,
+# run `./scripts/release.sh --dist-only` locally.
+
 jobs:
   build:
+    name: PlatformIO build
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # dist-only names the build from VERSION and the tags
 
-      - name: Validate release targets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate release target contract
         run: ./scripts/release.sh --check-targets
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - uses: actions/cache@v4
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
         with:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        run: pip install platformio 'esptool==4.11.0'
+        run: pip install platformio
 
       - name: Unit tests
         run: pio test -e native
 
-      - name: Build firmware
-        run: ./scripts/release.sh --dist-only --no-clean
+      # --disable-auto-clean, as in scripts/release.sh: PlatformIO otherwise
+      # deletes every environment's build output when the project checksum
+      # moves between two `pio run`s, and the headroom step would see nothing.
+      - name: Build firmware (verify all environments compile)
+        run: |
+          pio run -e m9 --disable-auto-clean
+          pio run -e wio-tracker-l2 --disable-auto-clean
+          pio run -e tdeck-plus --disable-auto-clean
+          pio run -e mesh-deck --disable-auto-clean
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: platy-aprs-${{ github.sha }}
-          path: |
-            dist/*.bin
-            dist/flash.sh
-            dist/BUILD-INFO.txt
-            dist/SHA256SUMS
-          retention-days: 14
+      # Flash headroom, tightest board first, so the next one to approach its
+      # ceiling is visible here rather than in a failed release. The floor is a
+      # ratchet: raise it as boards grow, don't let it drift to zero.
+      - name: Flash headroom
+        run: python3 tools/flash_headroom.py --min-free 524288 --require-all

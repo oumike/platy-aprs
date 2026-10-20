@@ -1,15 +1,9 @@
 #!/bin/bash
 # Cuts a platy-aprs release, or just builds the release images into dist/.
 # Modelled on camillia-mt's scripts/release.sh, minus what platy-aprs has no
-# use for (OTA signing, PR mode, AI-written notes, the P4 toolchain).
+# use for (OTA signing, PR mode, alphas, AI-written notes, the P4 toolchain).
 #
-# Usage: ./scripts/release.sh [-y|--yes] [--alpha] [--version V] [--no-clean]
-#                             [--build-local]
-#        ./scripts/release.sh --dist-only [--only ENVS] [--version V] [--no-clean]
-#        ./scripts/release.sh --notes-only
-#        ./scripts/release.sh --check-targets
-#
-# Run with --help for what each one does.
+# Run with --help (or no arguments) for the modes and options.
 #
 # Bash 3.2 (macOS's stock bash): no associative arrays, no mapfile.
 set -euo pipefail
@@ -215,66 +209,106 @@ write_build_info() {
 }
 
 # ── Flags ────────────────────────────────────────────────────────────────────
+MODE=""                # release | dist | notes | check
 ASSUME_YES=false
-ALPHA=false
 VERSION_ARG=""
 NO_CLEAN=false
 BUILD_LOCAL=false
-DIST_ONLY=false
+USE_COMMITTED_NOTES=false
 ONLY_ARG=""
-NOTES_ONLY=false
-CHECK_TARGETS_ONLY=false
 
 usage() {
-    cat <<'EOF'
-Usage: ./scripts/release.sh [-y|--yes] [--alpha] [--version V] [--no-clean] [--build-local]
-       ./scripts/release.sh --dist-only [--only ENVS] [--version V] [--no-clean]
-       ./scripts/release.sh --notes-only
-       ./scripts/release.sh --check-targets
+    local b="" u="" r=""
+    if [[ -t 1 ]]; then b=$'\e[1m'; u=$'\e[4m'; r=$'\e[0m'; fi
+    cat <<EOF
+${b}platy-aprs release tool${r}
 
-  With no mode flag this releases main as committed: it checks the tree is
-  clean and in sync with origin, picks the version, and dispatches the Release
-  workflow, which builds every board, commits VERSION, tags and publishes.
-  Nothing is compiled on this machine.
+${b}USAGE${r}
+  ./scripts/release.sh --release [-y] [--version V] [--use-committed-notes] [--build-local] [--no-clean]
+  ./scripts/release.sh --dist-only [--only ENVS] [--version V] [--no-clean]
+  ./scripts/release.sh --notes-only
+  ./scripts/release.sh --check-targets
+  ./scripts/release.sh --help
 
-  --build-local  Build, commit, tag and publish from this machine instead
-                 (needs PlatformIO and an authenticated gh). The workflow's
-                 own run works this way.
-  --dist-only    Build the release images into dist/ and release nothing: no
-                 commit, tag, push or GitHub release. Builds the working tree
-                 as it stands, uncommitted changes included. The images carry
-                 VERSION on the tagged release commit, else VERSION+<commit>
-                 (plus .custom with uncommitted changes); --version names them
-                 instead (e.g. 0.2.0+test). File names drop the +metadata.
-  --only ENVS    With --dist-only: just these boards, comma-separated
-                 (e.g. --only m9,mesh-deck).
-  --notes-only   Draft RELEASE_NOTES.md from the commits since the last tag
-                 and open it in $EDITOR. Commit it before releasing; a release
-                 publishes it verbatim (or GitHub's generated notes if the file
-                 is missing or empty).
-  --check-targets
-                 Validate the release environments, then exit.
+${b}MODES${r}
+  ${u}--release${r}
+      Release main as committed. Checks the tree is clean and in sync with
+      origin, picks the version, then dispatches .github/workflows/release.yml,
+      which builds every board, commits VERSION, tags v<version> and publishes
+      the images. Nothing is compiled on this machine. -y or --version on
+      their own imply --release.
 
-  --version V    Release exactly this version (a leading 'v' is fine).
-  -y, --yes      Bump the patch of the latest tag without prompting
-                 (v0.1.3 -> v0.1.4; VERSION when there is no tag yet).
-  --alpha        Tag v<version>-alpha.<n> and publish it as a GitHub
-                 prerelease. With -y the alpha counter is bumped; from a
-                 stable tag it starts a new series on the next patch.
-  --no-clean     Skip the full clean and build on the existing .pio output.
+  ${u}--dist-only${r}
+      Build the release images into dist/ and release nothing: no commit, tag,
+      push or GitHub release. Builds the working tree as it stands, uncommitted
+      changes included. The images carry VERSION on the tagged release commit,
+      else VERSION+<commit> (plus .custom with uncommitted changes).
+
+  ${u}--notes-only${r}
+      Draft RELEASE_NOTES.md from the commits since the last tag and open it
+      in \$EDITOR. Commit it, then release with --use-committed-notes.
+
+  ${u}--check-targets${r}
+      Validate the release environments and artifact names, then exit.
+
+${b}RELEASE OPTIONS${r}
+  -y, --yes               Bump the patch of the latest tag without prompting
+                          (v0.1.3 -> v0.1.4; VERSION as it reads when there is
+                          no tag yet).
+  --version V             Release exactly this version, e.g. 0.2.0 (a leading
+                          'v' is fine).
+  --use-committed-notes   Publish RELEASE_NOTES.md verbatim instead of GitHub's
+                          generated notes.
+  --build-local           Build, commit, tag and publish from this machine
+                          instead of dispatching the workflow. Needs PlatformIO
+                          and an authenticated gh. The workflow's own run works
+                          this way.
+  --no-clean              Skip the full clean and build on the existing .pio
+                          output. Faster; only as trustworthy as that tree.
+
+${b}DIST-ONLY OPTIONS${r}
+  --only ENVS             Build just these boards, comma-separated (may be
+                          repeated; built in release order).
+                          Boards: ${RELEASE_ENVS[*]}
+  --version V             Name the images after V instead (e.g. 0.2.0+test).
+                          File names drop the +metadata, as on a release.
+  --no-clean              As above.
+
+${b}OUTPUT${r} (dist/)
+  platy-aprs-<board>-vX.Y.Z.bin       factory image, flash at 0x0
+  platy-aprs-<board>-vX.Y.Z-ota.bin   app only, flash at 0x10000 (keeps settings)
+  platy-aprs-<board>-vX.Y.Z.elf       symbols for decoding crashes (not published)
+  flash.sh  BUILD-INFO.txt  SHA256SUMS
+
+${b}EXAMPLES${r}
+  ./scripts/release.sh --dist-only
+  ./scripts/release.sh --dist-only --only m9,mesh-deck --no-clean
+  ./scripts/release.sh --notes-only && git commit -am "Release notes"
+  ./scripts/release.sh -y --use-committed-notes
+  ./scripts/release.sh --release --version 0.2.0
 EOF
 }
 
+set_mode() {
+    if [[ -n "$MODE" && "$MODE" != "$1" ]]; then
+        echo "Choose one of --release, --dist-only, --notes-only, --check-targets." >&2
+        exit 1
+    fi
+    MODE="$1"
+}
+
+if [[ $# -eq 0 ]]; then usage; exit 0; fi
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help) usage; exit 0 ;;
+        --release) set_mode release ;;
+        --dist-only) set_mode dist ;;
+        --notes-only) set_mode notes ;;
+        --check-targets) set_mode check ;;
         -y|--yes) ASSUME_YES=true ;;
-        --alpha) ALPHA=true ;;
         --no-clean) NO_CLEAN=true ;;
         --build-local) BUILD_LOCAL=true ;;
-        --dist-only) DIST_ONLY=true ;;
-        --notes-only) NOTES_ONLY=true ;;
-        --check-targets) CHECK_TARGETS_ONLY=true ;;
+        --use-committed-notes) USE_COMMITTED_NOTES=true ;;
         --only)
             [[ -n "${2:-}" ]] || { echo "--only requires environments (e.g. --only m9,mesh-deck)" >&2; exit 1; }
             ONLY_ARG="${ONLY_ARG:+$ONLY_ARG,}$2"
@@ -292,13 +326,33 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if [[ -n "$ONLY_ARG" && "$DIST_ONLY" != true ]]; then
-    echo "--only applies only to --dist-only." >&2
-    exit 1
+# -y and --version on their own mean a release.
+if [[ -z "$MODE" ]]; then
+    if [[ "$ASSUME_YES" == true || -n "$VERSION_ARG" ]]; then MODE=release
+    else usage >&2; exit 1; fi
 fi
 
+reject() { echo "$1 does not take $2 (see --help)." >&2; exit 1; }
+case "$MODE" in
+    dist)
+        if [[ "$ASSUME_YES" == true ]]; then reject --dist-only -y; fi
+        if [[ "$BUILD_LOCAL" == true ]]; then reject --dist-only --build-local; fi
+        if [[ "$USE_COMMITTED_NOTES" == true ]]; then reject --dist-only --use-committed-notes; fi
+        ;;
+    release)
+        if [[ -n "$ONLY_ARG" ]]; then reject --release --only; fi
+        ;;
+    notes|check)
+        if [[ "$ASSUME_YES" == true || -n "$VERSION_ARG" || "$NO_CLEAN" == true || "$BUILD_LOCAL" == true \
+              || "$USE_COMMITTED_NOTES" == true || -n "$ONLY_ARG" ]]; then
+            echo "--notes-only and --check-targets take no options." >&2
+            exit 1
+        fi
+        ;;
+esac
+
 # ── --check-targets ──────────────────────────────────────────────────────────
-if [[ "$CHECK_TARGETS_ONLY" == true ]]; then
+if [[ "$MODE" == check ]]; then
     validate_release_targets
     exit $?
 fi
@@ -306,7 +360,7 @@ fi
 validate_release_targets >/dev/null || { validate_release_targets; exit 1; }
 
 # ── --notes-only ─────────────────────────────────────────────────────────────
-if [[ "$NOTES_ONLY" == true ]]; then
+if [[ "$MODE" == notes ]]; then
     prev="$(git describe --tags --abbrev=0 2>/dev/null || true)"
     range="${prev:+$prev..}HEAD"
     {
@@ -314,16 +368,13 @@ if [[ "$NOTES_ONLY" == true ]]; then
         git log --no-merges --format='- %s' "$range" | grep -v '\[skip ci\]' || true
     } > RELEASE_NOTES.md
     "${EDITOR:-vi}" RELEASE_NOTES.md
-    echo "RELEASE_NOTES.md written (commits ${prev:-since the start}). Commit it, then release."
+    echo "RELEASE_NOTES.md written (commits ${prev:-since the start})."
+    echo "Commit it, then release with --use-committed-notes."
     exit 0
 fi
 
 # ── --dist-only ──────────────────────────────────────────────────────────────
-if [[ "$DIST_ONLY" == true ]]; then
-    if [[ "$ASSUME_YES" == true || "$ALPHA" == true || "$BUILD_LOCAL" == true ]]; then
-        echo "--dist-only takes only --only, --version and --no-clean." >&2
-        exit 1
-    fi
+if [[ "$MODE" == dist ]]; then
     DIST_ENVS=()
     if [[ -z "$ONLY_ARG" ]]; then
         DIST_ENVS=( "${RELEASE_ENVS[@]}" )
@@ -337,13 +388,14 @@ if [[ "$DIST_ONLY" == true ]]; then
         done
         for env_name in "${RELEASE_ENVS[@]}"; do
             for want in "${requested[@]}"; do
-                [[ "$want" == "$env_name" ]] && { DIST_ENVS+=( "$env_name" ); break; }
+                if [[ "$want" == "$env_name" ]]; then DIST_ENVS+=( "$env_name" ); break; fi
             done
         done
     fi
 
     # Read before VERSION is touched, so the run's own edit never counts.
     dirty="$(git status --porcelain)"
+    tagged=""
     if [[ -n "$VERSION_ARG" ]]; then
         DIST_TAG="v${VERSION_ARG#v}"
     else
@@ -355,8 +407,8 @@ if [[ "$DIST_ONLY" == true ]]; then
         elif [[ "$tagged" == "$(git rev-parse HEAD)" ]]; then DIST_TAG="$base"
         else DIST_TAG="$base+$(git rev-parse --short=7 HEAD)"; fi
     fi
-    if [[ ! "$DIST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?(\+[0-9A-Za-z.]+)?$ ]]; then
-        echo "Error: '$DIST_TAG' is not a version to build (X.Y.Z[-pre][+build])." >&2
+    if [[ ! "$DIST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.]+)?$ ]]; then
+        echo "Error: '$DIST_TAG' is not a version to build (X.Y.Z, optionally +build)." >&2
         exit 1
     fi
     FILE_TAG="${DIST_TAG%%+*}"
@@ -369,9 +421,14 @@ if [[ "$DIST_ONLY" == true ]]; then
     echo "  Version:  $DIST_TAG"
     echo "  Files:    platy-aprs-<board>-$FILE_TAG.bin"
     echo "  Commit:   $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))"
-    [[ -n "$dirty" ]] && { echo "  Uncommitted changes, built in:"; printf '%s\n' "$dirty" | sed 's/^/    /'; }
+    if [[ -n "$dirty" ]]; then echo "  Uncommitted changes, built in:"; printf '%s\n' "$dirty" | sed 's/^/    /'; fi
     echo "  Boards:   ${DIST_ENVS[*]}"
     echo "  Output:   dist/, replaced"
+    if [[ -n "$VERSION_ARG" && "$DIST_TAG" != *+* ]]; then
+        echo ""
+        echo "Note: $DIST_TAG has no +build metadata, so these images will call"
+        echo "themselves $DIST_TAG without necessarily being that release."
+    fi
     echo ""
 
     # VERSION is baked into the firmware, so it is rewritten for the build and
@@ -422,47 +479,22 @@ if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
         exit 1
     fi
 fi
-
-# Newest well-formed tag matching a glob, in version order (sort -V puts
-# -alpha.10 after -alpha.9).
-latest_tag_matching() { git tag --list "$1" | grep -E "$2" | sort -V | tail -1 || true; }
-version_ge() { [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" == "$1" ]]; }
-
-PREV_STABLE="$(latest_tag_matching 'v*' '^v[0-9]+\.[0-9]+\.[0-9]+$')"
-PREV_ALPHA="$(latest_tag_matching 'v*-alpha.*' '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$')"
-CURRENT="$(tr -d '[:space:]' < VERSION)"
-echo "VERSION:           $CURRENT"
-echo "Latest stable tag: ${PREV_STABLE:-none}"
-[[ "$ALPHA" == true ]] && echo "Latest alpha tag:  ${PREV_ALPHA:-none}"
-
-NEXT_PATCH=""
-if [[ "$PREV_STABLE" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    NEXT_PATCH="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$(( BASH_REMATCH[3] + 1 ))"
+if [[ "$USE_COMMITTED_NOTES" == true && ! -s RELEASE_NOTES.md ]]; then
+    echo "--use-committed-notes: RELEASE_NOTES.md is missing or empty (draft it with --notes-only)." >&2
+    exit 1
 fi
+
+# Newest well-formed tag, in version order.
+PREV_TAG="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+CURRENT="$(tr -d '[:space:]' < VERSION)"
+echo "VERSION:     $CURRENT"
+echo "Latest tag:  ${PREV_TAG:-none}"
 
 if [[ -n "$VERSION_ARG" ]]; then
     VERSION="${VERSION_ARG#v}"
-    if [[ "$ALPHA" == true && "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then VERSION="$VERSION-alpha.1"; fi
-elif [[ "$ALPHA" == true ]]; then
-    if [[ "$ASSUME_YES" == true ]]; then
-        # Continue the series only while it is still ahead of stable; an alpha
-        # behind the latest release would be pointless.
-        if [[ "$PREV_ALPHA" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.([0-9]+)$ ]] \
-           && { [[ -z "$NEXT_PATCH" ]] || version_ge "${BASH_REMATCH[1]}" "$NEXT_PATCH"; }; then
-            VERSION="${BASH_REMATCH[1]}-alpha.$(( BASH_REMATCH[2] + 1 ))"
-        elif [[ -n "$NEXT_PATCH" ]]; then
-            VERSION="$NEXT_PATCH-alpha.1"
-        else
-            base="${CURRENT#v}"
-            VERSION="${base%%[-+]*}-alpha.1"
-        fi
-    else
-        read -rp "New alpha version (e.g. 0.2.0-alpha.1, or 0.2.0 for -alpha.1): " VERSION
-        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then VERSION="$VERSION-alpha.1"; fi
-    fi
 elif [[ "$ASSUME_YES" == true ]]; then
-    if [[ -n "$NEXT_PATCH" ]]; then
-        VERSION="$NEXT_PATCH"
+    if [[ "$PREV_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+        VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$(( BASH_REMATCH[3] + 1 ))"
     else
         base="${CURRENT#v}"
         VERSION="${base%%[-+]*}"   # first release: VERSION as it reads
@@ -471,12 +503,8 @@ else
     read -rp "New version (e.g. 0.2.0): " VERSION
 fi
 VERSION="${VERSION#v}"
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-    echo "Version must look like 0.2.0 or 0.2.0-alpha.1 (got '$VERSION')." >&2
-    exit 1
-fi
-if [[ "$ALPHA" == true && ! "$VERSION" =~ -alpha\.[0-9]+$ ]]; then
-    echo "An alpha version must end in -alpha.N (got '$VERSION')." >&2
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Version must look like 0.2.0 (got '$VERSION')." >&2
     exit 1
 fi
 TAG="v$VERSION"
@@ -487,9 +515,10 @@ fi
 echo "Releasing $TAG"
 
 if [[ "$REMOTE" == true ]]; then
-    args=( -f channel="$([[ "$ALPHA" == true ]] && echo alpha || echo stable)" -f version="$VERSION" )
-    gh workflow run release.yml --ref "$BRANCH" "${args[@]}"
-    echo "Release workflow dispatched for $TAG. Follow it with: gh run watch"
+    notes=generate
+    if [[ "$USE_COMMITTED_NOTES" == true ]]; then notes=committed; fi
+    gh workflow run release.yml --ref "$BRANCH" -f version="$VERSION" -f notes="$notes"
+    echo "Release workflow dispatched for $TAG (notes: $notes). Follow it with: gh run watch"
     exit 0
 fi
 
@@ -521,13 +550,10 @@ git push -q origin "$TAG"
 echo "Tag $TAG pushed."
 
 NOTES_ARGS=( --generate-notes )
-if [[ -s RELEASE_NOTES.md ]]; then NOTES_ARGS=( --notes-file RELEASE_NOTES.md ); fi
-RELEASE_FLAGS=()
-[[ "$ALPHA" == true ]] && RELEASE_FLAGS+=( --prerelease )
+if [[ "$USE_COMMITTED_NOTES" == true ]]; then NOTES_ARGS=( --notes-file RELEASE_NOTES.md ); fi
 
 # The .elf files stay out of the release; the workflow archives them.
-gh release create "$TAG" --title "platy-aprs $TAG" \
-    ${RELEASE_FLAGS[@]+"${RELEASE_FLAGS[@]}"} "${NOTES_ARGS[@]}" \
+gh release create "$TAG" --title "platy-aprs $TAG" "${NOTES_ARGS[@]}" \
     dist/*.bin dist/SHA256SUMS dist/flash.sh
 echo "Release $TAG published."
 gh release view "$TAG" --json url -q .url

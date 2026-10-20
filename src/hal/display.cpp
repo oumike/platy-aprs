@@ -1,5 +1,6 @@
 #include "display.h"
 #include "board_pins.h"
+#include "screen.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #define LGFX_USE_V1
@@ -285,6 +286,14 @@ bool s_lastPressed = false;
 
 void touchCb(lv_indev_t *, lv_indev_data_t *data) {
     // GT911 polling over I2C is slow; 25 ms is plenty for UI work.
+    // Touch never wakes the screen (camillia-mt's policy on every board here:
+    // the panel reacts to pockets and sleeves), so a dark panel isn't polled.
+    if (screenAsleep()) {
+        s_lastPressed = false;
+        data->point = s_lastPt;
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     const uint32_t now = millis();
     if ((int32_t)(now - s_nextTouchMs) >= 0) {
         s_nextTouchMs = now + 25;
@@ -299,6 +308,7 @@ void touchCb(lv_indev_t *, lv_indev_data_t *data) {
         if (s_lastPressed) s_lastPt = {tp.x, tp.y};
 #endif
     }
+    if (s_lastPressed) screenNoteActivity();
     data->point = s_lastPt;
     data->state = s_lastPressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
@@ -341,5 +351,10 @@ void displayBegin() {
 }
 
 void displaySetBrightness(uint8_t level) { lcd.setBrightness(level); }
+
+void displaySleep(bool sleep) {
+    if (sleep) lcd.sleep();
+    else lcd.wakeup();
+}
 
 void displayLoop() { lv_timer_handler(); }

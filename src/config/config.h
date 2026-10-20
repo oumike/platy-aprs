@@ -75,6 +75,7 @@ struct AppConfig {
     bool sdLog = true;      // packet log files on the SD card
     bool sdLogIs = false;   // include packets received from APRS-IS
     uint8_t brightness = 160;
+    uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
     String timezone = "EST5EDT,M3.2.0,M11.1.0";
     String adminPassword;
 

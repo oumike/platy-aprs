@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include "hal/board.h"
 #include "hal/display.h"
+#include "hal/screen.h"
 #include "hal/sd_card.h"
 #include "hal/gps.h"
 #include "services/backup.h"
@@ -108,7 +109,7 @@ void handlePostConfig() {
                              next.loraSf != g_config.loraSf || next.loraBwKhz != g_config.loraBwKhz ||
                              next.loraCr != g_config.loraCr || next.loraPowerDbm != g_config.loraPowerDbm;
     g_config = next;
-    displaySetBrightness(g_config.brightness);
+    screenApplyBrightness();
     if (tzChanged) {
         setenv("TZ", g_config.timezone.c_str(), 1);
         tzset();

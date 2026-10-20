@@ -2,6 +2,7 @@
 #include "config/config.h"
 #include "hal/board.h"
 #include "hal/display.h"
+#include "hal/screen.h"
 #include "hal/keyboard.h"
 #include "hal/gps.h"
 #include "hal/sd_card.h"
@@ -29,6 +30,7 @@ void setup() {
     tzset();
     displayBegin();
     displaySetBrightness(g_config.brightness);
+    screenBegin();
     keyboardBegin();
     sdBegin();
     routerBegin();
@@ -58,6 +60,7 @@ void loop() {
     messagesLoop();
     sdLogLoop();
     alertsLoop();
+    screenLoop();
     displayLoop();
     uiLoop();
     delay(2);

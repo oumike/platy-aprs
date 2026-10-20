@@ -1,30 +1,36 @@
 name: Release
 
-# Cuts a release end to end: builds every board with the version baked in,
-# merges the factory images, commits VERSION, tags and publishes. Normally
-# started by `./scripts/release.sh` on a maintainer's machine, which checks the
-# tree and dispatches this; it can also be run from the Actions tab.
+# Cuts a release end to end: picks the version, builds every board, merges the
+# factory images, commits VERSION, tags, and publishes. This is the job behind
+# `./scripts/release.sh --release`, which checks the tree on the maintainer's
+# machine and dispatches it.
 #
-# Manual only. Nothing here fires on a push or a tag.
+# Deliberately manual-only. Nothing here fires on a push or a tag, so a release
+# is always something a human asked for (the script, or the Actions tab).
 #
-# Release notes are RELEASE_NOTES.md as committed (draft them with
-# `./scripts/release.sh --notes-only`), or GitHub's generated notes when that
-# file is missing or empty.
+# Release notes are written and reviewed locally, not here:
+# `./scripts/release.sh --notes-only` drafts RELEASE_NOTES.md and opens it in
+# your editor; commit it and choose `committed`, and this job publishes it
+# verbatim. `generate` publishes GitHub's generated notes instead.
+#
+# The `release` environment is the gate on who can run this: add required
+# reviewers or a branch rule to it under Settings -> Environments.
 
 on:
   workflow_dispatch:
     inputs:
-      channel:
-        description: 'Release channel (alpha = GitHub prerelease)'
-        type: choice
-        options: [stable, alpha]
-        default: stable
       version:
         description: 'Exact version, e.g. 0.2.0 (blank = bump the latest tag)'
         type: string
         default: ''
+      notes:
+        description: 'Release notes source'
+        type: choice
+        options: [generate, committed]
+        default: generate
 
-# One release at a time, never cancelled mid-publish.
+# One release at a time. Two concurrent runs would race on the tag, the release
+# commit and dist/ -- and never cancel a run mid-publish.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -36,13 +42,15 @@ jobs:
   release:
     name: Build and publish
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # The next version is derived from the full tag list.
+          # release.sh derives the next version from the full tag list, so a
+          # shallow clone would pick the wrong one (or none at all).
           fetch-depth: 0
 
       - name: Configure git for the release commit
@@ -56,8 +64,9 @@ jobs:
           python-version: '3.12'
 
       - name: Cache PlatformIO toolchains
-        # Only ~/.platformio. Build output in .pio/ is never cached, so a
-        # release image cannot pick up an object file from an earlier run.
+        # Only ~/.platformio (compilers, frameworks, libraries) is cached. The
+        # build output in .pio/ deliberately is not: a release image must never
+        # be able to pick up an object file from an earlier run.
         uses: actions/cache@v4
         with:
           path: ~/.platformio
@@ -65,7 +74,9 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO and esptool
-        # esptool is pinned: esptool 5 renamed merge_bin and its flags.
+        # esptool is pinned, not floated: esptool 5 renamed merge_bin and its
+        # flags, and an unpinned upgrade could break the merge or quietly
+        # change the layout of a published factory image.
         run: pip install platformio 'esptool==4.11.0'
 
       - name: Unit tests
@@ -75,22 +86,27 @@ jobs:
         id: cut
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Read through the environment, never interpolated into the script,
-          # so a dispatch input cannot inject shell.
-          CHANNEL: ${{ inputs.channel }}
+          # Read through the environment rather than interpolated into the
+          # script, so a dispatch input can never inject shell.
           REQ_VERSION: ${{ inputs.version }}
+          NOTES_SOURCE: ${{ inputs.notes }}
         run: |
           set -euo pipefail
-          # --no-clean is safe here: this is a fresh checkout with no .pio/.
-          args=(-y --no-clean)
-          if [ "$CHANNEL" = "alpha" ]; then args+=(--alpha); fi
+          # --no-clean is safe here and nowhere else: this is a fresh checkout
+          # with no .pio/ at all.
+          args=(--release -y --no-clean)
           if [ -n "$REQ_VERSION" ]; then args+=(--version "$REQ_VERSION"); fi
+          if [ "$NOTES_SOURCE" = "committed" ]; then args+=(--use-committed-notes); fi
           ./scripts/release.sh "${args[@]}"
           echo "tag=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
+      - name: Flash headroom
+        run: python3 tools/flash_headroom.py --require-all
+
       - name: Archive debug symbols
-        # The .elf files match the published images exactly; they are what a
-        # crash backtrace decodes against. Kept out of the release itself.
+        # The only copy. release.sh keeps .elf files out of the published
+        # release; they match the shipped images exactly, so they are what a
+        # crash backtrace decodes against.
         if: success()
         uses: actions/upload-artifact@v4
         with:

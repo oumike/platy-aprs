@@ -98,6 +98,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["units"] = c.units == Units::Metric ? "metric" : "imperial";
     d["buzzer"] = c.buzzer;
     d["brightness"] = c.brightness;
+    d["screenOnSecs"] = c.screenOnSecs;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
 
@@ -227,6 +228,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
             const long b = d["brightness"].as<long>();
             c.brightness = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
         }
+        takeNum(d, "screenOnSecs", c.screenOnSecs);
         takeStr(d, "timezone", c.timezone);
         String pw;
         takeStr(d, "adminPassword", pw);
@@ -269,6 +271,7 @@ String configValidate(const AppConfig &c) {
     if (c.wifiSsid.length() > 32) return "Wi-Fi SSID too long";
     if (c.wifiPassword.length() > 0 && c.wifiPassword.length() < 8) return "Wi-Fi password must be at least 8 characters";
     if (c.brightness < 10) return "Brightness must be 10-255";
+    if (c.screenOnSecs > 86400) return "Screen timeout must be at most 86400 s";
     if (c.hostname.length() == 0 || c.hostname.length() > 32) return "Hostname must be 1-32 characters";
     return "";
 }

@@ -7,7 +7,7 @@ APRS client firmware. It talks KISS over Bluetooth LE to an external TNC or radi
 | Board | Env | Radio | Input |
 |---|---|---|---|
 | Elecrow ThinkNode M9 | `m9` | LR1110 | keypad |
-| Seeed Wio Tracker L2 | `wio-tracker-l2` | SX1262 | touch, BOOT button (Back, hold = Home) |
+| Seeed Wio Tracker L2 | `wio-tracker-l2` | SX1262 | touch, BOOT button (Back, hold = Home), Wake button (screen) |
 | LilyGo T-Deck Plus | `tdeck-plus` | SX1262 | keyboard, trackball, touch |
 | Attaky Mesh Deck | `mesh-deck` | SX1262 | keyboard module, touch, d-pad (Select = Enter, hold = Back) |
 
@@ -33,11 +33,12 @@ and in a non-interactive shell picks the first board instead of showing the menu
 ## Releases
 
 ```sh
+scripts/release.sh                             # help: every mode and option
 scripts/release.sh --dist-only                 # build release images for every board into dist/, release nothing
-scripts/release.sh --dist-only --only m9,mesh-deck --version 0.2.0+test
+scripts/release.sh --dist-only --only m9,mesh-deck --version 0.2.0+test --no-clean
 scripts/release.sh --notes-only                # draft RELEASE_NOTES.md from the commits since the last tag
-scripts/release.sh -y                          # release: bump the patch of the latest tag, dispatch the Release workflow
-scripts/release.sh --version 0.2.0 [--alpha]   # an exact version; --alpha publishes vX.Y.Z-alpha.N as a prerelease
+scripts/release.sh -y --use-committed-notes    # release: bump the patch of the latest tag, dispatch the Release workflow
+scripts/release.sh --release --version 0.2.0   # release an exact version (GitHub's generated notes)
 ```
 
 `dist/` holds, per board, `platy-aprs-<board>-vX.Y.Z.bin` (factory image, 0x0), `-ota.bin` (app only, 0x10000)
@@ -45,10 +46,11 @@ and `.elf` (symbols), plus `flash.sh`, `BUILD-INFO.txt` and `SHA256SUMS`. A dist
 `VERSION`, with `+<commit>` (and `.custom` for uncommitted changes) unless it is the tagged release commit.
 
 A release ships only committed work on a branch in sync with origin. The script picks the version and
-dispatches `.github/workflows/release.yml`, which builds every board, commits `VERSION`, tags `v<version>` and
-publishes the images with `RELEASE_NOTES.md` (or GitHub's generated notes). `--build-local` does all of that on
-this machine instead. CI (`.github/workflows/build.yml`) builds the same images on each push and keeps them as
-workflow artifacts. `scripts/release.sh --help` lists every option.
+dispatches `.github/workflows/release.yml` (in the `release` environment), which builds every board, commits
+`VERSION`, tags `v<version>`, publishes the images and archives the `.elf` files as a workflow artifact.
+`--build-local` does all of that on this machine instead. `.github/workflows/build.yml` builds every board from
+a clean checkout on each push and pull request, runs the unit tests and checks flash headroom
+(`tools/flash_headroom.py`); it publishes nothing.
 
 ## First-time setup
 
@@ -63,6 +65,21 @@ workflow artifacts. `scripts/release.sh --help` lists every option.
 6. If your network is unreachable for 60 s, the setup AP comes back. You can also reopen it from **Settings → Open setup access point** on the device while it is not connected to a network. The AP never stays up once the device is connected.
 
 You can set an optional admin password (username `admin`) on the **Device** tab.
+
+## Screen timeout
+
+After the screen timeout (**Settings → Screen timeout** on the device, or the web **Device** tab; 15 s to 60 min
+or Never, default 30 s) with no input, the backlight dims for the last 10 s and then the panel sleeps. Input
+while the screen is dark is dropped, never acted on unseen; only the board's wake gesture brings it back, and
+not in the first 3 s after it went dark. A *screen button* follows one rule: **tap** = screen off, **hold 2 s**
+= wake (a tap on a dark screen does nothing, so a press in a pocket can't wake it).
+
+| Board | Screen off | Wake | Never wakes it |
+|---|---|---|---|
+| ThinkNode M9 | hold the d-pad centre, or tap BOOT | press the d-pad centre, or hold BOOT 2 s | any other key |
+| Wio Tracker L2 | tap the top Wake button | hold Wake 2 s, or press BOOT | touch |
+| T-Deck Plus | hold the trackball click 2 s | click the trackball | keyboard, touch, rolling |
+| Mesh Deck | tap the top-right (R) shoulder button or BOOT | hold R or BOOT 2 s | keyboard, d-pad, touch |
 
 ## Keys (Mesh Deck keyboard)
 

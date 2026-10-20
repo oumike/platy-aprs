@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "board_pins.h"
 #include "keys.h"
+#include "screen.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <lvgl.h>
@@ -64,6 +65,15 @@ void push(uint8_t k) {
     if (nh == s_tail) return;
     s_ring[s_head] = k;
     s_head = nh;
+}
+
+// Board input on its way to the UI. Nothing gets through while the screen is
+// dark: each board's wake gesture is handled before this, and every other
+// press is dropped rather than acted on unseen.
+void input(uint8_t k) {
+    if (screenAsleep()) return;
+    screenNoteActivity();
+    push(k);
 }
 
 bool pop(uint8_t &k) {
@@ -211,13 +221,19 @@ void IRAM_ATTR tbDown() { s_tbY++; }
 void IRAM_ATTR tbLeft() { s_tbX--; }
 void IRAM_ATTR tbRight() { s_tbX++; }
 uint32_t s_tbNextMs = 0;
-bool s_tbClickDown = false;
-uint32_t s_tbLastMoveMs = 0;
+bool s_tbClickDown = false, s_tbClickClaimed = false;
+uint32_t s_tbLastMoveMs = 0, s_tbClickSinceMs = 0;
+constexpr uint32_t kTbSleepHoldMs = 2000;
+#endif
+
+#if defined(DEVICE_M9) || defined(DEVICE_MESH_DECK)
+WakeButton s_bootBtn;   // BOOT: tap = screen off, hold = wake
 #endif
 
 #if defined(DEVICE_WIO_TRACKER_L2)
-bool s_btnDown = false, s_btnLong = false, s_wakeDown = false;
-uint32_t s_btnSinceMs = 0, s_nextWakePollMs = 0;
+bool s_btnDown = false, s_btnLong = false;
+uint32_t s_btnSinceMs = 0;
+WakeButton s_wakeBtn;   // top Wake button: tap = screen off, hold = wake
 #endif
 
 #if defined(DEVICE_MESH_DECK)
@@ -227,6 +243,7 @@ constexpr uint32_t kMdPollMs = 40, kMdRepeatDelayMs = 450, kMdRepeatMs = 130, kM
 uint8_t s_mdPrev = 0xFF;
 uint32_t s_mdNextPollMs = 0, s_mdRepeatAtMs = 0, s_mdSelSinceMs = 0;
 bool s_mdSelLong = false;
+WakeButton s_mdScreenBtn;   // R shoulder button: tap = screen off, hold = wake
 #endif
 
 void hwBegin() {
@@ -238,6 +255,7 @@ void hwBegin() {
     delay(50);
     probe();
     if (!s_present) Serial.println("[kb] controller not answering yet; will retry");
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
 #elif defined(DEVICE_TDECK)
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQ);
     probe();
@@ -259,11 +277,13 @@ void hwBegin() {
     Wire.setClock(400000UL);
     s_present = meshDeckKeyboardBegin();
     Serial.printf("[kb] Mesh Deck keyboard %s\n", s_present ? "found" : "not found; will retry");
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
 #endif
 }
 
 void hwPoll(uint32_t now) {
 #if defined(DEVICE_M9)
+    screenServiceWakeButton(s_bootBtn, digitalRead(PIN_BOOT_BTN) == LOW, now, "BOOT button");
     if (!s_present) {
         if ((int32_t)(now - s_nextProbeMs) < 0) return;
         s_nextProbeMs = now + 1000;
@@ -278,7 +298,19 @@ void hwPoll(uint32_t now) {
 #ifdef PLATY_SERIAL_KEYS
         Serial.printf("[kb] key 0x%02X\n", k);
 #endif
-        push(k);
+        // Centre held: the controller times it and sends its own code.
+        if (k == M9_KEY_ENTER_LONG) {
+            if (screenAsleep()) screenTryWake("centre hold");
+            else screenSleep("centre hold");
+            continue;
+        }
+        // The keys face outward with no lid, so only the d-pad centre wakes
+        // the screen; any other key pressed while it is dark is dropped.
+        if (screenAsleep()) {
+            if (k == M9_KEY_ENTER) screenTryWake("centre");
+            continue;
+        }
+        input(k);
     }
 #elif defined(DEVICE_TDECK)
     if ((int32_t)(now - s_tbNextMs) >= 0) {
@@ -289,13 +321,28 @@ void hwPoll(uint32_t now) {
         if (dx || dy) {
             s_tbNextMs = now + 45;
             s_tbLastMoveMs = now;
-            if (abs(dx) > abs(dy)) push(dx > 0 ? RK_RIGHT : RK_LEFT);
-            else push(dy > 0 ? RK_DOWN : RK_UP);
+            if (abs(dx) > abs(dy)) input(dx > 0 ? RK_RIGHT : RK_LEFT);
+            else input(dy > 0 ? RK_DOWN : RK_UP);
         }
     }
-    // The ball's click switch chatters while rolling; ignore clicks right after motion.
+    // The click is the only wake gesture (the keyboard and touch panel are
+    // exposed to pockets), and holding it 2 s puts the screen to sleep, so
+    // Enter goes out on release. The switch chatters while rolling; clicks
+    // right after motion are ignored.
     const bool click = digitalRead(PIN_TB_CLICK) == LOW;
-    if (click && !s_tbClickDown && now - s_tbLastMoveMs > 160) push(RK_ENTER);
+    if (click && !s_tbClickDown) {
+        s_tbClickSinceMs = now;
+        s_tbClickClaimed = now - s_tbLastMoveMs <= 160;
+    }
+    if (click && !s_tbClickClaimed) {
+        if (screenAsleep()) s_tbClickClaimed = screenTryWake("trackball click");
+        else if (now - s_tbClickSinceMs >= kTbSleepHoldMs) {
+            s_tbClickClaimed = true;
+            screenSleep("trackball hold");
+        }
+    } else if (!click && s_tbClickDown && !s_tbClickClaimed) {
+        input(RK_ENTER);
+    }
     s_tbClickDown = click;
 
     if (!s_present) {
@@ -310,30 +357,29 @@ void hwPoll(uint32_t now) {
 #ifdef PLATY_SERIAL_KEYS
     Serial.printf("[kb] key 0x%02X\n", k);
 #endif
-    push(k);
+    input(k);
 #elif defined(DEVICE_WIO_TRACKER_L2)
-    // BOOT button: short press = Back, hold = Home.
+    // BOOT button: short press = Back, hold = Home. On a dark screen a press
+    // wakes it instead (and is used up by that).
     const bool down = digitalRead(PIN_USER_BUTTON) == LOW;
     if (down && !s_btnDown) {
         s_btnSinceMs = now;
         s_btnLong = false;
+    }
+    if (down && screenAsleep()) {
+        screenTryWake("BOOT button");
+        s_btnLong = true;
     } else if (down && !s_btnLong && now - s_btnSinceMs > 700) {
         s_btnLong = true;
-        push(RK_HOME);
+        input(RK_HOME);
     } else if (!down && s_btnDown && !s_btnLong && now - s_btnSinceMs > 30) {
-        push(RK_BACK);
+        input(RK_BACK);
     }
     s_btnDown = down;
-    // Top wake button (on the expander): Home. Only read it when the expander
-    // signals an input change.
-    if (digitalRead(PIN_EXPANDER_INT) == LOW || s_wakeDown) {
-        if ((int32_t)(now - s_nextWakePollMs) >= 0) {
-            s_nextWakePollMs = now + 50;
-            const bool w = wioIoWakePressed();
-            if (w && !s_wakeDown) push(RK_HOME);
-            s_wakeDown = w;
-        }
-    }
+    // Top Wake button (on the expander): the screen button. Only read while the
+    // expander signals an input change or a press is being timed.
+    if (digitalRead(PIN_EXPANDER_INT) == LOW || s_wakeBtn.raw || s_wakeBtn.stable)
+        screenServiceWakeButton(s_wakeBtn, wioIoWakePressed(), now, "Wake button");
 #elif defined(DEVICE_MESH_DECK)
     if (!s_present && (int32_t)(now - s_nextProbeMs) >= 0) {
         s_nextProbeMs = now + 2000;
@@ -347,13 +393,15 @@ void hwPoll(uint32_t now) {
 #ifdef PLATY_SERIAL_KEYS
             Serial.printf("[kb] key 0x%02X\n", keys[i]);
 #endif
-            push(keys[i]);
+            input(keys[i]);
         }
     }
+    screenServiceWakeButton(s_bootBtn, digitalRead(PIN_BOOT_BTN) == LOW, now, "BOOT button");
     if ((int32_t)(now - s_mdNextPollMs) < 0) return;
     s_mdNextPollMs = now + kMdPollMs;
     uint8_t port;
     if (!meshDeckReadButtons(port)) return;
+    screenServiceWakeButton(s_mdScreenBtn, !(port & (1u << MD_BTN_R2)), now, "R button");
     const uint8_t down = (uint8_t)~port, pressed = (uint8_t)(down & s_mdPrev);
     s_mdPrev = port;
     static const struct { uint8_t bit, key; } kArrows[] = {
@@ -362,10 +410,10 @@ void hwPoll(uint32_t now) {
     for (const auto &a : kArrows) {
         const uint8_t m = (uint8_t)(1u << a.bit);
         if (pressed & m) {
-            push(a.key);
+            input(a.key);
             s_mdRepeatAtMs = now + kMdRepeatDelayMs;
         } else if ((down & m) && !held && (int32_t)(now - s_mdRepeatAtMs) >= 0) {
-            push(a.key);
+            input(a.key);
             s_mdRepeatAtMs = now + kMdRepeatMs;
         }
         if (down & m) held = true;
@@ -376,9 +424,9 @@ void hwPoll(uint32_t now) {
         s_mdSelLong = false;
     } else if ((down & sel) && !s_mdSelLong && now - s_mdSelSinceMs >= kMdHoldBackMs) {
         s_mdSelLong = true;
-        push(RK_BACK);
+        input(RK_BACK);
     } else if (!(down & sel) && s_mdSelSinceMs && !s_mdSelLong) {
-        push(RK_ENTER);
+        input(RK_ENTER);
         s_mdSelSinceMs = 0;
     }
     if (!(down & sel)) s_mdSelSinceMs = 0;
@@ -399,7 +447,7 @@ void keyboardBegin() {
 void keyboardPoll() {
 #ifdef PLATY_SERIAL_KEYS
     // Debug builds: raw key codes (keys.h) typed on the serial console act as key presses.
-    while (Serial.available() > 0) push((uint8_t)Serial.read());
+    while (Serial.available() > 0) input((uint8_t)Serial.read());
 #endif
     const uint32_t now = millis();
     if ((int32_t)(now - s_nextPollMs) < 0) return;

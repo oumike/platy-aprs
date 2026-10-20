@@ -51,6 +51,11 @@
 #define MD_BTN_SELECT      2
 #define MD_BTN_RIGHT       3
 #define MD_BTN_UP          4
+#define MD_BTN_R2          6    // top-right shoulder: screen button (tap off, hold wake)
+// P07 (power) is not bound: a ~2 s hold there cuts power in hardware.
+
+// BOOT button, a real GPIO (not the expander): also a screen button.
+#define PIN_BOOT_BTN       38
 
 // ATGM336H GPS (host-side RX/TX), always powered by the frame.
 #define PIN_GPS_RX         17

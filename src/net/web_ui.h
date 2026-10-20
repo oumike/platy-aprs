@@ -126,6 +126,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
 <div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
+<label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
 <label>Admin password, username "admin" <small id="apw"></small></label><input type="password" id="apass" autocomplete="new-password">
 <div class="chk"><input type="checkbox" id="aclr">Remove admin password</div>
