@@ -99,6 +99,11 @@ void save() {
         o["id"] = m.msgId;
         o["text"] = m.text;
         o["epoch"] = (uint32_t)m.epoch;
+        if (!m.outgoing && m.via != MsgVia::Unknown) {
+            o["via"] = (uint8_t)m.via;
+            o["path"] = m.path;
+            if (m.relay[0]) o["relay"] = m.relay;
+        }
     }
     File f = sdFs().open(kFile, FILE_WRITE);
     if (!f) return;
@@ -129,6 +134,10 @@ void load() {
         strlcpy(m.msgId, o["id"] | "", sizeof(m.msgId));
         strlcpy(m.text, o["text"] | "", sizeof(m.text));
         m.epoch = (time_t)(o["epoch"] | 0u);
+        const uint8_t via = o["via"] | 0;
+        m.via = via <= (uint8_t)MsgVia::AprsIs ? (MsgVia)via : MsgVia::Unknown;
+        strlcpy(m.path, o["path"] | "", sizeof(m.path));
+        strlcpy(m.relay, o["relay"] | "", sizeof(m.relay));
         m.uptimeS = 0;
     }
     Serial.printf("[msg] loaded %u messages\n", (unsigned)s_count);
@@ -143,6 +152,15 @@ const char *msgStateName(MsgState s) {
         case MsgState::Rejected: return "rejected";
         case MsgState::Failed: return "failed";
         default: return "received";
+    }
+}
+
+const char *msgViaName(MsgVia v) {
+    switch (v) {
+        case MsgVia::Tnc: return "RF (Bluetooth TNC)";
+        case MsgVia::Lora: return "RF (LoRa)";
+        case MsgVia::AprsIs: return "APRS-IS";
+        default: return "unknown";
     }
 }
 
@@ -198,7 +216,7 @@ bool messagesRetry(uint32_t seq, String &err) {
     return false;
 }
 
-void messagesOnRx(const aprs::Packet &p) {
+void messagesOnRx(const aprs::Packet &p, MsgVia via, const char *path, const char *relay) {
     if (!s_msgs || p.type != aprs::Type::Message) return;
     const String me = myCall();
     if (!me.equalsIgnoreCase(p.addressee.c_str())) return;
@@ -239,6 +257,9 @@ void messagesOnRx(const aprs::Packet &p) {
     m.unread = true;
     strlcpy(m.msgId, p.msgId.c_str(), sizeof(m.msgId));
     strlcpy(m.text, p.text.c_str(), sizeof(m.text));
+    m.via = via;
+    strlcpy(m.path, path ? path : "", sizeof(m.path));
+    strlcpy(m.relay, relay ? relay : "", sizeof(m.relay));
     changed();
     alertPlay(Alert::Message);
     Serial.printf("[msg] from %s: %s\n", m.peer, m.text);

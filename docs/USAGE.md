@@ -1,6 +1,6 @@
-# Using platy-aprs
+# Using Platy APRS
 
-This guide covers everything you do with a platy-aprs device once it is flashed: first setup, the screens, the
+This guide covers everything you do with a Platy APRS device once it is flashed: first setup, the screens, the
 controls on each board, the radio links, beaconing and messaging, APRS-IS, the map, updates and backups. For
 installing the firmware see the [README](../README.md#install).
 
@@ -63,7 +63,7 @@ The home screen is a menu:
 | **Settings** | Everything else (below). |
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · Screen timeout · Sound and Volume
+turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Sound and Volume
 (see [Sound](#sound)) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
@@ -165,8 +165,11 @@ Open **Messages** on the device (or the Messages key/hotkey, or the web **Messag
 conversation or start a **New message** to a callsign.
 
 - Outgoing messages are retried up to 5 times (after 30 s, 1, 2 and 4 min) until the other station acks them;
-  a message that was never acked can be retried by hand.
+  a message that was never acked can be retried by hand (select it).
 - Incoming messages are acked, de-duplicated, beep, and pop up a banner.
+- Select any other message for its details: when it was sent or received, and for incoming ones how it
+  arrived (APRS-IS, or RF through the Bluetooth TNC or LoRa), the path, whether it was digipeated, which igate
+  or server it came through, and its message ID. Messages saved before this was added show "unknown".
 - The list button next to the message box opens your five **quick messages**; picking one fills it in. It
   sits left of the box on touch screens and right of it on the M9, where pressing **Right** with the cursor at
   the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
@@ -196,7 +199,8 @@ looked at work offline.
 
 ## APRS-IS, iGate and digipeater
 
-On the web **APRS-IS** tab:
+APRS-IS can be switched on and off under **Settings → APRS-IS** on the device. Everything else is on the web
+**APRS-IS** tab:
 
 - **Connect to APRS-IS when on Wi-Fi**: logs in to `rotate.aprs2.net` (changeable) with the passcode computed
   from your callsign, receives the packets your filter selects (default `m/50`: everything within 50 km), and
@@ -220,18 +224,21 @@ Both are also on the web **Device** tab.
 
 ## Screen timeout
 
-After the screen timeout with no input, the backlight dims for the last 10 seconds and then the screen turns
-off. Set it under **Settings → Screen timeout** (each press steps to the next choice) or on the web **Device**
-tab: 15 s to 60 min, or Never. The default is 30 s.
+After the screen timeout with no input, the backlight dims for the last 10 seconds and then the screen locks:
+either the **screensaver** (the platy drifting around a dark screen at 20% backlight) or **screen off**. Set the
+timeout under **Settings → Screen timeout** (each press steps to the next choice) and the choice under
+**Settings → At timeout**, or both on the web **Device** tab. The timeout runs 15 s to 60 min, or Never; the
+default is 30 s with the screensaver.
 
-While the screen is off, key presses and touches are ignored rather than acted on unseen, and only the board's
-wake gesture turns it back on. For 3 seconds after it turns off nothing can wake it, so the press that turned it
-off can't turn it straight back on.
+While the screen is locked, key presses and touches are ignored rather than acted on unseen, and only the board's
+wake gesture unlocks it. For 3 seconds after it locks nothing can unlock it, so the press that locked it can't
+undo itself.
 
-A **screen button** works the same way on every board: **tap** to turn the screen off, **hold for 2 seconds** to
-turn it on. A tap on a dark screen does nothing, so a press in a pocket won't wake it.
+A **screen button** works the same way on every board: **tap** to turn the screen off (from the screensaver too),
+**hold for 2 seconds** to unlock. A tap on a dark screen brings up the screensaver for a look, which goes back
+off after the screen timeout (30 s if the timeout is Never); a press in a pocket can't get past it.
 
-| Board | Screen off | Screen on | Doesn't wake it |
+| Board | Screen off | Unlock | Doesn't unlock it |
 |---|---|---|---|
 | ThinkNode M9 | Hold the d-pad centre, or tap BOOT | Press the d-pad centre, or hold BOOT | Any other key |
 | Wio Tracker L2 | Tap the top Wake button | Hold Wake, or press BOOT | Touch |
@@ -249,7 +256,7 @@ Installing downloads the new firmware in the background, checks its signature, t
 settings, messages and stations are kept. An image whose signature doesn't check out is never booted, and a
 failed or interrupted install leaves the running firmware untouched.
 
-Updates need the flash layout platy-aprs ships with. A device installed some other way (for example by a
+Updates need the flash layout Platy APRS ships with. A device installed some other way (for example by a
 multi-firmware installer) is not offered updates; reflash the factory image over USB once.
 
 ## Backup, restore and the packet log
@@ -282,7 +289,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, brightness, screen timeout, timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, brightness, screen timeout and screensaver, timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |

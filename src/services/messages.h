@@ -10,6 +10,10 @@
 enum class MsgState : uint8_t { Received = 0, Pending = 1, Acked = 2, Rejected = 3, Failed = 4 };
 const char *msgStateName(MsgState s);
 
+// How a received message got here.
+enum class MsgVia : uint8_t { Unknown = 0, Tnc = 1, Lora = 2, AprsIs = 3 };
+const char *msgViaName(MsgVia v);
+
 struct ChatMsg {
     uint32_t seq;        // increasing, never 0
     char peer[10];       // the other station
@@ -22,6 +26,9 @@ struct ChatMsg {
     time_t epoch;        // 0 when the clock was not set
     uint32_t uptimeS;
     uint32_t nextTryMs;  // outgoing + Pending only
+    MsgVia via;          // received only
+    char path[48];       // received only: digipeater / APRS-IS path
+    char relay[10];      // received only: igate that sent it to RF as third-party
 };
 
 struct ChatThread {
@@ -37,7 +44,9 @@ struct ChatThread {
 
 void messagesBegin();   // after sdBegin()
 void messagesLoop();
-void messagesOnRx(const aprs::Packet &p);
+// via/path/relay describe how it arrived; relay is the third-party sender
+// for messages an igate put on RF (empty otherwise).
+void messagesOnRx(const aprs::Packet &p, MsgVia via, const char *path, const char *relay = "");
 
 // Queues a message (sent right away, then retried until acked).
 bool messagesSend(const String &to, const String &text, String &err);
