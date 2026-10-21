@@ -9,6 +9,7 @@ enum class Units : uint8_t { Imperial = 0, Metric = 1 };
 enum class AlertSound : uint8_t { Default, Chirpy, Bass, Off };
 constexpr uint8_t kAlertSoundCount = 4;
 const char *alertSoundKey(AlertSound s);   // JSON value: "default", "chirpy", ...
+enum class UiTheme : uint8_t { Dark, Light };
 
 struct SmartBeaconConfig {
     bool enabled = true;
@@ -81,6 +82,7 @@ struct AppConfig {
     bool sdLogIs = false;   // include packets received from APRS-IS
     uint8_t brightness = 160;
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
+    UiTheme theme = UiTheme::Dark;
     bool screenSaver = true;      // at the timeout: screensaver (true) or screen off
     bool otaAutoInstall = false;  // install a newer release without asking
     String timezone = "EST5EDT,M3.2.0,M11.1.0";
