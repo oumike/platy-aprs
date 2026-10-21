@@ -109,6 +109,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["volume"] = c.volumePct;
     d["brightness"] = c.brightness;
     d["screenOnSecs"] = c.screenOnSecs;
+    d["screenSaver"] = c.screenSaver;
     d["otaAutoInstall"] = c.otaAutoInstall;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
@@ -249,6 +250,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
             c.brightness = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
         }
         takeNum(d, "screenOnSecs", c.screenOnSecs);
+        take(d, "screenSaver", c.screenSaver);
         take(d, "otaAutoInstall", c.otaAutoInstall);
         takeStr(d, "timezone", c.timezone);
         String pw;

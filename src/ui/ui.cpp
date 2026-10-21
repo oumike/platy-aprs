@@ -59,6 +59,8 @@ lv_obj_t *s_sbBack = nullptr;   // touch boards: Back (hold = Home) in the statu
 lv_obj_t *s_sbCall, *s_sbMsg, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
 lv_obj_t *s_sbTnc, *s_sbTncTx;         // connected-TNC radio icon + transmit arrow
 uint32_t s_sbTncLastTx = 0;
+lv_obj_t *s_sbIs, *s_sbIsUp;           // APRS-IS up/down arrows; the up arrow lights on send
+uint32_t s_sbIsLastTx = 0, s_isRxSeen = 0, s_isRxBlinkMs = 0;
 uint32_t s_rxSeenBle = 0, s_rxSeenLora = 0, s_rxBlinkMs = 0;
 constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, however busy the channel
 
@@ -273,6 +275,39 @@ void buildTncIcon(lv_obj_t *bar) {
     lv_obj_add_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
 }
 
+// A 6x14 arrow from rectangles: three-step head plus a 2 px shaft.
+lv_obj_t *sbArrow(lv_obj_t *parent, int x, bool up) {
+    lv_obj_t *a = lv_obj_create(parent);
+    lv_obj_remove_style_all(a);
+    lv_obj_set_pos(a, x, 0);
+    lv_obj_set_size(a, 6, 14);
+    lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(a, LV_OBJ_FLAG_SCROLLABLE);
+    const int y0 = up ? 0 : 13, dy = up ? 1 : -1;
+    sbRect(a, 2, y0, 2, 1, 0, kGreen);
+    sbRect(a, 1, y0 + dy, 4, 1, 0, kGreen);
+    sbRect(a, 0, y0 + 2 * dy, 6, 1, 0, kGreen);
+    sbRect(a, 2, up ? 3 : 0, 2, 11, 0, kGreen);
+    return a;
+}
+
+void sbArrowColor(lv_obj_t *arrow, lv_color_t c) {
+    for (uint32_t i = 0; i < lv_obj_get_child_count(arrow); i++)
+        lv_obj_set_style_bg_color(lv_obj_get_child(arrow, i), c, 0);
+}
+
+// APRS-IS link: an up arrow beside a down arrow, shown while connected.
+void buildIsIcon(lv_obj_t *bar) {
+    s_sbIs = lv_obj_create(bar);
+    lv_obj_remove_style_all(s_sbIs);
+    lv_obj_set_size(s_sbIs, 13, 14);
+    lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_SCROLLABLE);
+    s_sbIsUp = sbArrow(s_sbIs, 0, true);
+    sbArrow(s_sbIs, 7, false);
+    lv_obj_add_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+}
+
 lv_obj_t *sbLabel(lv_obj_t *bar, const char *txt) {
     lv_obj_t *l = lv_label_create(bar);
     lv_label_set_text(l, txt);
@@ -313,6 +348,7 @@ void buildStatusBar() {
     s_sbMsg = sbLabel(bar, "");
     lv_obj_set_style_text_color(s_sbMsg, kAmber, 0);
     buildTncIcon(bar);
+    buildIsIcon(bar);
     s_sbBt = sbLabel(bar, LV_SYMBOL_BLUETOOTH);
     s_sbGps = sbLabel(bar, LV_SYMBOL_GPS);
     s_sbWifi = sbLabel(bar, LV_SYMBOL_WIFI);
@@ -322,6 +358,8 @@ void buildStatusBar() {
     lv_obj_set_style_text_color(s_sbGps, kGrey, 0);
     s_rxSeenBle = g_ble.status().rxFrames;
     s_rxSeenLora = g_lora.status().rxFrames;
+    s_isRxSeen = aprsIsStatus().rxLines;
+    s_sbIsLastTx = aprsIsStatus().txLines;
     lv_timer_create(rxBlinkTimer, 250, nullptr);
 }
 
@@ -359,7 +397,19 @@ void updateMsgIcon() {
 }
 
 // Received packets: blink the radio indicator once, rate-limited.
+void isRxBlink() {
+    const uint32_t rx = aprsIsStatus().rxLines;
+    if (rx == s_isRxSeen) return;
+    s_isRxSeen = rx;
+    const uint32_t now = lv_tick_get();
+    if (s_isRxBlinkMs && now - s_isRxBlinkMs < kRxBlinkGapMs) return;
+    if (lv_obj_has_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN) || lv_anim_get(s_sbIs, setOpa)) return;
+    s_isRxBlinkMs = now;
+    blink(s_sbIs, 150, 0);
+}
+
 void rxBlinkTimer(lv_timer_t *) {
+    isRxBlink();
     const bool lora = g_config.rfLink == RfLink::Lora;
     const uint32_t rx = lora ? g_lora.status().rxFrames : g_ble.status().rxFrames;
     uint32_t &seen = lora ? s_rxSeenLora : s_rxSeenBle;
@@ -396,6 +446,16 @@ void updateStatusBar() {
         lv_obj_remove_flag(s_sbBt, LV_OBJ_FLAG_HIDDEN);
     }
     s_sbTncLastTx = tnc.txFrames;
+
+    const AprsIsStatus is = aprsIsStatus();
+    if (is.connected) {
+        lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+        // Up arrow goes amber for one status tick after each line sent.
+        sbArrowColor(s_sbIsUp, is.txLines != s_sbIsLastTx ? kAmber : kGreen);
+    } else {
+        lv_obj_add_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_sbIsLastTx = is.txLines;
 
     if (g_config.rfLink == RfLink::Lora) {
         const LoraState ls = g_lora.status().state;
@@ -905,6 +965,70 @@ void sendFromThread() {
     else toast("Not sent: " + err);
 }
 
+// ── Message details ──────────────────────────────────────────────────────────
+
+// What an APRS-IS path's q construct says about who put the packet on the net.
+String isOrigin(const char *path) {
+    const char *q = strstr(path, "qA");
+    if (!q || !q[2] || q[3] != ',') return "";
+    const String by = q + 4;
+    switch (q[2]) {
+        case 'R': case 'O': case 'r': return "Heard on RF by igate " + by;
+        case 'C': case 'X': case 'U': return "Sent straight to server " + by;
+        case 'S': return "Relayed by server " + by;
+        default: return "Entered APRS-IS at " + by;
+    }
+}
+
+void openMessageDetail(const ChatMsg &m) {
+    String t = String(m.outgoing ? "To: " : "From: ") + m.peer + "\n";
+    if (m.epoch) {
+        struct tm tm;
+        localtime_r(&m.epoch, &tm);
+        char buf[32];
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        t += String(m.outgoing ? "Sent: " : "Received: ") + buf + "\n";
+    } else if (m.uptimeS) {
+        t += String(m.outgoing ? "Sent " : "Received ") + ageStr(m.uptimeS) + " ago\n";
+    }
+    if (m.outgoing) {
+        t += String("State: ") + msgStateName(m.state) + ", " + String(m.tries) + (m.tries == 1 ? " try\n" : " tries\n");
+    } else {
+        t += String("Arrived via: ") + msgViaName(m.via) + "\n";
+        if (m.via == MsgVia::AprsIs) {
+            const String o = isOrigin(m.path);
+            if (o.length()) t += o + "\n";
+        } else if (m.via != MsgVia::Unknown) {
+            if (m.relay[0]) t += String("Gated from APRS-IS to RF by ") + m.relay + "\n";
+            t += strchr(m.path, '*') ? "Digipeated\n" : "Heard direct\n";
+        }
+        if (m.path[0]) t += String("Path: ") + m.path + "\n";
+    }
+    t += m.msgId[0] ? String("Message ID: ") + m.msgId + (m.outgoing ? "\n" : " (acked by us)\n")
+                    : String("No message ID (no ack requested)\n");
+    t += String("\n") + m.text;
+
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_ENVELOPE " Message details", &grp);
+    lv_obj_t *box = lv_obj_create(scr);
+    lv_obj_set_width(box, lv_pct(100));
+    lv_obj_set_flex_grow(box, 1);
+    lv_obj_set_style_pad_all(box, 4, 0);
+    lv_group_add_obj(grp, box);
+    lv_obj_add_event_cb(box, [](lv_event_t *e) {
+        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
+        const uint32_t k = lv_event_get_key(e);
+        if (k == LV_KEY_DOWN || k == LV_KEY_NEXT) lv_obj_scroll_by_bounded(b, 0, -40, LV_ANIM_ON);
+        if (k == LV_KEY_UP || k == LV_KEY_PREV) lv_obj_scroll_by_bounded(b, 0, 40, LV_ANIM_ON);
+    }, LV_EVENT_KEY, nullptr);
+    lv_obj_t *l = lv_label_create(box);
+    lv_obj_set_width(l, lv_pct(100));
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_label_set_text(l, t.c_str());
+    pushScreen(scr, grp);
+}
+
 void refreshThread() {
     if (!s_thr.list) return;
     if (s_thr.gen == g_msgGen) return;
@@ -928,8 +1052,14 @@ void refreshThread() {
         lv_obj_t *b = addWrapItem(s_thr.list, s_thr.grp, line.c_str(), [](lv_event_t *e) {
             const uint32_t seq = s_thr.seqs[(size_t)(uintptr_t)lv_event_get_user_data(e)];
             String err;
-            for (size_t i = 0; i < messagesCount(); i++)
-                if (messagesAt(i)->seq == seq && messagesAt(i)->state == MsgState::Failed) messagesRetry(seq, err);
+            for (size_t i = 0; i < messagesCount(); i++) {
+                const ChatMsg *m = messagesAt(i);
+                if (m->seq != seq) continue;
+                // A failed send retries; anything else shows its details.
+                if (m->state == MsgState::Failed) messagesRetry(seq, err);
+                else openMessageDetail(*m);
+                break;
+            }
         }, (void *)(uintptr_t)n);
         if (m->outgoing) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
         if (++n == 150) break;
@@ -1533,11 +1663,31 @@ lv_obj_t *buildSplash(const char *footer) {
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    // The image is 240x132 at (40, 12); its speech bubble spans (0..88, 2..34)
-    // within it, top left, coming out of the bill.
+    // The About screen's footer (version, heap, battery) sits at the bottom,
+    // and the status bar covers the top while it is open.
+    const int vres = lv_display_get_vertical_resolution(nullptr);
+    int areaTop = 0, areaBottom = vres;
+    if (footer) {
+        lv_obj_t *foot = lv_label_create(scr);
+        lv_label_set_text(foot, footer);
+        lv_obj_set_style_text_font(foot, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(foot, lv_color_hex(0x9FC7D6), 0);
+        lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -8);
+        lv_obj_update_layout(foot);
+        areaTop = kStatusH;
+        areaBottom = lv_obj_get_y(foot) - 4;
+    }
+
+    // Image (132 tall) and title, plus the tagline when there's room (not on
+    // About), make one block centred in the free area. The image is 240x132;
+    // its speech bubble spans (0..88, 2..34) within it, top left, coming out
+    // of the bill.
+    const int blockH = footer ? 162 : 180;
+    const int top = areaTop + (areaBottom - areaTop - blockH) / 2;
     lv_obj_t *img = lv_image_create(scr);
     lv_image_set_src(img, &splash_img);
-    lv_obj_set_pos(img, 40, 12);
+    lv_obj_set_pos(img, 40, top);
 
     lv_obj_t *cq = lv_label_create(scr);
     lv_label_set_text(cq, "CQ CQ");
@@ -1545,32 +1695,74 @@ lv_obj_t *buildSplash(const char *footer) {
     lv_obj_set_style_text_color(cq, lv_color_hex(0x15506A), 0);
     lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(cq, 88);
-    lv_obj_set_pos(cq, 40, 12 + 2 + 8);
+    lv_obj_set_pos(cq, 40, top + 2 + 8);
 
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, APP_NAME);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 150);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, top + 138);
 
+    if (footer) return scr;
     lv_obj_t *tag = lv_label_create(scr);
     lv_label_set_text(tag, "APRS in your pocket");
     lv_obj_set_style_text_font(tag, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(tag, lv_color_hex(0xFFC440), 0);
-    lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, 176);
-
-    if (!footer) return scr;
-    lv_obj_t *foot = lv_label_create(scr);
-    lv_label_set_text(foot, footer);
-    lv_obj_set_style_text_font(foot, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(foot, lv_color_hex(0x9FC7D6), 0);
-    lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, top + 164);
     return scr;
 }
 
 lv_obj_t *s_splash = nullptr;
 uint32_t s_splashAtMs = 0;
+
+// ── Screensaver: the platy drifting over black, bouncing off the edges ───────
+
+constexpr int kSaverW = 120, kSaverH = 66;   // splash image at half size
+struct {
+    lv_obj_t *bg, *img;
+    lv_timer_t *timer;
+    int x, y, dx, dy;
+} s_saver;
+
+void saverStep(lv_timer_t *) {
+    const int maxX = lv_obj_get_width(s_saver.bg) - kSaverW;
+    const int maxY = lv_obj_get_height(s_saver.bg) - kSaverH;
+    s_saver.x += s_saver.dx;
+    s_saver.y += s_saver.dy;
+    if (s_saver.x <= 0 || s_saver.x >= maxX) s_saver.dx = -s_saver.dx;
+    if (s_saver.y <= 0 || s_saver.y >= maxY) s_saver.dy = -s_saver.dy;
+    s_saver.x = LV_CLAMP(0, s_saver.x, maxX);
+    s_saver.y = LV_CLAMP(0, s_saver.y, maxY);
+    lv_obj_set_pos(s_saver.img, s_saver.x, s_saver.y);
+}
+
+void saverShow() {
+    if (s_saver.bg) return;
+    s_saver.bg = lv_obj_create(lv_layer_sys());
+    lv_obj_remove_style_all(s_saver.bg);
+    lv_obj_set_size(s_saver.bg, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(s_saver.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
+    s_saver.img = lv_image_create(s_saver.bg);
+    lv_image_set_src(s_saver.img, &splash_img);
+    lv_obj_set_size(s_saver.img, kSaverW, kSaverH);
+    lv_image_set_inner_align(s_saver.img, LV_IMAGE_ALIGN_STRETCH);
+    lv_obj_update_layout(s_saver.bg);
+    s_saver.x = (int)(esp_random() % (uint32_t)(lv_obj_get_width(s_saver.bg) - kSaverW));
+    s_saver.y = (int)(esp_random() % (uint32_t)(lv_obj_get_height(s_saver.bg) - kSaverH));
+    s_saver.dx = (esp_random() & 1) ? 1 : -1;
+    s_saver.dy = (esp_random() & 1) ? 1 : -1;
+    lv_obj_set_pos(s_saver.img, s_saver.x, s_saver.y);
+    s_saver.timer = lv_timer_create(saverStep, 50, nullptr);
+}
+
+void saverHide() {
+    if (!s_saver.bg) return;
+    lv_timer_delete(s_saver.timer);
+    lv_obj_delete(s_saver.bg);
+    s_saver = {};
+}
 
 void openAbout() {
     char buf[160];
@@ -1686,6 +1878,13 @@ void openSettings() {
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
     addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Paired radios", [](lv_event_t *) { openBonds(); });
+    lv_obj_t *is = addItem(list, grp, LV_SYMBOL_UPLOAD, "", [](lv_event_t *e) {
+        g_config.aprsIsEnabled = !g_config.aprsIsEnabled;
+        configSave();
+        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
+        lv_label_set_text(lv_obj_get_child(b, 1), g_config.aprsIsEnabled ? "APRS-IS: On" : "APRS-IS: Off");
+    });
+    lv_label_set_text(lv_obj_get_child(is, 1), g_config.aprsIsEnabled ? "APRS-IS: On" : "APRS-IS: Off");
     // Cycles through the timeout choices; the label shows the current one.
     lv_obj_t *to = addItem(list, grp, LV_SYMBOL_EYE_CLOSE, "", [](lv_event_t *e) {
         int i = 0;
@@ -1698,6 +1897,13 @@ void openSettings() {
     });
     lv_label_set_text(lv_obj_get_child(to, 1),
                       (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
+    lv_obj_t *ss = addItem(list, grp, LV_SYMBOL_IMAGE, "", [](lv_event_t *e) {
+        g_config.screenSaver = !g_config.screenSaver;
+        configSave();
+        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
+        lv_label_set_text(lv_obj_get_child(b, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
+    });
+    lv_label_set_text(lv_obj_get_child(ss, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
     if (audioPresent()) {
         // Each press moves to the next style or volume and plays the new-message tone with it.
         lv_obj_t *snd = addItem(list, grp, LV_SYMBOL_BELL, "", [](lv_event_t *e) {
@@ -1873,7 +2079,20 @@ bool hotkey(uint8_t key) {
     }
 }
 
+// While someone is configuring the device from a phone through the setup AP,
+// the screen must not time out under them; once the AP closes (setup done),
+// bring it back so they see the device come up.
+void holdScreenForSetupAp() {
+    static bool held = false;
+    const WifiStatus w = wifiStatus();
+    const bool hold = w.apActive && (w.apReason == ApReason::Setup || w.apReason == ApReason::Manual);
+    if (hold) screenNoteActivity();
+    else if (held && screenAsleep() && !screenTryWake("setup done")) return;  // retry after guard
+    held = hold;
+}
+
 void tick(lv_timer_t *) {
+    holdScreenForSetupAp();
     updateStatusBar();
     if (s_depth > 0 && s_stack[s_depth - 1].refresh) s_stack[s_depth - 1].refresh();
     refreshInfo();
@@ -1894,6 +2113,7 @@ void uiBegin() {
     // Keep the splash up for at least 3.5 s, however quick the rest of setup was.
     while (s_splash && millis() - s_splashAtMs < 3500) delay(10);
     keyboardSetHotkeyHandler(hotkey);
+    screenSetSaverHooks(saverShow, saverHide);
     themeInit();
     buildStatusBar();
     buildHome();

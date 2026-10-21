@@ -29,7 +29,7 @@ struct AppConfig {
     uint8_t ssid = 9;
     char symbolTable = '/';
     char symbolCode = '>';
-    String comment = "platy-aprs";
+    String comment = "Platy APRS";
     String path = "WIDE1-1,WIDE2-1";
 
     // Beaconing
@@ -81,6 +81,7 @@ struct AppConfig {
     bool sdLogIs = false;   // include packets received from APRS-IS
     uint8_t brightness = 160;
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
+    bool screenSaver = true;      // at the timeout: screensaver (true) or screen off
     bool otaAutoInstall = false;  // install a newer release without asking
     String timezone = "EST5EDT,M3.2.0,M11.1.0";
     String adminPassword;

@@ -5,7 +5,7 @@
 // JSON; data-t selects how it is read back (num | bool | str).
 static const char kWebUiHtml[] PROGMEM = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>platy-aprs</title>
+<title>Platy APRS</title>
 <style>
 :root{--bg:#111418;--card:#1b2027;--fg:#e6e6e6;--mut:#8a94a3;--acc:#3fa7ff;--bad:#ff6b6b;--ok:#4cd07d}
 *{box-sizing:border-box}body{margin:0;padding-bottom:64px;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
@@ -36,7 +36,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 .bub{max-width:80%;padding:6px 10px;border-radius:10px;margin:6px 0;background:#2a313b}.bub.o{margin-left:auto;background:#1d4a73}
 .bub small{display:block;font-size:11px}.star{cursor:pointer;color:#777;font-size:16px}.star.on{color:#ffb347}.ur{background:var(--acc);color:#000;border-radius:9px;padding:0 6px;font-size:12px;margin-left:6px}
 </style></head><body>
-<header><b>platy-aprs</b><div id="st">…</div></header>
+<header><b>Platy APRS</b><div id="st">…</div></header>
 <nav id="tabs"></nav>
 
 <section data-tab="Station"><div class="card">
@@ -130,6 +130,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <div class="vol"><label>Volume</label><select data-k="device.volume" data-t="num"><option>0</option><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
 <label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
+<label>At the timeout</label><select data-k="device.screenSaver" data-t="bool"><option value="true">Screensaver</option><option value="false">Screen off</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
 <label>Admin password, username "admin" <small id="apw"></small></label><input type="password" id="apass" autocomplete="new-password">
 <div class="chk"><input type="checkbox" id="aclr">Remove admin password</div>
@@ -197,7 +198,7 @@ rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cf
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
-if(e.dataset.t=='num')v=Number(v);set(o,e.dataset.k,v)});
+if(e.dataset.t=='num')v=Number(v);else if(e.dataset.t=='bool'&&e.type!='checkbox')v=v=='true';set(o,e.dataset.k,v)});
 if($('#wpass').value)set(o,'wifi.password',$('#wpass').value);
 if($('#apass').value)set(o,'device.adminPassword',$('#apass').value);
 if($('#aclr').checked)set(o,'device.clearAdminPassword',true);

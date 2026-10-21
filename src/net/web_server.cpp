@@ -45,7 +45,7 @@ bool authorized() {
     }
     if (g_config.adminPassword.length() == 0) return true;
     if (s_server.authenticate("admin", g_config.adminPassword.c_str())) return true;
-    s_server.requestAuthentication(BASIC_AUTH, "platy-aprs");
+    s_server.requestAuthentication(BASIC_AUTH, APP_NAME);
     return false;
 }
 
@@ -394,6 +394,11 @@ void handleMessages() {
         o["state"] = msgStateName(m->state);
         o["tries"] = m->tries;
         o["text"] = m->text;
+        if (!m->outgoing && m->via != MsgVia::Unknown) {
+            o["via"] = msgViaName(m->via);
+            o["path"] = m->path;
+            if (m->relay[0]) o["relay"] = m->relay;
+        }
         if (m->epoch) o["epoch"] = (long long)m->epoch;
         else if (m->uptimeS) o["ageS"] = now - m->uptimeS;
     }

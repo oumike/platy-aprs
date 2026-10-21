@@ -180,7 +180,7 @@ void aprsIsLoop() {
             w.port = g_config.aprsIsPort;
             String call = g_config.fullCallsign();
             call.toUpperCase();
-            w.login = "user " + call + " pass " + String(g_config.effectivePasscode()) + " vers " APP_NAME " " APP_VERSION;
+            w.login = "user " + call + " pass " + String(g_config.effectivePasscode()) + " vers " APP_ID " " APP_VERSION;
             if (g_config.aprsIsFilter.length()) w.login += " filter " + g_config.aprsIsFilter;
             w.login += "\r\n";
         }

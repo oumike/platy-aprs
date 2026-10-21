@@ -68,7 +68,7 @@ int compareVersions(const char *a, const char *b) {
 void beginRequest(HTTPClient &http, WiFiClient &client, const String &url) {
     http.begin(client, url);
     http.setTimeout((uint16_t)kTimeoutMs);
-    http.addHeader("User-Agent", "platy-aprs-ota/" APP_VERSION);
+    http.addHeader("User-Agent", APP_ID "-ota/" APP_VERSION);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 }
 

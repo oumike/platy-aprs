@@ -118,9 +118,11 @@ void handleRf(const RxFrame &rx) {
 
     aprs::Packet p;
     if (!aprs::parse(f.src.str(), f.dst.str(), f.info, p)) return;
-    stationDbUpdate(p, pathOf(tnc2).c_str(), tnc2.c_str(), false);
+    const std::string path = pathOf(tnc2);
+    stationDbUpdate(p, path.c_str(), tnc2.c_str(), false);
     lastMessageUpdate(p);
-    messagesOnRx(p);
+    messagesOnRx(p, g_config.rfLink == RfLink::Lora ? MsgVia::Lora : MsgVia::Tnc, path.c_str(),
+                 p.thirdParty ? f.src.str().c_str() : "");
 }
 
 }  // namespace
@@ -144,7 +146,7 @@ void routerOnIsLine(const std::string &line) {
     if (!aprs::parse(ip.src, ip.dst, ip.info, p)) return;
     stationDbUpdate(p, ip.path.c_str(), line.c_str(), true);
     lastMessageUpdate(p);
-    messagesOnRx(p);
+    messagesOnRx(p, MsgVia::AprsIs, ip.path.c_str());
     gateToRf(ip, p);
 }
 

@@ -29,7 +29,7 @@ void backupBuild(JsonDocument &doc, bool includeSecrets) {
 bool backupRestore(JsonObjectConst root, String &err) {
     const char *fmt = root["format"] | "";
     if (strcmp(fmt, kFormat) != 0) {
-        err = "Not a platy-aprs backup file";
+        err = "Not a Platy APRS backup file";
         return false;
     }
     if ((root["version"] | 0) > kVersion) {

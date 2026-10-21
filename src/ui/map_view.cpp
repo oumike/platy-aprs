@@ -62,7 +62,7 @@ bool fetchTile(Job &j) {
     http.setConnectTimeout(5000);
     http.setTimeout(10000);
     if (!http.begin(client, url)) return false;
-    http.addHeader("User-Agent", "platy-aprs/" APP_VERSION);
+    http.addHeader("User-Agent", APP_ID "/" APP_VERSION);
     const char *hdrs[] = {"x-blocked"};
     http.collectHeaders(hdrs, 1);
     const int code = http.GET();

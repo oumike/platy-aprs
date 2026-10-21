@@ -1,17 +1,25 @@
 #pragma once
 #include <stdint.h>
 
-// Screen power: the idle timeout, sleep/wake, and the board wake buttons.
-// Behaviour follows camillia-mt (without its lock screen):
+// Screen power: the idle timeout, screensaver, sleep/wake, and the board wake
+// buttons. Behaviour follows camillia-mt (without its lock screen):
 //   - after g_config.screenOnSecs with no input the panel dims for its last
-//     10 s, then sleeps (panel SLPIN, backlight off); 0 = never
-//   - input that arrives while asleep never reaches the UI; only each board's
-//     wake gesture brings the panel back, and not in the first 3 s after it
-//     went dark (so the press that turned it off cannot turn it on again)
-//   - a board's wake button: tap = screen off, hold 2 s = wake
+//     10 s, then shows the screensaver (g_config.screenSaver) or sleeps
+//     (panel SLPIN, backlight off); 0 = never
+//   - input that arrives while locked (screensaver or off) never reaches the
+//     UI; only each board's wake gesture unlocks, and not in the first 3 s
+//     after it locked (so the press that locked it cannot unlock it again)
+//   - a board's wake button: tap = screen off when on or in the screensaver,
+//     screensaver when off; hold 2 s = unlock
+//   - a screensaver brought up by a tap goes back off after the timeout
+enum class ScreenState : uint8_t { On, Saver, Off };
+
 void screenBegin();
 void screenLoop();
-bool screenAsleep();
+ScreenState screenState();
+bool screenAsleep();                        // locked: screensaver or off
+// The UI draws the screensaver; these run as it starts and ends.
+void screenSetSaverHooks(void (*show)(), void (*hide)());
 void screenNoteActivity();                  // input the UI acted on
 void screenSleep(const char *reason);
 bool screenTryWake(const char *reason);    // false while the post-sleep guard runs
