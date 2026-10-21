@@ -96,9 +96,10 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     JsonObject d = o["device"].to<JsonObject>();
     d["units"] = c.units == Units::Metric ? "metric" : "imperial";
-    d["homePanel"] = homePanelKey(c.homePanel);
     d["buzzer"] = c.buzzer;
     d["brightness"] = c.brightness;
+    d["screenOnSecs"] = c.screenOnSecs;
+    d["otaAutoInstall"] = c.otaAutoInstall;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
 
@@ -110,24 +111,6 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     JsonObject q = o["quickMessages"].to<JsonObject>();
     for (size_t i = 0; i < AppConfig::kQuickMsgCount; i++) q["m" + String(i + 1)] = c.quickMsgs[i];
-}
-
-const char *homePanelKey(HomePanel p) {
-    switch (p) {
-        case HomePanel::LastMessage: return "lastMessage";
-        case HomePanel::LastPacket: return "lastPacket";
-        case HomePanel::None: return "none";
-        default: return "lastHeard";
-    }
-}
-
-const char *homePanelName(HomePanel p) {
-    switch (p) {
-        case HomePanel::LastMessage: return "Last received message";
-        case HomePanel::LastPacket: return "Last received packet";
-        case HomePanel::None: return "Nothing";
-        default: return "Last heard station";
-    }
 }
 
 template <typename T>
@@ -241,15 +224,13 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     if (d) {
         const char *u = d["units"] | (const char *)nullptr;
         if (u) c.units = strcmp(u, "metric") == 0 ? Units::Metric : Units::Imperial;
-        const char *hp = d["homePanel"] | (const char *)nullptr;
-        if (hp)
-            for (uint8_t i = 0; i <= (uint8_t)HomePanel::None; i++)
-                if (!strcmp(hp, homePanelKey((HomePanel)i))) c.homePanel = (HomePanel)i;
         take(d, "buzzer", c.buzzer);
         if (d["brightness"].is<long>()) {
             const long b = d["brightness"].as<long>();
             c.brightness = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
         }
+        takeNum(d, "screenOnSecs", c.screenOnSecs);
+        take(d, "otaAutoInstall", c.otaAutoInstall);
         takeStr(d, "timezone", c.timezone);
         String pw;
         takeStr(d, "adminPassword", pw);
@@ -292,6 +273,7 @@ String configValidate(const AppConfig &c) {
     if (c.wifiSsid.length() > 32) return "Wi-Fi SSID too long";
     if (c.wifiPassword.length() > 0 && c.wifiPassword.length() < 8) return "Wi-Fi password must be at least 8 characters";
     if (c.brightness < 10) return "Brightness must be 10-255";
+    if (c.screenOnSecs > 86400) return "Screen timeout must be at most 86400 s";
     if (c.hostname.length() == 0 || c.hostname.length() > 32) return "Hostname must be 1-32 characters";
     return "";
 }

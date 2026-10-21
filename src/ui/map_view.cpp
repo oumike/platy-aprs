@@ -31,6 +31,10 @@ constexpr size_t kMaxPng = 192 * 1024;
 constexpr uint32_t kRetryMs = 30000;
 constexpr int kPanStep = 60;
 constexpr int kMaxMarkers = 40;
+// Heat kernel radius, fixed on screen so clusters merge as the map zooms out.
+constexpr int kHeatR = 18;
+// One station's peak: lone stations sit mid-ramp, three or more overlapping saturate to red.
+constexpr int kHeatPeak = 110;
 
 // ── Worker: download and/or decode one tile off the loop task ───────────────
 
@@ -161,6 +165,7 @@ struct Marker {
 struct Map {
     lv_obj_t *root, *canvas, *markers, *info;
     uint16_t *buf;
+    uint8_t *heat;              // w x h station density; null = no heat layer
     int w, h;
     int zoom;
     double cx, cy;              // view centre, world pixels at `zoom`
@@ -257,6 +262,84 @@ int32_t wrapX(int32_t x) {
     return x < 0 ? x + n : x;
 }
 
+// ── Heat layer ──────────────────────────────────────────────────────────────
+
+uint8_t s_kernel[(2 * kHeatR + 1) * (2 * kHeatR + 1)];
+bool s_kernelReady = false;
+
+void buildKernel() {
+    if (s_kernelReady) return;
+    const int side = 2 * kHeatR + 1;
+    const float r2 = (float)(kHeatR * kHeatR);
+    for (int y = -kHeatR; y <= kHeatR; y++)
+        for (int x = -kHeatR; x <= kHeatR; x++) {
+            float f = 1.0f - (float)(x * x + y * y) / r2;
+            f = f > 0 ? f * f : 0;   // quartic falloff: soft edge, no long tail
+            s_kernel[(y + kHeatR) * side + (x + kHeatR)] = (uint8_t)lroundf(f * kHeatPeak);
+        }
+    s_kernelReady = true;
+}
+
+// Blue, cyan, green, yellow, red at 0, 64, 128, 192, 255.
+void heatColor(uint8_t v, int &r, int &g, int &b) {
+    static constexpr uint8_t kStops[5][3] = {
+        {48, 96, 255}, {0, 224, 255}, {64, 236, 72}, {255, 224, 0}, {255, 48, 32}};
+    const int seg = v >= 255 ? 3 : v / 64;
+    const int t = v >= 255 ? 64 : v - seg * 64;
+    r = kStops[seg][0] + (kStops[seg + 1][0] - kStops[seg][0]) * t / 64;
+    g = kStops[seg][1] + (kStops[seg + 1][1] - kStops[seg][1]) * t / 64;
+    b = kStops[seg][2] + (kStops[seg + 1][2] - kStops[seg][2]) * t / 64;
+}
+
+double worldXOnScreen(double lon) {
+    const double world = (double)kTile * tilesAt(s_map->zoom);
+    double x = geo::lonToWorldX(lon, s_map->zoom) - viewLeft();
+    if (x < -world / 2) x += world;
+    if (x > world / 2) x -= world;
+    return x;
+}
+
+// Blends station density over the freshly blitted tiles.
+void paintHeat() {
+    Map &m = *s_map;
+    if (!m.heat) return;
+    buildKernel();
+    memset(m.heat, 0, (size_t)m.w * m.h);
+    const int side = 2 * kHeatR + 1;
+    bool any = false;
+    for (size_t i = 0; i < stationDbCount(); i++) {
+        const Station *s = stationDbAt(i);
+        if (!s || !s->hasPos) continue;
+        const int cx = (int)lround(worldXOnScreen(s->lon));
+        const int cy = (int)lround(geo::latToWorldY(s->lat, m.zoom) - viewTop());
+        const int x0 = std::max(0, cx - kHeatR), x1 = std::min(m.w - 1, cx + kHeatR);
+        const int y0 = std::max(0, cy - kHeatR), y1 = std::min(m.h - 1, cy + kHeatR);
+        if (x0 > x1 || y0 > y1) continue;
+        any = true;
+        for (int y = y0; y <= y1; y++) {
+            uint8_t *row = m.heat + (size_t)y * m.w;
+            const uint8_t *k = s_kernel + (y - cy + kHeatR) * side + (kHeatR - cx);
+            for (int x = x0; x <= x1; x++) {
+                const int v = row[x] + k[x];
+                row[x] = (uint8_t)(v > 255 ? 255 : v);
+            }
+        }
+    }
+    if (!any) return;
+    for (size_t i = 0, n = (size_t)m.w * m.h; i < n; i++) {
+        const uint8_t v = m.heat[i];
+        if (!v) continue;
+        // Never fully opaque, so streets under a hot spot still show.
+        const int a = v * 3 > 190 ? 190 : v * 3;
+        int hr, hg, hb;
+        heatColor(v, hr, hg, hb);
+        const uint16_t p = m.buf[i];
+        const int r = ((p >> 11) & 0x1F) << 3, g = ((p >> 5) & 0x3F) << 2, b = (p & 0x1F) << 3;
+        const int nr = r + (hr - r) * a / 255, ng = g + (hg - g) * a / 255, nb = b + (hb - b) * a / 255;
+        m.buf[i] = (uint16_t)(((nr >> 3) << 11) | ((ng >> 2) << 5) | (nb >> 3));
+    }
+}
+
 void blit() {
     Map &m = *s_map;
     const int lx = (int)floor(viewLeft()), ty = (int)floor(viewTop());
@@ -292,6 +375,7 @@ void blit() {
             }
         }
     }
+    paintHeat();
     lv_obj_invalidate(m.canvas);
 }
 
@@ -593,12 +677,12 @@ void timerCb(lv_timer_t *) {
     }
     if (s_job.state == JobState::Done) collectJob();
     if (s_job.state == JobState::Idle) scheduleJob();
-    if (m.dirty) {
+    const bool newData = m.dataGen != g_dataGen && millis() - m.lastMarkersMs > 3000;
+    if (m.dirty || newData) {   // new stations change the heat layer too
         m.dirty = false;
         blit();
     }
-    if (m.markersDirty || (m.dataGen != g_dataGen && millis() - m.lastMarkersMs > 3000))
-        rebuildMarkers();
+    if (m.markersDirty || newData) rebuildMarkers();
     updateInfo();
 }
 
@@ -706,6 +790,7 @@ void deleteCb(lv_event_t *) {
     lv_timer_delete(m->timer);
     for (auto &s : m->slots) heap_caps_free(s.px);
     heap_caps_free(m->buf);
+    heap_caps_free(m->heat);
     delete m;
     s_map = nullptr;
 }
@@ -734,6 +819,8 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
         return;
     }
     s_map = m;
+    // Without it the map still works, just with dots and no heat.
+    m->heat = (uint8_t *)heap_caps_malloc((size_t)w * h, MALLOC_CAP_SPIRAM);
 
     lv_obj_remove_style_all(root);
     lv_obj_set_size(root, w, h);

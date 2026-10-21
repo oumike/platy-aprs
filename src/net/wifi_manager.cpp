@@ -3,12 +3,12 @@
 #include <ESPmDNS.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
+#include <algorithm>
 
 namespace {
 
 constexpr uint32_t kApFallbackAfterMs = 60UL * 1000;       // STA down this long -> AP up
 constexpr uint32_t kApShutdownGraceMs = 15UL * 1000;       // let the browser see the new IP
-constexpr uint32_t kManualApMinMs = 10UL * 60 * 1000;      // manual AP lifetime when STA is up
 constexpr uint32_t kStaRetryMs = 20UL * 1000;
 constexpr uint32_t kStaRetryWithApClientsMs = 120UL * 1000;  // retries hop channels; spare AP clients
 const IPAddress kApIp(192, 168, 4, 1);
@@ -108,11 +108,7 @@ void wifiLoop() {
     s_staWasConnected = up;
 
     if (up) {
-        if (s_apActive) {
-            const bool manualExpired =
-                s_apReason != ApReason::Manual || now - s_apStartedMs > kManualApMinMs;
-            if (manualExpired && now - s_staConnectedSinceMs > kApShutdownGraceMs) stopAp();
-        }
+        if (s_apActive && now - s_staConnectedSinceMs > kApShutdownGraceMs) stopAp();
         return;
     }
 
@@ -123,6 +119,11 @@ void wifiLoop() {
 
     if (!s_apActive && now - s_staDownSinceMs > kApFallbackAfterMs) startAp(ApReason::Fallback);
 
+    // A connection attempt would abort a running scan.
+    if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+        s_lastStaAttemptMs = now;
+        return;
+    }
     const uint32_t retry =
         (s_apActive && WiFi.softAPgetStationNum() > 0) ? kStaRetryWithApClientsMs : kStaRetryMs;
     if (now - s_lastStaAttemptMs > retry) {
@@ -143,7 +144,63 @@ void wifiApplyConfig() {
     }
 }
 
-void wifiOpenSetupAp() { startAp(ApReason::Manual); }
+bool wifiScanStart() {
+    if (wifiScanRunning()) return true;
+    if (!wifiStaConnected()) {
+        // The driver refuses to scan while the station is connecting.
+        WiFi.disconnect(false, false);
+        s_lastStaAttemptMs = millis();
+    }
+    const int16_t r = WiFi.scanNetworks(true, false);
+    if (r == WIFI_SCAN_FAILED) {
+        Serial.println("[wifi] scan failed to start");
+        return false;
+    }
+    return true;
+}
+
+bool wifiScanRunning() { return WiFi.scanComplete() == WIFI_SCAN_RUNNING; }
+
+bool wifiScanResults(std::vector<WifiNetwork> &out) {
+    out.clear();
+    const int16_t n = WiFi.scanComplete();
+    if (n < 0) return false;
+    for (int i = 0; i < n; i++) {
+        const String ssid = WiFi.SSID(i);
+        if (ssid.length() == 0) continue;
+        const int8_t rssi = (int8_t)WiFi.RSSI(i);
+        auto it = std::find_if(out.begin(), out.end(), [&](const WifiNetwork &w) { return w.ssid == ssid; });
+        if (it != out.end()) {
+            if (rssi > it->rssi) it->rssi = rssi;
+            continue;
+        }
+        out.push_back({ssid, rssi, WiFi.encryptionType(i) != WIFI_AUTH_OPEN});
+    }
+    std::stable_sort(out.begin(), out.end(), [](const WifiNetwork &a, const WifiNetwork &b) { return a.rssi > b.rssi; });
+    return true;
+}
+
+bool wifiConnectTo(const String &ssid, const String &password, String &err) {
+    AppConfig next = g_config;
+    next.wifiSsid = ssid;
+    if (password.length() || ssid != g_config.wifiSsid) next.wifiPassword = password;
+    if (!ssid.length()) err = "Enter a network name";
+    else err = configValidate(next);
+    if (err.length()) return false;
+    g_config = next;
+    if (!configSave()) {
+        err = "Failed to save settings";
+        return false;
+    }
+    wifiApplyConfig();
+    return true;
+}
+
+bool wifiOpenSetupAp() {
+    if (wifiStaConnected()) return false;   // the AP never runs alongside a working STA link
+    startAp(ApReason::Manual);
+    return true;
+}
 
 bool wifiStaConnected() { return WiFi.status() == WL_CONNECTED; }
 

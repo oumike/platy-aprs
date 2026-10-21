@@ -99,6 +99,10 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <button class="btn sec" onclick="post('/api/tnc/disconnect','Disconnecting…')">Disconnect</button>
 <div id="tnets"></div>
 <small>Turn on the TNC's Bluetooth and keep it near the device. Devices that advertise the KISS service are listed first.</small>
+<label>Paired radios</label><div id="tbonds"></div>
+<button class="btn sec" onclick="tforget({address:''},'Forgetting all pairings…')">Forget all pairings</button>
+<button class="btn bad" onclick="confirm('Remove the saved radio?')&&tforget({removeSaved:true},'Removing saved radio…')">Remove saved radio</button>
+<small>Deleting a pairing makes the device pair again on the next connect. Also remove this device from the radio's Bluetooth list.</small>
 </div><div class="card" id="tncc3">
 <label>Device name</label><input data-k="tnc.name">
 <label>BLE address</label><input data-k="tnc.address" placeholder="aa:bb:cc:dd:ee:ff">
@@ -120,12 +124,18 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
-<label>Home screen panel</label><select data-k="device.homePanel"><option value="lastHeard">Last heard station</option><option value="lastMessage">Last received message</option><option value="lastPacket">Last received packet</option><option value="none">Nothing</option></select>
 <div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
+<label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
 <label>Admin password, username "admin" <small id="apw"></small></label><input type="password" id="apass" autocomplete="new-password">
 <div class="chk"><input type="checkbox" id="aclr">Remove admin password</div>
+</div><div class="card"><b>Firmware update</b>
+<div id="ota">…</div>
+<div class="chk"><input type="checkbox" data-k="device.otaAutoInstall" data-t="bool">Install updates automatically</div>
+<button class="btn sec" onclick="otaGo('check')">Check for updates</button>
+<button class="btn" id="otai" style="display:none" onclick="otaGo('install')">Install update</button>
+<small>Updates are checked 20 s after joining Wi-Fi, then daily. Each image's signature is verified before the device switches to it.</small>
 </div><div class="card"><b>Backup &amp; restore</b>
 <div class="chk"><input type="checkbox" id="bsec">Include passwords (Wi-Fi, admin) in the backup</div>
 <button class="btn sec" onclick="bdl()">Download backup</button>
@@ -157,6 +167,8 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <div style="padding:0 12px 60px" id="savebar"><button class="btn" onclick="save()">Save</button></div>
 <div id="msg"></div>
 <script>
+// Every POST carries X-Platy; the device refuses POSTs without it (CSRF guard).
+{const f=window.fetch;window.fetch=(u,o={})=>{if(o.method==='POST')o.headers=Object.assign({'X-Platy':'1'},o.headers);return f(u,o)}}
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let cfg={},tab='';
 const esc=t=>String(t??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -172,7 +184,7 @@ function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
-$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname)}
+$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);set(o,e.dataset.k,v)});
@@ -188,6 +200,12 @@ async function tscan(start){const j=await (await fetch('/api/tnc/scan'+(start?'?
 e.onclick=async()=>{toast('Selecting '+n.name+'…');const r=await (await fetch('/api/tnc/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})).json();
 r.ok?(toast('Selected '+n.name+'; connecting'),load()):toast(r.error,1)};d.appendChild(e)});
 if(j.scanning){d.insertAdjacentHTML('beforeend','<small>Scanning…</small>');setTimeout(()=>tscan(0),1500)}else if(!(j.devices||[]).length)d.innerHTML='<small>No devices found.</small>'}
+async function tbonds(){const j=await (await fetch('/api/tnc/bonds')).json();const d=$('#tbonds');d.innerHTML='';
+(j.bonds||[]).forEach(b=>{const e=document.createElement('div');e.className='net';e.innerHTML=(b.saved&&j.savedName?esc(j.savedName)+' ':'')+'<small>'+esc(b.address)+'</small> <button class="btn sec">Delete</button>';
+e.querySelector('button').onclick=()=>tforget({address:b.address,addressType:b.addressType},'Deleting pairing…');d.appendChild(e)});
+if(!(j.bonds||[]).length)d.innerHTML='<small>No paired radios.</small>'}
+async function tforget(body,t){toast(t);const r=await (await fetch('/api/tnc/forget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json().catch(()=>({}));
+if(r.ok===false)toast(r.error,1);else if(body.removeSaved)load();setTimeout(()=>{tbonds();status()},800)}
 let lastSeq=0;
 async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();if(!j.packets.length)return;
 if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;
@@ -220,7 +238,7 @@ if(!j.ok)return toast(j.error,1);$('#mtx').value='';mpeer=to;messages(1)}
 async function mdel(){if(!confirm('Delete the conversation with '+mpeer+'?'))return;await fetch('/api/messages/delete?peer='+encodeURIComponent(mpeer),{method:'POST'});mpeer='';messages(1)}
 $('#mtx').addEventListener('input',()=>$('#mlen').textContent=$('#mtx').value.length+'/67');
 $('#mtx').addEventListener('keydown',e=>{if(e.key=='Enter')msend()});
-async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device'){await sdlist();await loglist()}}catch(e){}}
+async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device'){await ota();await sdlist();await loglist()}}catch(e){}}
 setInterval(()=>{if(tab=='Monitor'||tab=='Stations'||tab=='Messages')poll()},3000);
 const bs=()=>$('#bsec').checked?'1':'0';
 function bdl(){location.href='/api/backup?secrets='+bs()}
@@ -234,6 +252,13 @@ $('#lgl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.n
 [...$('#lgl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
 if(b.dataset.a=='d')location.href='/api/logs/download?name='+n;
 else if(confirm('Delete '+j.files[i].name+'?')){await fetch('/api/logs/delete?name='+n,{method:'POST'});loglist()}})})}
+async function ota(){const o=await (await fetch('/api/ota')).json();let t='Running '+o.running+' ('+o.board+')';
+const st={idle:'',checking:'Checking…','up-to-date':'Up to date (latest '+o.latest+')',available:'Update available: '+o.latest,
+installing:'Installing '+o.latest+'… '+(o.total?Math.round(o.written*100/o.total)+'%':Math.round(o.written/1024)+' KB'),done:'Installed '+o.latest+', rebooting…',failed:'Failed: '+o.error}[o.state];
+if(!o.layoutOk)t+='. Updates unavailable on this flash layout; reflash the factory image.';else if(st)t+='. '+st;
+$('#ota').textContent=t;$('#otai').style.display=o.state=='available'?'':'none'}
+async function otaGo(a){const r=await fetch('/api/ota/'+a,{method:'POST'});if(!r.ok)toast((await r.json()).error,1);ota()}
+setInterval(()=>{if(tab=='Device')ota().catch(()=>{})},2000)
 async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
 $('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
 [...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{

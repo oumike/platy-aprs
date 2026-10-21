@@ -73,5 +73,6 @@
 #define GPS_BAUD           115200
 
 #define PIN_BUZZER         9
+#define PIN_BOOT_BTN       0    // BOOT, active LOW: screen button (tap off, hold wake)
 #define PIN_BATT_ADC       13   // ADC2, 2:1 divider
 #define BATT_DIVIDER       2.0f

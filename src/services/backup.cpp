@@ -27,9 +27,8 @@ void backupBuild(JsonDocument &doc, bool includeSecrets) {
 }
 
 bool backupRestore(JsonObjectConst root, String &err) {
-    // Backups from before the rename carry the old format name.
     const char *fmt = root["format"] | "";
-    if (strcmp(fmt, kFormat) != 0 && strcmp(fmt, "rhino-aprs-backup") != 0) {
+    if (strcmp(fmt, kFormat) != 0) {
         err = "Not a platy-aprs backup file";
         return false;
     }

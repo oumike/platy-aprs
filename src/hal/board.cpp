@@ -4,6 +4,8 @@
 #if defined(DEVICE_WIO_TRACKER_L2)
 #include <Wire.h>
 #include "wio_l2_io.h"
+#elif defined(DEVICE_MESH_DECK)
+#include "mesh_deck_io.h"
 #endif
 
 static uint16_t s_battMv = 0;
@@ -67,11 +69,21 @@ void boardBegin() {
     pinMode(PIN_LORA_CS, OUTPUT);
     digitalWrite(PIN_LORA_CS, HIGH);
     wioIoBegin();
+#elif defined(DEVICE_MESH_DECK)
+    pinMode(PIN_LORA_CS, OUTPUT);
+    digitalWrite(PIN_LORA_CS, HIGH);
+    meshDeckIoBegin();   // touch must be out of reset before the panel init
 #endif
 }
 
 uint16_t boardBatteryMilliVolts() {
     const uint32_t now = millis();
+#if defined(DEVICE_MESH_DECK)
+    if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
+    s_battLastMs = now;
+    if (const uint16_t mv = meshDeckBatteryMv()) s_battMv = mv;
+    return s_battMv;
+#else
     if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
     s_battLastMs = now;
     uint32_t sum = 0;
@@ -104,14 +116,26 @@ uint16_t boardBatteryMilliVolts() {
         s_battMv = s_battMv == 0 ? mv : (uint16_t)((s_battMv * 3 + mv) / 4);
     }
     return s_battMv;
+#endif
 }
 
 int boardBatteryPercent() {
+#if defined(DEVICE_MESH_DECK)
+    // The MAX17048 tracks charge itself; better than a voltage curve.
+    static int pct = -1;
+    static uint32_t lastMs = 0;
+    if (lastMs == 0 || millis() - lastMs >= 5000) {
+        lastMs = millis() | 1;
+        if (const int p = meshDeckBatteryPercent(); p >= 0) pct = p;
+    }
+    return pct;
+#else
     const uint16_t mv = boardBatteryMilliVolts();
     if (mv == 0) return -1;
     if (mv >= 4150) return 100;
     if (mv <= 3300) return 0;
     return (int)((mv - 3300) * 100 / (4150 - 3300));
+#endif
 }
 
 bool boardHasBuzzer() { return HAS_BUZZER; }

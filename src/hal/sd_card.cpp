@@ -1,5 +1,21 @@
 #include "sd_card.h"
 #include "board_pins.h"
+#if !HAS_SD_CARD
+#include <LittleFS.h>
+
+// No card slot: report "no card" everywhere. sdFs() still needs an object to
+// return; callers check sdMounted() first, so it is never used.
+bool sdBegin() {
+    Serial.println("[sd] board has no card slot");
+    return false;
+}
+bool sdMounted() { return false; }
+bool sdRemount() { return false; }
+uint64_t sdTotalBytes() { return 0; }
+uint64_t sdUsedBytes() { return 0; }
+fs::FS &sdFs() { return LittleFS; }
+bool sdMakeDirs(const char *) { return false; }
+#else
 #if SD_USE_MMC
 #include <SD_MMC.h>
 #define CARD SD_MMC
@@ -11,14 +27,6 @@
 #endif
 
 static bool s_mounted;
-
-// Data written before the project rename lives under /rhino.
-static void migrateLegacyDir() {
-    if (CARD.exists("/rhino") && !CARD.exists("/platy")) {
-        bool ok = CARD.rename("/rhino", "/platy");
-        Serial.printf("[sd] migrate /rhino -> /platy: %s\n", ok ? "ok" : "failed");
-    }
-}
 
 static bool tryMount() {
 #if SD_USE_MMC
@@ -57,7 +65,6 @@ bool sdBegin() {
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI);
 #endif
     s_mounted = tryMount();
-    if (s_mounted) migrateLegacyDir();
     return s_mounted;
 }
 
@@ -91,3 +98,4 @@ bool sdMakeDirs(const char *path) {
         start = slash + 1;
     }
 }
+#endif  // HAS_SD_CARD

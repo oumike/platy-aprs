@@ -1,90 +1,152 @@
 name: Release
 
-# Manual only: Actions tab -> Release -> Run workflow. Builds every board with
-# the given version baked in, tags v<version> and publishes the images.
+# Cuts a release end to end: picks the version, builds every board, merges the
+# factory images, commits VERSION, tags, and publishes. This is the job behind
+# `./scripts/release.sh --release`, which checks the tree on the maintainer's
+# machine and dispatches it.
+#
+# Deliberately manual-only. Nothing here fires on a push or a tag, so a release
+# is always something a human asked for (the script, or the Actions tab).
+#
+# Release notes are written and reviewed locally, not here:
+# `./scripts/release.sh --notes-only` drafts RELEASE_NOTES.md and opens it in
+# your editor; commit it and choose `committed`, and this job publishes it
+# verbatim. `generate` publishes GitHub's generated notes instead.
+#
+# The OTA signing key lives in the `release` environment as the
+# OTA_SIGNING_KEY secret. That environment is the gate on who can sign
+# firmware: add required reviewers or a branch rule to it under Settings ->
+# Environments, and do not reference OTA_SIGNING_KEY from any other job.
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version, e.g. 0.2.0 (blank = bump the patch of the latest tag)'
+        description: 'Exact version, e.g. 0.2.0 (blank = bump the latest tag)'
         type: string
         default: ''
-      prerelease:
-        description: 'Mark as pre-release'
-        type: boolean
-        default: false
+      notes:
+        description: 'Release notes source'
+        type: choice
+        options: [generate, committed]
+        default: generate
 
+# One release at a time. Two concurrent runs would race on the tag, the release
+# commit and dist/ -- and never cancel a run mid-publish.
 concurrency:
   group: release
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: write        # push the release commit and tag, create the release
 
 jobs:
   release:
+    name: Build and publish
     runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 60
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
+          # release.sh derives the next version from the full tag list, so a
+          # shallow clone would pick the wrong one (or none at all).
           fetch-depth: 0
 
-      - name: Pick version
-        id: ver
+      - name: Configure git for the release commit
         run: |
-          v="${{ inputs.version }}"
-          v="${v#v}"
-          if [ -z "$v" ]; then
-            last="$(git tag -l 'v*' --sort=-v:refname | head -1)"
-            last="${last#v}"
-            if [ -z "$last" ]; then v="0.1.0"
-            else IFS=. read -r a b c <<<"$last"; v="$a.$b.$((c + 1))"; fi
-          fi
-          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "bad version '$v'"; exit 1; }
-          git rev-parse -q --verify "refs/tags/v$v" >/dev/null && { echo "v$v already exists"; exit 1; }
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install PlatformIO
-        run: pip install platformio esptool
+      - name: Cache PlatformIO toolchains
+        # Only ~/.platformio (compilers, frameworks, libraries) is cached. The
+        # build output in .pio/ deliberately is not: a release image must never
+        # be able to pick up an object file from an earlier run.
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO and esptool
+        # esptool is pinned, not floated: esptool 5 renamed merge_bin and its
+        # flags, and an unpinned upgrade could break the merge or quietly
+        # change the layout of a published factory image.
+        run: pip install platformio 'esptool==4.11.0'
 
       - name: Unit tests
         run: pio test -e native
 
-      - name: Build firmware
+      - name: Install OTA signing key
         env:
-          PLATFORMIO_BUILD_FLAGS: -DAPP_VERSION=\"${{ steps.ver.outputs.version }}\"
+          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
         run: |
-          for env in m9 wio-tracker-l2 tdeck-plus; do
-            pio run -e "$env" --disable-auto-clean
-          done
+          set -euo pipefail
+          if [ -z "${OTA_SIGNING_KEY:-}" ]; then
+            echo "::error::OTA_SIGNING_KEY is not set on the 'release' environment."
+            echo "::error::Add the contents of ota_signing_key.pem as that secret."
+            exit 1
+          fi
+          printf '%s\n' "$OTA_SIGNING_KEY" > ota_signing_key.pem
+          chmod 600 ota_signing_key.pem
+          if ! openssl ec -in ota_signing_key.pem -noout 2>/dev/null; then
+            echo "::error::OTA_SIGNING_KEY is not a readable EC private key."
+            exit 1
+          fi
 
-      - name: Package
+      - name: Verify the key matches the one devices already trust
+        # A wrong key would still produce a self-consistent signature -- and
+        # every device in the field, holding the committed public key, would
+        # reject the update and need a USB reflash. Catch that here.
         run: |
-          ./scripts/package.sh "v${{ steps.ver.outputs.version }}"
-          (cd dist && sha256sum *.bin > SHA256SUMS.txt)
+          set -euo pipefail
+          fresh=$(openssl ec -in ota_signing_key.pem -pubout 2>/dev/null | grep -v -- '-----' | tr -d '\n')
+          baked=$(grep -oE '"[A-Za-z0-9+/=]+' src/ota_signing_pubkey.h | tr -d '"' | tr -d '\n')
+          if [ -z "$fresh" ] || [ "$fresh" != "$baked" ]; then
+            echo "::error::OTA_SIGNING_KEY does not match src/ota_signing_pubkey.h."
+            exit 1
+          fi
+          echo "Signing key matches the public key baked into the firmware."
 
-      - name: Publish
+      - name: Cut the release
+        id: cut
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Read through the environment rather than interpolated into the
+          # script, so a dispatch input can never inject shell.
+          REQ_VERSION: ${{ inputs.version }}
+          NOTES_SOURCE: ${{ inputs.notes }}
         run: |
-          v="v${{ steps.ver.outputs.version }}"
-          cat > notes.md <<NOTES
-          Firmware images for each board:
+          set -euo pipefail
+          # --no-clean is safe here and nowhere else: this is a fresh checkout
+          # with no .pio/ at all.
+          args=(--release -y --no-clean)
+          if [ -n "$REQ_VERSION" ]; then args+=(--version "$REQ_VERSION"); fi
+          if [ "$NOTES_SOURCE" = "committed" ]; then args+=(--use-committed-notes); fi
+          ./scripts/release.sh "${args[@]}"
+          echo "tag=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
-          | Board | Full image (flash at 0x0) | App only (0x10000) |
-          |---|---|---|
-          | Elecrow ThinkNode M9 | \`platy-aprs-m9-$v.bin\` | \`platy-aprs-m9-$v-app.bin\` |
-          | Seeed Wio Tracker L2 | \`platy-aprs-wio-tracker-l2-$v.bin\` | \`platy-aprs-wio-tracker-l2-$v-app.bin\` |
-          | LilyGo T-Deck Plus | \`platy-aprs-tdeck-plus-$v.bin\` | \`platy-aprs-tdeck-plus-$v-app.bin\` |
+      - name: Flash headroom
+        run: python3 tools/flash_headroom.py --require-all
 
-          Flash a full image with \`esptool.py --chip esp32s3 write_flash 0x0 <file>\` or https://espressif.github.io/esptool-js/.
-          The app-only image updates firmware without touching settings.
-          NOTES
-          gh release create "$v" dist/*.bin dist/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --title "platy-aprs $v" \
-            --notes-file notes.md --generate-notes \
-            ${{ inputs.prerelease && '--prerelease' || '' }}
+      - name: Archive debug symbols
+        # The only copy. release.sh keeps .elf files out of the published
+        # release; they match the shipped images exactly, so they are what a
+        # crash backtrace decodes against.
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols-${{ steps.cut.outputs.tag }}
+          path: dist/*.elf
+          retention-days: 90
+
+      - name: Remove the signing key from the workspace
+        if: always()
+        run: rm -f ota_signing_key.pem
