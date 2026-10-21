@@ -138,15 +138,4 @@ int boardBatteryPercent() {
 #endif
 }
 
-bool boardHasBuzzer() { return HAS_BUZZER; }
-
 const char *boardName() { return BOARD_NAME; }
-
-void boardBeep(uint16_t freqHz, uint16_t ms) {
-#if HAS_BUZZER
-    tone(PIN_BUZZER, freqHz, ms);
-#else
-    (void)freqHz;
-    (void)ms;
-#endif
-}

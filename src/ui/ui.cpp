@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "config/config.h"
+#include "hal/audio.h"
 #include "hal/board.h"
 #include "hal/keyboard.h"
 #include "hal/board_pins.h"
@@ -9,6 +10,7 @@
 #include "hal/screen.h"
 #include "net/aprs_is.h"
 #include "net/wifi_manager.h"
+#include "services/alerts.h"
 #include "services/backup.h"
 #include "services/beacon.h"
 #include "services/messages.h"
@@ -24,6 +26,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <lvgl.h>
+#include <src/misc/lv_text_private.h>
 #include <src/themes/lv_theme_private.h>
 #include <time.h>
 #include <algorithm>
@@ -843,7 +846,8 @@ void closeQuickPicker(int pick) {
     s_qm = {};
 }
 
-// Text input with a quick-message button on its left.
+// Text input with a quick-message button: on its left on touch boards, on its
+// right on keypad-only ones, where Right at the end of the text moves to it.
 lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeholder) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
@@ -854,13 +858,30 @@ lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeh
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *btn = lv_button_create(row);
-    lv_obj_set_style_pad_hor(btn, 8, 0);
-    lv_label_set_text(lv_label_create(btn), LV_SYMBOL_LIST);
-    lv_group_add_obj(grp, btn);
+    auto makeBtn = [&]() {
+        lv_obj_t *b = lv_button_create(row);
+        lv_obj_set_style_pad_hor(b, 8, 0);
+        lv_label_set_text(lv_label_create(b), LV_SYMBOL_LIST);
+        lv_group_add_obj(grp, b);
+        return b;
+    };
+#if HAS_TOUCH
+    lv_obj_t *btn = makeBtn();
+#endif
     lv_obj_t *ta = makeInput(row, grp, placeholder, 67);
     lv_obj_set_width(ta, LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(ta, 1);
+#if !HAS_TOUCH
+    lv_obj_t *btn = makeBtn();
+    // Preprocess: decide before the textarea moves its cursor.
+    lv_obj_add_event_cb(ta, [](lv_event_t *e) {
+        if (lv_event_get_key(e) != LV_KEY_RIGHT) return;
+        lv_obj_t *t = (lv_obj_t *)lv_event_get_current_target(e);
+        if (lv_textarea_get_cursor_pos(t) < lv_text_get_encoded_length(lv_textarea_get_text(t))) return;
+        lv_event_stop_processing(e);
+        lv_group_focus_obj((lv_obj_t *)lv_event_get_user_data(e));
+    }, (lv_event_code_t)(LV_EVENT_KEY | LV_EVENT_PREPROCESS), btn);
+#endif
     lv_obj_add_event_cb(btn, [](lv_event_t *e) { openQuickPicker((lv_obj_t *)lv_event_get_user_data(e)); },
                         LV_EVENT_CLICKED, ta);
     return ta;
@@ -913,10 +934,17 @@ void refreshThread() {
         if (m->outgoing) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
         if (++n == 150) break;
     }
-    // Keep the input last in the focus order.
-    lv_group_remove_obj(s_thr.input);
-    lv_group_add_obj(s_thr.grp, s_thr.input);
-    if (inputFocused || !lv_group_get_focused(s_thr.grp)) lv_group_focus_obj(s_thr.input);
+    // Keep the input row (input and quick-message button) last in the focus order.
+    lv_obj_t *row = lv_obj_get_parent(s_thr.input);
+    lv_obj_t *prevFocus = lv_group_get_focused(s_thr.grp);
+    const bool rowFocused = prevFocus && lv_obj_get_parent(prevFocus) == row;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(row); i++) {
+        lv_obj_t *c = lv_obj_get_child(row, i);
+        lv_group_remove_obj(c);
+        lv_group_add_obj(s_thr.grp, c);
+    }
+    if (rowFocused) lv_group_focus_obj(prevFocus);
+    else if (inputFocused || !lv_group_get_focused(s_thr.grp)) lv_group_focus_obj(s_thr.input);
     if (n) lv_obj_scroll_to_view(lv_obj_get_child(s_thr.list, n - 1), LV_ANIM_OFF);
 }
 
@@ -1637,6 +1665,14 @@ void openQuickMsgs() {
     pushScreen(scr, grp);
 }
 
+void setSoundLabel(lv_obj_t *item) {
+    lv_label_set_text(lv_obj_get_child(item, 1), (String("Sound: ") + alertSoundLabel(g_config.alertSound)).c_str());
+}
+
+void setVolumeLabel(lv_obj_t *item) {
+    lv_label_set_text(lv_obj_get_child(item, 1), (String("Volume: ") + g_config.volumePct + "%").c_str());
+}
+
 void openSettings() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_SETTINGS " Settings", &grp);
@@ -1662,7 +1698,27 @@ void openSettings() {
     });
     lv_label_set_text(lv_obj_get_child(to, 1),
                       (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
-    addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
+    if (audioPresent()) {
+        // Each press moves to the next style or volume and plays the new-message tone with it.
+        lv_obj_t *snd = addItem(list, grp, LV_SYMBOL_BELL, "", [](lv_event_t *e) {
+            g_config.alertSound = (AlertSound)(((uint8_t)g_config.alertSound + 1) % kAlertSoundCount);
+            configSave();
+            alertPreview(g_config.alertSound);
+            setSoundLabel((lv_obj_t *)lv_event_get_target(e));
+        });
+        setSoundLabel(snd);
+        if (audioHasVolume()) {
+            lv_obj_t *vol = addItem(list, grp, LV_SYMBOL_VOLUME_MAX, "", [](lv_event_t *e) {
+                g_config.volumePct = g_config.volumePct >= 100 ? 0 : g_config.volumePct + 10;
+                configSave();
+                alertPreview(g_config.alertSound == AlertSound::Off ? AlertSound::Default : g_config.alertSound);
+                setVolumeLabel((lv_obj_t *)lv_event_get_target(e));
+            });
+            setVolumeLabel(vol);
+        }
+    }
+    if (sdHasSlot())
+        addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
     addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Firmware update", [](lv_event_t *) { openOta(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
@@ -1697,6 +1753,7 @@ void refreshInfo() {
         t += String("\nAPRS-IS: ") + is.state + (is.connected && !is.verified ? " (unverified)" : "");
     }
     t += "\nStations heard: " + String(stationDbCount());
+    if (sdHasSlot()) t += "\nSD: " + sdStatusText();
     const GpsFix g = gpsFix();
     t += String("\nGPS: ") + (!g.enabled ? "off" : g.valid ? "fix, " + String(g.sats) + " sats" : g.alive ? "searching" : "no data");
     const BeaconStatus bs = beaconStatus();

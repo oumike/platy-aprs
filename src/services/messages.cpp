@@ -26,6 +26,7 @@ size_t s_head, s_count;
 uint32_t s_nextSeq = 1;
 uint32_t s_nextId;
 bool s_dirty;
+bool s_loaded = false;   // the stored conversations have been read (or there were none)
 uint32_t s_dirtyMs;
 void (*s_hook)(const ChatMsg &) = nullptr;
 
@@ -78,6 +79,9 @@ void sendAck(const char *to, const std::string &id) {
 // ── SD persistence ───────────────────────────────────────────────────────────
 
 void save() {
+    // Not before the stored conversations have been read: a card that mounts
+    // after boot would otherwise be overwritten with only what is in memory.
+    if (!s_loaded) return;
     s_dirty = false;
     if (!sdMounted()) return;
     sdMakeDirs("/platy");
@@ -103,7 +107,9 @@ void save() {
 }
 
 void load() {
-    if (!sdMounted() || !sdFs().exists(kFile)) return;
+    if (!sdMounted()) return;
+    s_loaded = true;
+    if (!sdFs().exists(kFile)) return;
     File f = sdFs().open(kFile, FILE_READ);
     if (!f) return;
     JsonDocument doc;
@@ -241,6 +247,13 @@ void messagesOnRx(const aprs::Packet &p) {
 
 void messagesLoop() {
     if (!s_msgs) return;
+    // A card that mounted after boot: read what it holds, then write back
+    // anything that arrived in the meantime.
+    if (!s_loaded && sdMounted()) {
+        load();
+        g_msgGen++;
+        if (s_dirty) save();
+    }
     const uint32_t nowMs = millis();
     for (size_t i = 0; i < s_count; i++) {
         ChatMsg &m = at(i);

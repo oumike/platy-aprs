@@ -5,6 +5,11 @@
 enum class BeaconMode : uint8_t { Off = 0, Gps = 1, Fixed = 2 };
 enum class Units : uint8_t { Imperial = 0, Metric = 1 };
 
+// Alert tone style. Off silences every alert, not just new messages.
+enum class AlertSound : uint8_t { Default, Chirpy, Bass, Off };
+constexpr uint8_t kAlertSoundCount = 4;
+const char *alertSoundKey(AlertSound s);   // JSON value: "default", "chirpy", ...
+
 struct SmartBeaconConfig {
     bool enabled = true;
     uint16_t slowRateS = 1800;
@@ -70,7 +75,8 @@ struct AppConfig {
 
     // Device
     Units units = Units::Imperial;
-    bool buzzer = true;
+    AlertSound alertSound = AlertSound::Default;
+    uint8_t volumePct = 50;   // 0-100 in steps of 10; speaker boards only
     bool sdLog = true;      // packet log files on the SD card
     bool sdLogIs = false;   // include packets received from APRS-IS
     uint8_t brightness = 160;

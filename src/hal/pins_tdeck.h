@@ -6,7 +6,7 @@
 #define BOARD_NAME         "T-Deck Plus"
 #define HAS_TOUCH          1
 #define HAS_KEYBOARD       1
-#define HAS_BUZZER         0    // I2S speaker only; no tones yet
+#define HAS_BUZZER         0    // I2S speaker instead (below)
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         0
 
@@ -56,6 +56,13 @@
 #define PIN_GPS_RX         44
 #define PIN_GPS_TX         43
 #define GPS_BAUD           38400
+
+// I2S class-D amplifier (no codec, no enable pin: powered with PIN_POWER_ON).
+#define HAS_I2S_AUDIO      1
+#define PIN_I2S_WS         5
+#define PIN_I2S_BCK        7
+#define PIN_I2S_DOUT       6
+#define AUDIO_TONE_AMPLITUDE 2800.0f
 
 #define PIN_BATT_ADC       4
 #define BATT_DIVIDER       2.06f   // 2:1 divider, x1.03 calibration

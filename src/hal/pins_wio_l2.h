@@ -9,7 +9,7 @@
 #define BOARD_NAME         "Wio Tracker L2"
 #define HAS_TOUCH          1
 #define HAS_KEYBOARD       0
-#define HAS_BUZZER         0
+#define HAS_BUZZER         0    // ES8311 codec + speaker instead (below)
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         1
 
@@ -75,6 +75,18 @@
 #define PIN_SDMMC_CLK      2
 #define PIN_SDMMC_CMD      3
 #define PIN_SDMMC_D0       1
+
+// ES8311 DAC + amp on I2S; the amp's power is EXP_AUDIO_PA and needs 250 ms
+// to settle. The ES7243E mic is not used.
+#define HAS_I2S_AUDIO      1
+#define HAS_ES8311         1
+#define AUDIO_CODEC_ADDR   0x18
+#define PIN_I2S_MCLK       10
+#define PIN_I2S_BCK        11
+#define PIN_I2S_WS         12
+#define PIN_I2S_DOUT       16
+#define AUDIO_AMP_SETTLE_MS 250
+#define AUDIO_TONE_AMPLITUDE 7800.0f
 
 // Battery via ADS1115 channel 0 (battery / 2), sense gated by the expander.
 #define ADS1115_ADDR       0x48

@@ -5,6 +5,15 @@
 
 AppConfig g_config;
 
+const char *alertSoundKey(AlertSound s) {
+    switch (s) {
+        case AlertSound::Chirpy: return "chirpy";
+        case AlertSound::Bass: return "bass";
+        case AlertSound::Off: return "off";
+        default: return "default";
+    }
+}
+
 static const char *kPath = "/config.json";
 
 String AppConfig::fullCallsign() const {
@@ -96,7 +105,8 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     JsonObject d = o["device"].to<JsonObject>();
     d["units"] = c.units == Units::Metric ? "metric" : "imperial";
-    d["buzzer"] = c.buzzer;
+    d["sound"] = alertSoundKey(c.alertSound);
+    d["volume"] = c.volumePct;
     d["brightness"] = c.brightness;
     d["screenOnSecs"] = c.screenOnSecs;
     d["otaAutoInstall"] = c.otaAutoInstall;
@@ -224,7 +234,16 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     if (d) {
         const char *u = d["units"] | (const char *)nullptr;
         if (u) c.units = strcmp(u, "metric") == 0 ? Units::Metric : Units::Imperial;
-        take(d, "buzzer", c.buzzer);
+        if (const char *s = d["sound"] | (const char *)nullptr) {
+            for (uint8_t i = 0; i < kAlertSoundCount; i++)
+                if (!strcmp(s, alertSoundKey((AlertSound)i))) c.alertSound = (AlertSound)i;
+        } else if (d["buzzer"].is<bool>()) {   // older configs: a plain on/off
+            c.alertSound = d["buzzer"].as<bool>() ? AlertSound::Default : AlertSound::Off;
+        }
+        if (d["volume"].is<long>()) {
+            const long v = d["volume"].as<long>();
+            c.volumePct = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : (v + 5) / 10 * 10);
+        }
         if (d["brightness"].is<long>()) {
             const long b = d["brightness"].as<long>();
             c.brightness = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);

@@ -126,7 +126,8 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
-<div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
+<div class="snd"><label>Alert sound</label><select data-k="device.sound"><option value="default">Default</option><option value="chirpy">Chirpy</option><option value="bass">Bass</option><option value="off">Off</option></select></div>
+<div class="vol"><label>Volume</label><select data-k="device.volume" data-t="num"><option>0</option><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
 <label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
@@ -141,12 +142,12 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div><div class="card"><b>Backup &amp; restore</b>
 <div class="chk"><input type="checkbox" id="bsec">Include passwords (Wi-Fi, admin) in the backup</div>
 <button class="btn sec" onclick="bdl()">Download backup</button>
-<button class="btn sec" onclick="bsd()">Save backup to SD card</button>
+<button class="btn sec sdonly" onclick="bsd()">Save backup to SD card</button>
 <label>Restore from a backup file</label><input type="file" id="bfile" accept=".json,application/json">
 <button class="btn sec" onclick="bup()">Restore from file</button>
-<label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div>
+<div class="sdonly"><label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div></div>
 <small>Restoring replaces all settings and reboots. Passwords missing from a backup keep their current values.</small>
-</div><div class="card"><b>Packet log</b>
+</div><div class="card sdonly"><b>Packet log</b> <small id="sdinfo"></small>
 <div class="chk"><input type="checkbox" data-k="log.enabled" data-t="bool">Log packets to the SD card (one file per UTC day)</div>
 <div class="chk"><input type="checkbox" data-k="log.includeIs" data-t="bool">Also log packets received from APRS-IS</div>
 <div id="lgl"></div>
@@ -191,6 +192,7 @@ $$('[data-k],#wpass,#apass,#aclr').forEach(e=>{e.addEventListener('input',()=>se
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
+$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
@@ -267,7 +269,7 @@ if(!o.layoutOk)t+='. Updates unavailable on this flash layout; reflash the facto
 $('#ota').textContent=t;$('#otai').style.display=o.state=='available'?'':'none'}
 async function otaGo(a){const r=await fetch('/api/ota/'+a,{method:'POST'});if(!r.ok)toast((await r.json()).error,1);ota()}
 setInterval(()=>{if(tab=='Device')ota().catch(()=>{})},2000)
-async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
+async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$$('.sdonly').forEach(e=>e.style.display=j.slot?'':'none');$('#sdst').textContent=$('#sdinfo').textContent='('+j.status+')';
 $('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
 [...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
 if(b.dataset.a=='d')location.href='/api/backup/sd/download?name='+n;
