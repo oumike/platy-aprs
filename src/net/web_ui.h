@@ -8,7 +8,7 @@ static const char kWebUiHtml[] PROGMEM = R"HTML(<!doctype html>
 <title>platy-aprs</title>
 <style>
 :root{--bg:#111418;--card:#1b2027;--fg:#e6e6e6;--mut:#8a94a3;--acc:#3fa7ff;--bad:#ff6b6b;--ok:#4cd07d}
-*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+*{box-sizing:border-box}body{margin:0;padding-bottom:64px;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{padding:12px 16px;background:var(--card);display:flex;justify-content:space-between;align-items:center}
 header b{font-size:18px}#st{color:var(--mut);font-size:13px;text-align:right}
 nav{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px}
@@ -22,7 +22,9 @@ input[type=checkbox]{width:auto;margin-right:8px}.chk{display:flex;align-items:c
 .row{display:flex;gap:8px}.row>*{flex:1}
 .btn{background:var(--acc);border:0;color:#000;padding:10px 14px;border-radius:6px;font-weight:600;margin-top:10px}
 .btn.sec{background:#2a313b;color:var(--fg)}.btn.bad{background:var(--bad)}
-#msg{position:fixed;bottom:12px;left:12px;right:12px;padding:10px;border-radius:6px;display:none}
+#msg{position:fixed;bottom:68px;left:12px;right:12px;padding:10px;border-radius:6px;display:none;z-index:6}
+#savebar{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card);border-top:1px solid #2a313b}
+#savebar span{flex:1;color:var(--mut);font-size:13px}#savebar.dirty span{color:#ffb347}#savebar .btn{margin:0;min-width:120px}.btn:disabled{opacity:.45}
 .net{padding:8px;border-bottom:1px solid #2a313b;cursor:pointer}.net:hover{background:#232a33}
 small{color:var(--mut)}
 .mono{font:12px ui-monospace,Menlo,monospace;word-break:break-all}
@@ -124,7 +126,8 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
-<div class="chk"><input type="checkbox" data-k="device.buzzer" data-t="bool">Buzzer alerts</div>
+<div class="snd"><label>Alert sound</label><select data-k="device.sound"><option value="default">Default</option><option value="chirpy">Chirpy</option><option value="bass">Bass</option><option value="off">Off</option></select></div>
+<div class="vol"><label>Volume</label><select data-k="device.volume" data-t="num"><option>0</option><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></div>
 <label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
 <label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
@@ -139,12 +142,12 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div><div class="card"><b>Backup &amp; restore</b>
 <div class="chk"><input type="checkbox" id="bsec">Include passwords (Wi-Fi, admin) in the backup</div>
 <button class="btn sec" onclick="bdl()">Download backup</button>
-<button class="btn sec" onclick="bsd()">Save backup to SD card</button>
+<button class="btn sec sdonly" onclick="bsd()">Save backup to SD card</button>
 <label>Restore from a backup file</label><input type="file" id="bfile" accept=".json,application/json">
 <button class="btn sec" onclick="bup()">Restore from file</button>
-<label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div>
+<div class="sdonly"><label>Backups on SD card <small id="sdst"></small></label><div id="sdl"></div></div>
 <small>Restoring replaces all settings and reboots. Passwords missing from a backup keep their current values.</small>
-</div><div class="card"><b>Packet log</b>
+</div><div class="card sdonly"><b>Packet log</b> <small id="sdinfo"></small>
 <div class="chk"><input type="checkbox" data-k="log.enabled" data-t="bool">Log packets to the SD card (one file per UTC day)</div>
 <div class="chk"><input type="checkbox" data-k="log.includeIs" data-t="bool">Also log packets received from APRS-IS</div>
 <div id="lgl"></div>
@@ -153,18 +156,18 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <button class="btn bad" onclick="confirm('Erase all settings?')&&post('/api/factory-reset','Resetting…')">Factory reset</button>
 </div></section>
 
-<section data-tab="Messages" data-nosave><div class="card">
+<section data-tab="Messages"><div class="card">
 <div class="row"><div style="flex:0 0 32%"><label>To</label><input id="mto" maxlength="9" autocapitalize="characters"></div>
 <div><label>Message <small id="mlen"></small></label><input id="mtx" maxlength="67"></div></div>
 <button class="btn" onclick="msend()">Send</button>
 </div><div class="card" id="mconv" style="display:none"><div class="fl"><span><b id="mpeer"></b></span><button class="btn bad" onclick="mdel()">Delete conversation</button></div><div id="mlist"></div></div>
 <div class="card"><b>Conversations</b><div id="mth"><small>No messages yet.</small></div></div></section>
 
-<section data-tab="Monitor" data-nosave><div class="card"><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
+<section data-tab="Monitor"><div class="card"><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
 
-<section data-tab="Stations" data-nosave><div class="card"><table><thead><tr><th>Station</th><th>Heard</th><th>Dist</th><th>Info</th></tr></thead><tbody id="stl"></tbody></table></div></section>
+<section data-tab="Stations"><div class="card"><table><thead><tr><th>Station</th><th>Heard</th><th>Dist</th><th>Info</th></tr></thead><tbody id="stl"></tbody></table></div></section>
 
-<div style="padding:0 12px 60px" id="savebar"><button class="btn" onclick="save()">Save</button></div>
+<div id="savebar"><span id="dirty">All changes saved</span><button class="btn" id="savebtn" onclick="save()" disabled>Save</button></div>
 <div id="msg"></div>
 <script>
 // Every POST carries X-Platy; the device refuses POSTs without it (CSRF guard).
@@ -175,16 +178,23 @@ const esc=t=>String(t??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const age=s=>s<60?s+'s':s<3600?(s/60|0)+'m':s<86400?(s/3600|0)+'h':(s/86400|0)+'d';
 const secs=$$('section');secs.forEach((s,i)=>{const b=document.createElement('button');b.textContent=s.dataset.tab;
 b.onclick=()=>{secs.forEach(x=>x.classList.remove('on'));$$('nav button').forEach(x=>x.classList.remove('on'));s.classList.add('on');b.classList.add('on');
-$('#savebar').style.display=s.hasAttribute('data-nosave')?'none':'';tab=s.dataset.tab;poll()};
+tab=s.dataset.tab;poll()};
 $('#tabs').appendChild(b);if(!i)b.click()});
 for(let i=0;i<16;i++)$('[data-k="station.ssid"]').add(new Option(i?'-'+i:'(none)',i));
 const get=(o,p)=>p.split('.').reduce((a,k)=>a==null?a:a[k],o);
 const set=(o,p,v)=>{const ks=p.split('.');let a=o;ks.slice(0,-1).forEach(k=>a=a[k]=a[k]||{});a[ks.at(-1)]=v};
 function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'var(--bad)':'var(--ok)';m.style.color='#000';m.style.display='block';clearTimeout(m.t);m.t=setTimeout(()=>m.style.display='none',4000)}
+// One Save for every tab: it sends all settings at once. The bar stays pinned
+// at the bottom and says when something is unsaved.
+let dirty=false;
+function setDirty(d){dirty=d;$('#savebar').classList.toggle('dirty',d);$('#dirty').textContent=d?'Unsaved changes':'All changes saved';$('#savebtn').disabled=!d}
+$$('[data-k],#wpass,#apass,#aclr').forEach(e=>{e.addEventListener('input',()=>setDirty(true));e.addEventListener('change',()=>setDirty(true))});
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
+$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
-$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);tbonds().catch(()=>{})}
+$('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);set(o,e.dataset.k,v)});
@@ -192,7 +202,7 @@ if($('#wpass').value)set(o,'wifi.password',$('#wpass').value);
 if($('#apass').value)set(o,'device.adminPassword',$('#apass').value);
 if($('#aclr').checked)set(o,'device.clearAdminPassword',true);
 const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
-const j=await r.json();if(!j.ok)return toast(j.error||'Save failed',1);
+const j=await r.json();if(!j.ok)return toast(j.error||'Save failed',1);setDirty(false);
 toast(j.wifiChanged?'Saved. Connecting to Wi-Fi…':'Saved');$('#wpass').value='';$('#apass').value='';$('#aclr').checked=false;load()}
 async function post(u,t){toast(t);const r=await fetch(u,{method:'POST'});const j=await r.json().catch(()=>({}));if(j.ok===false)toast(j.error,1);setTimeout(status,500)}
 async function tscan(start){const j=await (await fetch('/api/tnc/scan'+(start?'?start=1':''))).json();const d=$('#tnets');d.innerHTML='';
@@ -259,7 +269,7 @@ if(!o.layoutOk)t+='. Updates unavailable on this flash layout; reflash the facto
 $('#ota').textContent=t;$('#otai').style.display=o.state=='available'?'':'none'}
 async function otaGo(a){const r=await fetch('/api/ota/'+a,{method:'POST'});if(!r.ok)toast((await r.json()).error,1);ota()}
 setInterval(()=>{if(tab=='Device')ota().catch(()=>{})},2000)
-async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
+async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$$('.sdonly').forEach(e=>e.style.display=j.slot?'':'none');$('#sdst').textContent=$('#sdinfo').textContent='('+j.status+')';
 $('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
 [...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
 if(b.dataset.a=='d')location.href='/api/backup/sd/download?name='+n;

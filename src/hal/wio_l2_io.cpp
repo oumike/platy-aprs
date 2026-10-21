@@ -3,6 +3,8 @@
 #include "wio_l2_io.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // Bring-up sequence from camillia-mt's wio_tracker_l2_io.cpp.
 
@@ -13,6 +15,8 @@ constexpr uint8_t kRegIn0 = 0x00, kRegOut0 = 0x02, kRegCfg0 = 0x06;
 uint8_t s_out[2] = {0xFF, 0xFF};
 uint8_t s_cfg[2] = {0xFF, 0xFF};
 bool s_ready = false;
+// wioIoSet runs from loop() and from the audio task.
+SemaphoreHandle_t s_lock = nullptr;
 
 bool writeReg(uint8_t reg, uint8_t v) {
     Wire.beginTransmission(EXPANDER_ADDR);
@@ -48,6 +52,7 @@ void input(uint8_t bit) { s_cfg[bit >> 3] |= (uint8_t)(1u << (bit & 7)); }
 
 bool wioIoBegin() {
     s_ready = false;
+    if (!s_lock) s_lock = xSemaphoreCreateMutex();
     pinMode(PIN_EXPANDER_INT, INPUT_PULLUP);
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQ);
     if (!readReg(kRegOut0, s_out[0]) || !readReg(kRegOut0 + 1, s_out[1]) ||
@@ -98,12 +103,16 @@ bool wioIoReady() { return s_ready; }
 
 bool wioIoSet(uint8_t bit, bool high) {
     if (!s_ready) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     uint8_t out[2] = {s_out[0], s_out[1]}, cfg[2] = {s_cfg[0], s_cfg[1]};
     stage(bit, high);
-    if (commit()) return true;
-    memcpy(s_out, out, 2);
-    memcpy(s_cfg, cfg, 2);
-    return false;
+    const bool ok = commit();
+    if (!ok) {
+        memcpy(s_out, out, 2);
+        memcpy(s_cfg, cfg, 2);
+    }
+    xSemaphoreGive(s_lock);
+    return ok;
 }
 
 bool wioIoWakePressed() {

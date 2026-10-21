@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "config/config.h"
+#include "hal/audio.h"
 #include "hal/board.h"
 #include "hal/display.h"
 #include "hal/screen.h"
@@ -26,6 +27,7 @@ void setup() {
     Serial.printf("\n[boot] %s %s\n", APP_NAME, APP_VERSION);
 
     boardBegin();
+    audioBegin();
     configBegin();
     setenv("TZ", g_config.timezone.c_str(), 1);
     tzset();
@@ -47,7 +49,7 @@ void setup() {
     aprsIsBegin();
     g_ble.begin();
     g_lora.begin();
-    if (g_config.buzzer) boardBeep(2000, 60);
+    alertPlay(Alert::Boot);
 }
 
 void loop() {
@@ -62,6 +64,7 @@ void loop() {
     gpsLoop();
     beaconLoop();
     messagesLoop();
+    sdLoop();
     sdLogLoop();
     alertsLoop();
     screenLoop();

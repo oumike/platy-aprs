@@ -109,7 +109,9 @@ bool backupSaveToSd(bool includeSecrets, String &nameOut, String &err) {
 
 std::vector<SdBackupInfo> backupListSd() {
     std::vector<SdBackupInfo> out;
-    if (!sdRemount()) return out;
+    // Only a mounted card: the web page lists every few seconds, and a probe for
+    // a missing card blocks. sdLoop() mounts cards in the background.
+    if (!sdMounted()) return out;
     File dir = sdFs().open(kDir);
     if (!dir || !dir.isDirectory()) return out;
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {

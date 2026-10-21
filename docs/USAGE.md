@@ -14,6 +14,7 @@ You need an amateur radio licence to transmit on APRS frequencies. Receiving nee
 - [Messages](#messages)
 - [Stations, Monitor and Map](#stations-monitor-and-map)
 - [APRS-IS, iGate and digipeater](#aprs-is-igate-and-digipeater)
+- [Sound](#sound)
 - [Screen timeout](#screen-timeout)
 - [Firmware updates](#firmware-updates)
 - [Backup, restore and the packet log](#backup-restore-and-the-packet-log)
@@ -62,7 +63,8 @@ The home screen is a menu:
 | **Settings** | Everything else (below). |
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · Screen timeout · Backup settings to SD card ·
+turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · Screen timeout · Sound and Volume
+(see [Sound](#sound)) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -165,8 +167,9 @@ conversation or start a **New message** to a callsign.
 - Outgoing messages are retried up to 5 times (after 30 s, 1, 2 and 4 min) until the other station acks them;
   a message that was never acked can be retried by hand.
 - Incoming messages are acked, de-duplicated, beep, and pop up a banner.
-- The list button left of the message box opens your five **quick messages**; picking one fills it in. Edit
-  them under **Settings → Quick messages** or on the web **Station** tab.
+- The list button next to the message box opens your five **quick messages**; picking one fills it in. It
+  sits left of the box on touch screens and right of it on the M9, where pressing **Right** with the cursor at
+  the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
 - Star a conversation to keep it at the top.
 
 Conversations are stored on the SD card (`/platy/messages.json`).
@@ -206,6 +209,14 @@ On the web **APRS-IS** tab:
   on RF in the last 30 minutes, from a sender not on RF, is transmitted as third-party traffic.
 - **Digipeater** (off by default): WIDE1-1 fill-in and packets routed through your callsign, with 30 s
   duplicate suppression.
+
+## Sound
+
+Alerts sound for new messages, acks, failed sends and beacons, and once at boot. **Settings → Sound** steps
+through the new-message tone styles **Default**, **Chirpy** and **Bass**, playing each, and **Off**, which
+silences every alert. On the T-Deck Plus and Wio Tracker L2 (speakers), **Settings → Volume** steps from 0 to
+100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck has no sound.
+Both are also on the web **Device** tab.
 
 ## Screen timeout
 
@@ -271,12 +282,13 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, buzzer, brightness, screen timeout, timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, brightness, screen timeout, timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |
 
-Changes take effect when you press **Save**.
+Settings on every tab are saved together with the **Save** button in the bar pinned to the bottom of the page.
+The bar says when there are unsaved changes, and the browser asks before you leave the page with any.
 
 ## Troubleshooting
 

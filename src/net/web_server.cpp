@@ -1,6 +1,7 @@
 #include <lvgl.h>
 #include "web_server.h"
 #include "config/config.h"
+#include "hal/audio.h"
 #include "hal/board.h"
 #include "hal/display.h"
 #include "hal/screen.h"
@@ -78,6 +79,9 @@ void handleGetConfig() {
     if (!authorized()) return;
     JsonDocument doc;
     configToJson(g_config, doc.to<JsonObject>());
+    JsonObject caps = doc["caps"].to<JsonObject>();
+    caps["sound"] = audioPresent();
+    caps["volume"] = audioHasVolume();
     sendJson(200, doc);
 }
 
@@ -185,7 +189,9 @@ void handleStatus() {
         lo["lastError"] = l.lastError;
     }
     JsonObject sd = doc["sd"].to<JsonObject>();
+    sd["slot"] = sdHasSlot();
     sd["mounted"] = sdMounted();
+    sd["status"] = sdStatusText();
     sd["totalMB"] = (uint32_t)(sdTotalBytes() / (1024 * 1024));
     sd["usedMB"] = (uint32_t)(sdUsedBytes() / (1024 * 1024));
     doc["stations"] = stationDbCount();
@@ -559,7 +565,9 @@ void handleSdBackupList() {
     if (!authorized()) return;
     JsonDocument doc;
     const auto files = backupListSd();
+    doc["slot"] = sdHasSlot();
     doc["mounted"] = sdMounted();
+    doc["status"] = sdStatusText();
     JsonArray arr = doc["files"].to<JsonArray>();
     for (const auto &f : files) {
         JsonObject o = arr.add<JsonObject>();
