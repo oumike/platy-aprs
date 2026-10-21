@@ -4,7 +4,6 @@
 
 enum class BeaconMode : uint8_t { Off = 0, Gps = 1, Fixed = 2 };
 enum class Units : uint8_t { Imperial = 0, Metric = 1 };
-// What the compact panel on the home screen shows.
 
 struct SmartBeaconConfig {
     bool enabled = true;
@@ -76,6 +75,7 @@ struct AppConfig {
     bool sdLogIs = false;   // include packets received from APRS-IS
     uint8_t brightness = 160;
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
+    bool otaAutoInstall = false;  // install a newer release without asking
     String timezone = "EST5EDT,M3.2.0,M11.1.0";
     String adminPassword;
 

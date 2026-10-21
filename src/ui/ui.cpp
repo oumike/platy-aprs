@@ -12,6 +12,7 @@
 #include "services/backup.h"
 #include "services/beacon.h"
 #include "services/messages.h"
+#include "services/ota.h"
 #include "services/favorites.h"
 #include "services/data_store.h"
 #include "services/router.h"
@@ -21,6 +22,7 @@
 #include "ui/map_view.h"
 #include "version.h"
 #include <Arduino.h>
+#include <WiFi.h>
 #include <lvgl.h>
 #include <src/themes/lv_theme_private.h>
 #include <time.h>
@@ -1487,13 +1489,121 @@ void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
+// ── Splash ───────────────────────────────────────────────────────────────────
+
+extern "C" const lv_image_dsc_t splash_img;   // tools/gen_splash.py
+
+// The mascot over a deep-teal gradient, the name, a tagline and, unless null, a
+// footer line.
+// Laid out for 320x240 (every board here). Not part of any group: nothing on it
+// takes focus.
+lv_obj_t *buildSplash(const char *footer) {
+    lv_obj_t *scr = lv_obj_create(nullptr);
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x15506A), 0);
+    lv_obj_set_style_bg_grad_color(scr, lv_color_hex(0x0A2230), 0);
+    lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    // The image is 240x132 at (40, 12); its speech bubble spans (0..88, 2..34)
+    // within it, top left, coming out of the bill.
+    lv_obj_t *img = lv_image_create(scr);
+    lv_image_set_src(img, &splash_img);
+    lv_obj_set_pos(img, 40, 12);
+
+    lv_obj_t *cq = lv_label_create(scr);
+    lv_label_set_text(cq, "CQ CQ");
+    lv_obj_set_style_text_font(cq, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(cq, lv_color_hex(0x15506A), 0);
+    lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(cq, 88);
+    lv_obj_set_pos(cq, 40, 12 + 2 + 8);
+
+    lv_obj_t *title = lv_label_create(scr);
+    lv_label_set_text(title, APP_NAME);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 150);
+
+    lv_obj_t *tag = lv_label_create(scr);
+    lv_label_set_text(tag, "APRS in your pocket");
+    lv_obj_set_style_text_font(tag, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(tag, lv_color_hex(0xFFC440), 0);
+    lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, 176);
+
+    if (!footer) return scr;
+    lv_obj_t *foot = lv_label_create(scr);
+    lv_label_set_text(foot, footer);
+    lv_obj_set_style_text_font(foot, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(foot, lv_color_hex(0x9FC7D6), 0);
+    lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -8);
+    return scr;
+}
+
+lv_obj_t *s_splash = nullptr;
+uint32_t s_splashAtMs = 0;
+
 void openAbout() {
-    char buf[200];
-    snprintf(buf, sizeof(buf),
-             APP_NAME " v" APP_VERSION "\nElecrow ThinkNode M9\n\nHeap free: %u\nPSRAM free: %u\nBattery: %u mV",
-             (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(),
-             (unsigned)boardBatteryMilliVolts());
-    openPlaceholder("About", buf);
+    char buf[160];
+    snprintf(buf, sizeof(buf), APP_VERSION " - %s\nHeap %u - PSRAM %u - %u mV", boardName(),
+             (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(), (unsigned)boardBatteryMilliVolts());
+    lv_group_t *grp = lv_group_create();
+    pushScreen(buildSplash(buf), grp);
+}
+
+// ── Firmware update ──────────────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *info, *install;
+} s_ota;
+
+void refreshOta() {
+    const OtaStatus o = otaStatus();
+    String t = String("Running ") + APP_VERSION + "\n";
+    switch (o.state) {
+        case OtaState::Idle: t += "Not checked yet."; break;
+        case OtaState::Checking: t += "Checking..."; break;
+        case OtaState::UpToDate: t += "Up to date (latest " + o.latest + ")."; break;
+        case OtaState::Available: t += "Update available: " + o.latest; break;
+        case OtaState::Installing:
+            t += "Installing " + o.latest + "...\n" +
+                 (o.total ? String(o.written * 100 / o.total) + "%" : String(o.written / 1024) + " KB");
+            break;
+        case OtaState::Done: t += "Installed " + o.latest + ". Rebooting..."; break;
+        case OtaState::Failed: t += "Failed: " + o.error; break;
+    }
+    if (!o.layoutOk) t = String("Running ") + APP_VERSION + "\nUpdates need the factory image: reflash over USB.";
+    else if (WiFi.status() != WL_CONNECTED && o.state != OtaState::Installing) t += "\n\nNot on Wi-Fi.";
+    lv_label_set_text(s_ota.info, t.c_str());
+    if (o.state == OtaState::Available) lv_obj_remove_flag(s_ota.install, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(s_ota.install, LV_OBJ_FLAG_HIDDEN);
+}
+
+void openOta() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_DOWNLOAD " Firmware update", &grp);
+    s_ota.info = lv_label_create(scr);
+    lv_obj_set_width(s_ota.info, lv_pct(100));
+    lv_label_set_long_mode(s_ota.info, LV_LABEL_LONG_WRAP);
+    lv_obj_t *list = makeList(scr);
+    addItem(list, grp, LV_SYMBOL_REFRESH, "Check for updates", [](lv_event_t *) {
+        if (!otaStartCheck()) toast("Can't check now (busy, or not on Wi-Fi)");
+        refreshOta();
+    });
+    s_ota.install = addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Install update", [](lv_event_t *) {
+        if (!otaStartInstall()) toast("Can't install now");
+        refreshOta();
+    });
+    lv_obj_t *autoBtn = addItem(list, grp, LV_SYMBOL_OK, "", [](lv_event_t *e) {
+        g_config.otaAutoInstall = !g_config.otaAutoInstall;
+        configSave();
+        lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
+                          g_config.otaAutoInstall ? "Install automatically: on" : "Install automatically: off");
+    });
+    lv_label_set_text(lv_obj_get_child(autoBtn, 1),
+                      g_config.otaAutoInstall ? "Install automatically: on" : "Install automatically: off");
+    pushScreen(scr, grp, refreshOta);   // refreshed every second while on top
 }
 
 lv_obj_t *s_quickTa[AppConfig::kQuickMsgCount];
@@ -1553,6 +1663,7 @@ void openSettings() {
     lv_label_set_text(lv_obj_get_child(to, 1),
                       (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
     addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
+    addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Firmware update", [](lv_event_t *) { openOta(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
     pushScreen(scr, grp);
@@ -1713,7 +1824,18 @@ void tick(lv_timer_t *) {
 
 }  // namespace
 
+lv_obj_t *uiBuildSplash(const char *footer) { return buildSplash(footer); }
+
+void uiShowSplash() {
+    s_splash = buildSplash(nullptr);
+    lv_screen_load(s_splash);
+    lv_refr_now(nullptr);
+    s_splashAtMs = millis();
+}
+
 void uiBegin() {
+    // Keep the splash up for at least 1.5 s, however quick the rest of setup was.
+    while (s_splash && millis() - s_splashAtMs < 1500) delay(10);
     keyboardSetHotkeyHandler(hotkey);
     themeInit();
     buildStatusBar();
@@ -1725,6 +1847,10 @@ void uiBegin() {
     updateStatusBar();
     messagesSetIncomingHook(onIncomingMessage);
     lv_timer_create(tick, 1000, nullptr);
+    if (s_splash && lv_screen_active() != s_splash) {
+        lv_obj_delete(s_splash);
+        s_splash = nullptr;
+    }
 }
 
 void uiLoop() {

@@ -130,6 +130,12 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
 <label>Admin password, username "admin" <small id="apw"></small></label><input type="password" id="apass" autocomplete="new-password">
 <div class="chk"><input type="checkbox" id="aclr">Remove admin password</div>
+</div><div class="card"><b>Firmware update</b>
+<div id="ota">…</div>
+<div class="chk"><input type="checkbox" data-k="device.otaAutoInstall" data-t="bool">Install updates automatically</div>
+<button class="btn sec" onclick="otaGo('check')">Check for updates</button>
+<button class="btn" id="otai" style="display:none" onclick="otaGo('install')">Install update</button>
+<small>Updates are checked 20 s after joining Wi-Fi, then daily. Each image's signature is verified before the device switches to it.</small>
 </div><div class="card"><b>Backup &amp; restore</b>
 <div class="chk"><input type="checkbox" id="bsec">Include passwords (Wi-Fi, admin) in the backup</div>
 <button class="btn sec" onclick="bdl()">Download backup</button>
@@ -232,7 +238,7 @@ if(!j.ok)return toast(j.error,1);$('#mtx').value='';mpeer=to;messages(1)}
 async function mdel(){if(!confirm('Delete the conversation with '+mpeer+'?'))return;await fetch('/api/messages/delete?peer='+encodeURIComponent(mpeer),{method:'POST'});mpeer='';messages(1)}
 $('#mtx').addEventListener('input',()=>$('#mlen').textContent=$('#mtx').value.length+'/67');
 $('#mtx').addEventListener('keydown',e=>{if(e.key=='Enter')msend()});
-async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device'){await sdlist();await loglist()}}catch(e){}}
+async function poll(){try{if(tab=='Messages')await messages();else if(tab=='Monitor')await monitor();else if(tab=='Stations')await stations();else if(tab=='Device'){await ota();await sdlist();await loglist()}}catch(e){}}
 setInterval(()=>{if(tab=='Monitor'||tab=='Stations'||tab=='Messages')poll()},3000);
 const bs=()=>$('#bsec').checked?'1':'0';
 function bdl(){location.href='/api/backup?secrets='+bs()}
@@ -246,6 +252,13 @@ $('#lgl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.n
 [...$('#lgl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
 if(b.dataset.a=='d')location.href='/api/logs/download?name='+n;
 else if(confirm('Delete '+j.files[i].name+'?')){await fetch('/api/logs/delete?name='+n,{method:'POST'});loglist()}})})}
+async function ota(){const o=await (await fetch('/api/ota')).json();let t='Running '+o.running+' ('+o.board+')';
+const st={idle:'',checking:'Checking…','up-to-date':'Up to date (latest '+o.latest+')',available:'Update available: '+o.latest,
+installing:'Installing '+o.latest+'… '+(o.total?Math.round(o.written*100/o.total)+'%':Math.round(o.written/1024)+' KB'),done:'Installed '+o.latest+', rebooting…',failed:'Failed: '+o.error}[o.state];
+if(!o.layoutOk)t+='. Updates unavailable on this flash layout; reflash the factory image.';else if(st)t+='. '+st;
+$('#ota').textContent=t;$('#otai').style.display=o.state=='available'?'':'none'}
+async function otaGo(a){const r=await fetch('/api/ota/'+a,{method:'POST'});if(!r.ok)toast((await r.json()).error,1);ota()}
+setInterval(()=>{if(tab=='Device')ota().catch(()=>{})},2000)
 async function sdlist(){const j=await (await fetch('/api/backup/sd')).json();$('#sdst').textContent=j.mounted?'':'(no card)';
 $('#sdl').innerHTML=j.files.map(f=>'<div class="fl"><span class="mono">'+esc(f.name)+'</span><button class="btn sec" data-a="r">Restore</button><button class="btn sec" data-a="d">Download</button><button class="btn bad" data-a="x">Delete</button></div>').join('')||(j.mounted?'<small>None yet.</small>':'');
 [...$('#sdl').children].forEach((row,i)=>{const n=encodeURIComponent(j.files[i].name);row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{

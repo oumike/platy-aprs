@@ -1,8 +1,8 @@
 #pragma once
 #define APP_NAME "platy-aprs"
-// Release builds override this with -DAPP_VERSION=\"x.y.z\".
+// tools/set_app_version.py defines this from the VERSION file ("v0.1.0").
 #ifndef APP_VERSION
-#define APP_VERSION "0.1.0-dev"
+#define APP_VERSION "v0.0.0-dev"
 #endif
 // AX.25 destination ("tocall"). APZ* is the experimental block.
 #define APRS_TOCALL "APZRHN"

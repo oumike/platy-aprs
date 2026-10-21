@@ -1,7 +1,7 @@
 #!/bin/bash
 # Cuts a platy-aprs release, or just builds the release images into dist/.
 # Modelled on camillia-mt's scripts/release.sh, minus what platy-aprs has no
-# use for (OTA signing, PR mode, alphas, AI-written notes, the P4 toolchain).
+# use for (PR mode, alphas, AI-written notes, the P4 toolchain).
 #
 # Run with --help (or no arguments) for the modes and options.
 #
@@ -19,6 +19,14 @@ RELEASE_ENVS=(
 # and its flags, so an unpinned upgrade could quietly change a factory image's
 # layout. The release workflow pins the same version.
 ESPTOOL_VERSION="4.11.0"
+
+# OTA signing. Each -ota.bin gets a detached ECDSA P-256 signature (.sig) that
+# the device checks against the public key baked into the firmware before it
+# switches to the new image. The private key is git-ignored here and the
+# OTA_SIGNING_KEY secret of the `release` environment in CI.
+SIGNING_KEY="ota_signing_key.pem"
+PUBKEY_HEADER="src/ota_signing_pubkey.h"
+SIGN_ASSETS=false
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -74,7 +82,44 @@ validate_release_targets() {
             *) echo "  ERROR: [env:$e] is not in RELEASE_ENVS (scripts/release.sh)" >&2; failed=true ;;
         esac
     done
+    if [[ ! -s "$PUBKEY_HEADER" ]] || [[ -z "$(header_pubkey)" ]]; then
+        echo "  ERROR: $PUBKEY_HEADER is missing or holds no key" >&2
+        failed=true
+    fi
     [[ "$failed" == false ]]
+}
+
+# Base64 body of a PEM public key, for comparing keys.
+pem_body() { grep -v -- '-----' | tr -d '\n'; }
+header_pubkey() { grep -oE '"[A-Za-z0-9+/=]+' "$PUBKEY_HEADER" | grep -v BEGIN | tr -d '"' | tr -d '\n'; }
+
+# Decides whether this run signs ($1 = required|optional). The header is baked
+# into every image and devices check each later update against it, so it must
+# be the committed one, and a key here must be its private half: built from
+# any other key, devices would refuse every official update until reflashed.
+check_signing() {
+    if ! git diff --quiet HEAD -- "$PUBKEY_HEADER"; then
+        echo "Error: $PUBKEY_HEADER differs from the committed copy. Restore it:" >&2
+        echo "  git checkout -- $PUBKEY_HEADER" >&2
+        exit 1
+    fi
+    if [[ ! -f "$SIGNING_KEY" ]]; then
+        if [[ "$1" == required ]]; then
+            echo "Error: $SIGNING_KEY not found; a release must sign its OTA images." >&2
+            exit 1
+        fi
+        SIGN_ASSETS=false
+        return 0
+    fi
+    command -v openssl >/dev/null 2>&1 || { echo "Error: openssl is required to sign." >&2; exit 1; }
+    local fresh
+    fresh="$(openssl ec -in "$SIGNING_KEY" -pubout 2>/dev/null | pem_body)"
+    if [[ -z "$fresh" || "$fresh" != "$(header_pubkey)" ]]; then
+        echo "Error: $SIGNING_KEY is not the key $PUBKEY_HEADER was made from." >&2
+        echo "Devices would reject OTA images signed with it." >&2
+        exit 1
+    fi
+    SIGN_ASSETS=true
 }
 
 find_pio() {
@@ -160,6 +205,9 @@ merge_assets() {
             0x10000 "$d/firmware.bin" >/dev/null
         cp "$d/firmware.bin" "$out-ota.bin"
         cp "$d/firmware.elf" "$out.elf"
+        if [[ "$SIGN_ASSETS" == true ]]; then
+            openssl dgst -sha256 -sign "$SIGNING_KEY" -out "$out-ota.bin.sig" "$out-ota.bin"
+        fi
     done
     install -m 0755 scripts/flash.sh dist/flash.sh
 }
@@ -180,7 +228,16 @@ verify_assets() {
             echo "Error: $out-ota.bin does not match $env_name/firmware.bin" >&2
             return 1
         fi
-        echo "  OK $env_name: $(basename "$out.bin"), $(basename "$out-ota.bin")"
+        if [[ "$SIGN_ASSETS" != true ]]; then
+            echo "  OK $env_name: $(basename "$out.bin"), $(basename "$out-ota.bin") (unsigned)"
+            continue
+        fi
+        if ! openssl dgst -sha256 -verify <(openssl ec -in "$SIGNING_KEY" -pubout 2>/dev/null) \
+                -signature "$out-ota.bin.sig" "$out-ota.bin" >/dev/null 2>&1; then
+            echo "Error: signature check failed: $out-ota.bin.sig" >&2
+            return 1
+        fi
+        echo "  OK $env_name: $(basename "$out.bin"), $(basename "$out-ota.bin"), $(basename "$out-ota.bin.sig")"
     done
     [[ -x dist/flash.sh ]] || { echo "Error: dist/flash.sh missing" >&2; return 1; }
 }
@@ -195,6 +252,7 @@ write_build_info() {
         echo "Built:   $(date -u '+%Y-%m-%d %H:%M UTC')"
         echo "Commit:  $(git rev-parse HEAD) ($(git rev-parse --abbrev-ref HEAD))"
         echo "Boards:  $*"
+        echo "Signed:  $([[ "$SIGN_ASSETS" == true ]] && echo yes || echo no)"
         if [[ -n "$dirty" ]]; then
             echo ""
             echo "Built with uncommitted changes:"
@@ -242,7 +300,9 @@ ${b}MODES${r}
       Build the release images into dist/ and release nothing: no commit, tag,
       push or GitHub release. Builds the working tree as it stands, uncommitted
       changes included. The images carry VERSION on the tagged release commit,
-      else VERSION+<commit> (plus .custom with uncommitted changes).
+      else VERSION+<commit> (plus .custom with uncommitted changes). Signs
+      the OTA images when ota_signing_key.pem is here, else leaves them
+      unsigned (a device will not install an unsigned image over the air).
 
   ${u}--notes-only${r}
       Draft RELEASE_NOTES.md from the commits since the last tag and open it
@@ -261,8 +321,8 @@ ${b}RELEASE OPTIONS${r}
                           generated notes.
   --build-local           Build, commit, tag and publish from this machine
                           instead of dispatching the workflow. Needs PlatformIO
-                          and an authenticated gh. The workflow's own run works
-                          this way.
+                          and an authenticated gh, plus ota_signing_key.pem to
+                          sign. The workflow's own run works this way.
   --no-clean              Skip the full clean and build on the existing .pio
                           output. Faster; only as trustworthy as that tree.
 
@@ -276,7 +336,8 @@ ${b}DIST-ONLY OPTIONS${r}
 
 ${b}OUTPUT${r} (dist/)
   platy-aprs-<board>-vX.Y.Z.bin       factory image, flash at 0x0
-  platy-aprs-<board>-vX.Y.Z-ota.bin   app only, flash at 0x10000 (keeps settings)
+  platy-aprs-<board>-vX.Y.Z-ota.bin   app only: the OTA image, or flash at 0x10000
+  platy-aprs-<board>-vX.Y.Z-ota.bin.sig  its ECDSA P-256 signature
   platy-aprs-<board>-vX.Y.Z.elf       symbols for decoding crashes (not published)
   flash.sh  BUILD-INFO.txt  SHA256SUMS
 
@@ -414,6 +475,7 @@ if [[ "$MODE" == dist ]]; then
     FILE_TAG="${DIST_TAG%%+*}"
 
     PIO="$(find_pio)" || { echo "Error: platformio not found. Run: pip install platformio" >&2; exit 1; }
+    check_signing optional
     setup_esptool
 
     echo ""
@@ -423,6 +485,8 @@ if [[ "$MODE" == dist ]]; then
     echo "  Commit:   $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))"
     if [[ -n "$dirty" ]]; then echo "  Uncommitted changes, built in:"; printf '%s\n' "$dirty" | sed 's/^/    /'; fi
     echo "  Boards:   ${DIST_ENVS[*]}"
+    if [[ "$SIGN_ASSETS" == true ]]; then echo "  Signing:  $SIGNING_KEY"
+    else echo "  Signing:  none ($SIGNING_KEY is not here, so no .sig files)"; fi
     echo "  Output:   dist/, replaced"
     if [[ -n "$VERSION_ARG" && "$DIST_TAG" != *+* ]]; then
         echo ""
@@ -523,6 +587,7 @@ if [[ "$REMOTE" == true ]]; then
 fi
 
 PIO="$(find_pio)" || { echo "Error: platformio not found." >&2; exit 1; }
+check_signing required
 setup_esptool
 
 echo "$TAG" > VERSION
@@ -554,6 +619,6 @@ if [[ "$USE_COMMITTED_NOTES" == true ]]; then NOTES_ARGS=( --notes-file RELEASE_
 
 # The .elf files stay out of the release; the workflow archives them.
 gh release create "$TAG" --title "platy-aprs $TAG" "${NOTES_ARGS[@]}" \
-    dist/*.bin dist/SHA256SUMS dist/flash.sh
+    dist/*.bin dist/*.sig dist/SHA256SUMS dist/flash.sh
 echo "Release $TAG published."
 gh release view "$TAG" --json url -q .url

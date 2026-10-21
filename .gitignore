@@ -3,3 +3,4 @@
 *.bin
 .DS_Store
 dist/
+ota_signing_key.pem

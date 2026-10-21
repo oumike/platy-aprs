@@ -9,6 +9,7 @@
 #include "services/alerts.h"
 #include "services/beacon.h"
 #include "services/messages.h"
+#include "services/ota.h"
 #include "services/router.h"
 #include "services/sd_log.h"
 #include "transport/ble_kiss.h"
@@ -22,7 +23,7 @@
 void setup() {
     Serial.begin(115200);
     delay(50);
-    Serial.printf("\n[boot] %s v%s\n", APP_NAME, APP_VERSION);
+    Serial.printf("\n[boot] %s %s\n", APP_NAME, APP_VERSION);
 
     boardBegin();
     configBegin();
@@ -31,6 +32,7 @@ void setup() {
     displayBegin();
     displaySetBrightness(g_config.brightness);
     screenBegin();
+    uiShowSplash();
     keyboardBegin();
     sdBegin();
     routerBegin();
@@ -41,6 +43,7 @@ void setup() {
 
     wifiBegin();
     webBegin();
+    otaBegin();
     aprsIsBegin();
     g_ble.begin();
     g_lora.begin();
@@ -51,6 +54,7 @@ void loop() {
     keyboardPoll();
     wifiLoop();
     webLoop();
+    otaLoop();
     g_lora.loop();
     routerLoop();
     aprsIsLoop();

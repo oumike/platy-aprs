@@ -10,6 +10,7 @@
 #include "services/beacon.h"
 #include "services/favorites.h"
 #include "services/messages.h"
+#include "services/ota.h"
 #include "services/data_store.h"
 #include "services/router.h"
 #include "services/sd_log.h"
@@ -19,6 +20,7 @@
 #include "net/wifi_manager.h"
 #include "net/aprs_is.h"
 #include "net/web_ui.h"
+#include "ui/ui.h"
 #include "version.h"
 #include <ArduinoJson.h>
 #include <WebServer.h>
@@ -673,6 +675,43 @@ void handleWifiScan() {
     sendJson(200, doc);
 }
 
+void sendOtaStatus() {
+    const OtaStatus o = otaStatus();
+    JsonDocument doc;
+    doc["running"] = APP_VERSION;
+    doc["board"] = otaAssetSlug();
+    doc["state"] = otaStateName(o.state);
+    doc["latest"] = o.latest;
+    doc["error"] = o.error;
+    doc["written"] = o.written;
+    doc["total"] = o.total;
+    doc["layoutOk"] = o.layoutOk;
+    sendJson(200, doc);
+}
+
+void handleOtaStatus() {
+    if (!authorized()) return;
+    sendOtaStatus();
+}
+
+void handleOtaCheck() {
+    if (!authorized()) return;
+    if (!otaStartCheck()) {
+        sendError(409, "Can't check now (busy, or not on Wi-Fi)");
+        return;
+    }
+    sendOtaStatus();
+}
+
+void handleOtaInstall() {
+    if (!authorized()) return;
+    if (!otaStartInstall()) {
+        sendError(409, "Can't install now (busy, or not on Wi-Fi)");
+        return;
+    }
+    sendOtaStatus();
+}
+
 void handleReboot() {
     if (!authorized()) return;
     sendOk();
@@ -725,9 +764,16 @@ void webBegin() {
     s_server.on("/api/backup/sd/delete", HTTP_POST, handleSdBackupDelete);
 #ifdef PLATY_SERIAL_KEYS
     // Debug builds: raw RGB565 dump of the active screen (240x320, little endian).
+    // ?splash=1 renders the splash off-screen instead (for previews).
     s_server.on("/api/debug/screen", HTTP_GET, [] {
         if (!authorized()) return;
-        lv_draw_buf_t *b = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+        lv_obj_t *splash = nullptr;
+        if (s_server.arg("splash") == "1") {
+            splash = uiBuildSplash(nullptr);
+            lv_obj_update_layout(splash);
+        }
+        lv_draw_buf_t *b = lv_snapshot_take(splash ? splash : lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+        if (splash) lv_obj_delete(splash);
         if (!b) { s_server.send(500, "text/plain", "snapshot failed"); return; }
         s_server.setContentLength(b->header.h * b->header.stride);
         s_server.send(200, "application/octet-stream", "");
@@ -738,6 +784,9 @@ void webBegin() {
     s_server.on("/api/logs", HTTP_GET, handleLogList);
     s_server.on("/api/logs/download", HTTP_GET, handleLogDownload);
     s_server.on("/api/logs/delete", HTTP_POST, handleLogDelete);
+    s_server.on("/api/ota", HTTP_GET, handleOtaStatus);
+    s_server.on("/api/ota/check", HTTP_POST, handleOtaCheck);
+    s_server.on("/api/ota/install", HTTP_POST, handleOtaInstall);
     s_server.on("/api/reboot", HTTP_POST, handleReboot);
     s_server.on("/api/factory-reset", HTTP_POST, handleFactoryReset);
     s_server.onNotFound(handleNotFound);
