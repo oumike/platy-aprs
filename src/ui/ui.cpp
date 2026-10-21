@@ -1834,8 +1834,8 @@ void uiShowSplash() {
 }
 
 void uiBegin() {
-    // Keep the splash up for at least 1.5 s, however quick the rest of setup was.
-    while (s_splash && millis() - s_splashAtMs < 1500) delay(10);
+    // Keep the splash up for at least 3.5 s, however quick the rest of setup was.
+    while (s_splash && millis() - s_splashAtMs < 3500) delay(10);
     keyboardSetHotkeyHandler(hotkey);
     themeInit();
     buildStatusBar();
