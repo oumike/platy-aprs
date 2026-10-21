@@ -50,7 +50,11 @@ on a network.
 
 ## Getting around
 
-The home screen is a menu:
+<p align="center"><img src="screenshots/home.png" width="480" alt="The home menu under the status bar"></p>
+
+The home screen is a menu. The **status bar** across the top of every screen shows your callsign, unread
+messages, the radio link (Bluetooth TNC or LoRa) and APRS-IS (each blinks on traffic), GPS, Wi-Fi, battery and
+the time.
 
 | Item | What it does |
 |---|---|
@@ -161,6 +165,8 @@ screen, under **Settings → GPS & beacon**, and on the Beacon tab. The GPS can 
 
 ## Messages
 
+<p align="center"><img src="screenshots/messages.png" width="480" alt="The Messages screen: New message and three conversations"></p>
+
 Open **Messages** on the device (or the Messages key/hotkey, or the web **Messages** tab) and pick a
 conversation or start a **New message** to a callsign.
 
@@ -182,7 +188,11 @@ Conversations are stored on the SD card (`/platy/messages.json`).
 **Stations** lists everyone heard, newest first. Open a station for its details: position, distance and
 bearing from you (when you both have a position), course and speed, comment, path, and when it was heard. Star a station to keep it at the top; favorites are never dropped when the list is full.
 
-**Monitor** shows every packet as it arrives or leaves, decoded where possible.
+**Monitor** shows every packet as it arrives or leaves, decoded where possible. Each line starts with **TX**
+for packets you sent (in blue) or **IS** for ones from APRS-IS (in grey), then how long ago; RF lines have no
+tag.
+
+<p align="center"><img src="screenshots/monitor.png" width="480" alt="The Monitor screen: raw APRS packets from APRS-IS"></p>
 
 **Map** draws stations over OpenStreetMap: amber for heard on RF, grey for APRS-IS, blue for weather, purple for
 objects, and you in blue. Underneath, a heat map of every heard station shows busy areas when zoomed out.

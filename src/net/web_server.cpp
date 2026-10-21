@@ -778,6 +778,8 @@ void webBegin() {
 #ifdef PLATY_SERIAL_KEYS
     // Debug builds: raw RGB565 dump of the active screen (240x320, little endian).
     // ?splash=1 renders the splash off-screen instead (for previews).
+    // ?layer=top dumps the top layer (status bar, overlays) as ARGB8888 to
+    // composite over the screen.
     s_server.on("/api/debug/screen", HTTP_GET, [] {
         if (!authorized()) return;
         lv_obj_t *splash = nullptr;
@@ -785,7 +787,9 @@ void webBegin() {
             splash = uiBuildSplash(nullptr);
             lv_obj_update_layout(splash);
         }
-        lv_draw_buf_t *b = lv_snapshot_take(splash ? splash : lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+        const bool top = s_server.arg("layer") == "top";
+        lv_draw_buf_t *b = lv_snapshot_take(top ? lv_layer_top() : splash ? splash : lv_screen_active(),
+                                            top ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB565);
         if (splash) lv_obj_delete(splash);
         if (!b) { s_server.send(500, "text/plain", "snapshot failed"); return; }
         s_server.setContentLength(b->header.h * b->header.stride);
