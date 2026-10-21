@@ -276,7 +276,8 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |
 
-Changes take effect when you press **Save**.
+Settings on every tab are saved together with the **Save** button in the bar pinned to the bottom of the page.
+The bar says when there are unsaved changes, and the browser asks before you leave the page with any.
 
 ## Troubleshooting
 
