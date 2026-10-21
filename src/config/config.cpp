@@ -110,6 +110,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["brightness"] = c.brightness;
     d["screenOnSecs"] = c.screenOnSecs;
     d["screenSaver"] = c.screenSaver;
+    d["theme"] = c.theme == UiTheme::Light ? "light" : "dark";
     d["otaAutoInstall"] = c.otaAutoInstall;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
@@ -251,6 +252,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         }
         takeNum(d, "screenOnSecs", c.screenOnSecs);
         take(d, "screenSaver", c.screenSaver);
+        if (d["theme"].is<const char *>()) c.theme = !strcmp(d["theme"].as<const char *>(), "light") ? UiTheme::Light : UiTheme::Dark;
         take(d, "otaAutoInstall", c.otaAutoInstall);
         takeStr(d, "timezone", c.timezone);
         String pw;

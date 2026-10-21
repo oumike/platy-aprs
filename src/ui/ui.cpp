@@ -36,10 +36,16 @@ LV_FONT_DECLARE(font_star_14);
 namespace {
 
 constexpr int kStatusH = 22;
-constexpr lv_color_t kGrey = LV_COLOR_MAKE(0x60, 0x66, 0x70);
-constexpr lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
-constexpr lv_color_t kAmber = LV_COLOR_MAKE(0xff, 0xb3, 0x47);
-constexpr lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
+// Palette for the current theme (themeColors() sets it; dark values here).
+lv_color_t kGrey = LV_COLOR_MAKE(0x60, 0x66, 0x70);
+lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
+lv_color_t kAmber = LV_COLOR_MAKE(0xff, 0xb3, 0x47);
+lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
+lv_color_t kBarBg = LV_COLOR_MAKE(0x1b, 0x20, 0x27);        // status bar
+lv_color_t kItemFocusBg = LV_COLOR_MAKE(0x4a, 0x34, 0x10);  // keypad-focused list item
+lv_color_t kItemFocusText = LV_COLOR_MAKE(0xff, 0xff, 0xff);
+lv_color_t kDimText = LV_COLOR_MAKE(0x9a, 0xa4, 0xb2);      // secondary text
+lv_color_t kOutText = LV_COLOR_MAKE(0x3f, 0xa7, 0xff);      // our own messages and packets
 
 struct Screen {
     lv_obj_t *scr;
@@ -83,40 +89,78 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
 }
 
+UiTheme s_appliedTheme = UiTheme::Dark;
+bool s_stylesInited = false;
+
+void themeColors(bool light) {
+    if (light) {
+        kGrey = lv_color_hex(0x9aa0a8);
+        kGreen = lv_color_hex(0x1f9d55);
+        kAmber = lv_color_hex(0xc77700);
+        kRed = lv_color_hex(0xd32f2f);
+        kBarBg = lv_color_hex(0xdfe4ea);
+        kItemFocusBg = lv_color_hex(0xffe0a8);
+        kItemFocusText = lv_color_hex(0x000000);
+        kDimText = lv_color_hex(0x5f6b7a);
+        kOutText = lv_color_hex(0x1565c0);
+    } else {
+        kGrey = lv_color_hex(0x606670);
+        kGreen = lv_color_hex(0x4cd07d);
+        kAmber = lv_color_hex(0xffb347);
+        kRed = lv_color_hex(0xff5c5c);
+        kBarBg = lv_color_hex(0x1b2027);
+        kItemFocusBg = lv_color_hex(0x4a3410);
+        kItemFocusText = lv_color_hex(0xffffff);
+        kDimText = lv_color_hex(0x9aa4b2);
+        kOutText = lv_color_hex(0x3fa7ff);
+    }
+}
+
+// Applies g_config.theme to LVGL's default theme and our styles. Objects that
+// already exist keep their local colours; rebuildForTheme() remakes them.
 void themeInit() {
-    lv_style_init(&s_stFocus);
+    const bool light = g_config.theme == UiTheme::Light;
+    s_appliedTheme = g_config.theme;
+    themeColors(light);
+    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor};
+    for (lv_style_t *st : styles) {
+        if (s_stylesInited) lv_style_reset(st);
+        lv_style_init(st);
+    }
+    s_stylesInited = true;
+
     lv_style_set_outline_color(&s_stFocus, kAmber);
     lv_style_set_outline_opa(&s_stFocus, LV_OPA_COVER);
     lv_style_set_outline_width(&s_stFocus, 2);
     lv_style_set_outline_pad(&s_stFocus, 0);
 
-    lv_style_init(&s_stItemFocus);
-    lv_style_set_bg_color(&s_stItemFocus, lv_color_hex(0x4a3410));
+    lv_style_set_bg_color(&s_stItemFocus, kItemFocusBg);
     lv_style_set_bg_opa(&s_stItemFocus, LV_OPA_COVER);
-    lv_style_set_text_color(&s_stItemFocus, lv_color_white());
+    lv_style_set_text_color(&s_stItemFocus, kItemFocusText);
 
-    lv_style_init(&s_stBtnGlow);
     lv_style_set_shadow_color(&s_stBtnGlow, lv_palette_main(LV_PALETTE_BLUE));
     lv_style_set_shadow_width(&s_stBtnGlow, 10);
     lv_style_set_shadow_spread(&s_stBtnGlow, 0);
     lv_style_set_shadow_offset_x(&s_stBtnGlow, 0);
     lv_style_set_shadow_offset_y(&s_stBtnGlow, 0);
-    lv_style_set_shadow_opa(&s_stBtnGlow, LV_OPA_50);
+    lv_style_set_shadow_opa(&s_stBtnGlow, light ? LV_OPA_30 : LV_OPA_50);
 
-    lv_style_init(&s_stBtnGlowFocus);
     lv_style_set_shadow_color(&s_stBtnGlowFocus, kAmber);
     lv_style_set_shadow_width(&s_stBtnGlowFocus, 16);
     lv_style_set_shadow_spread(&s_stBtnGlowFocus, 2);
     lv_style_set_shadow_opa(&s_stBtnGlowFocus, LV_OPA_80);
     lv_style_set_text_color(&s_stBtnGlowFocus, lv_color_white());
 
-    lv_style_init(&s_stCursor);
     lv_style_set_border_color(&s_stCursor, kAmber);
     lv_style_set_border_width(&s_stCursor, 3);
     lv_style_set_border_side(&s_stCursor, LV_BORDER_SIDE_LEFT);
     lv_style_set_border_opa(&s_stCursor, LV_OPA_COVER);
 
-    lv_theme_t *base = lv_display_get_theme(nullptr);
+    // Re-init LVGL's default theme in the chosen mode, then layer ours on it.
+    lv_theme_t *base = lv_theme_default_get();
+    const lv_color_t primary = base ? base->color_primary : lv_palette_main(LV_PALETTE_BLUE);
+    const lv_color_t secondary = base ? base->color_secondary : lv_palette_main(LV_PALETTE_RED);
+    base = lv_theme_default_init(nullptr, primary, secondary, !light, LV_FONT_DEFAULT);
     s_theme = *base;
     lv_theme_set_parent(&s_theme, base);
     lv_theme_set_apply_cb(&s_theme, themeApply);
@@ -249,7 +293,7 @@ lv_obj_t *sbRect(lv_obj_t *parent, int x, int y, int w, int h, int r, lv_color_t
 
 // Handheld radio drawn from rectangles: antenna, body, display, speaker grille.
 void buildTncIcon(lv_obj_t *bar) {
-    const lv_color_t bg = lv_color_hex(0x1b2027);
+    const lv_color_t bg = kBarBg;
     s_sbTnc = lv_obj_create(bar);
     lv_obj_remove_style_all(s_sbTnc);
     lv_obj_set_size(s_sbTnc, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -322,7 +366,7 @@ void buildStatusBar() {
     lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x1b2027), 0);
+    lv_obj_set_style_bg_color(bar, kBarBg, 0);
     lv_obj_set_style_pad_hor(bar, 6, 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
     lv_obj_set_style_text_font(bar, &lv_font_montserrat_12, 0);
@@ -360,7 +404,8 @@ void buildStatusBar() {
     s_rxSeenLora = g_lora.status().rxFrames;
     s_isRxSeen = aprsIsStatus().rxLines;
     s_sbIsLastTx = aprsIsStatus().txLines;
-    lv_timer_create(rxBlinkTimer, 250, nullptr);
+    static lv_timer_t *blink = nullptr;
+    if (!blink) blink = lv_timer_create(rxBlinkTimer, 250, nullptr);
 }
 
 void setOpa(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0); }
@@ -506,6 +551,7 @@ void toast(const String &text, uint32_t ms = 3000) {
         lv_label_set_long_mode(s_toast, LV_LABEL_LONG_DOT);
         lv_obj_set_style_max_height(s_toast, 60, 0);
         lv_obj_set_style_bg_color(s_toast, lv_color_hex(0x2a313b), 0);
+        lv_obj_set_style_text_color(s_toast, lv_color_white(), 0);
         lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(s_toast, kAmber, 0);
         lv_obj_set_style_border_width(s_toast, 1, 0);
@@ -603,7 +649,7 @@ lv_obj_t *addRow(lv_obj_t *list, lv_group_t *grp, bool fav, const char *text, co
     lv_obj_set_flex_grow(l, 1);
     lv_obj_t *r = lv_label_create(b);
     lv_obj_set_style_text_font(r, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(r, lv_color_hex(0x9aa4b2), 0);
+    lv_obj_set_style_text_color(r, kDimText, 0);
     lv_label_set_text(r, right);
     if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_group_add_obj(grp, b);
@@ -664,8 +710,8 @@ void refreshMonitor() {
         char buf[300];
         snprintf(buf, sizeof(buf), "%s%s%s  %s", e->tx ? "TX " : "", e->viaIs ? "IS " : "", ageStr(e->uptimeS).c_str(), e->raw);
         lv_obj_t *b = addWrapItem(s_mon.list, s_mon.grp, buf, nullptr, nullptr);
-        if (e->tx) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
-        else if (e->viaIs) lv_obj_set_style_text_color(b, lv_color_hex(0x9aa4b2), 0);
+        if (e->tx) lv_obj_set_style_text_color(b, kOutText, 0);
+        else if (e->viaIs) lv_obj_set_style_text_color(b, kDimText, 0);
     }
     if (lv_obj_get_child_count(s_mon.list)) lv_group_focus_obj(lv_obj_get_child(s_mon.list, 0));
 }
@@ -1061,7 +1107,7 @@ void refreshThread() {
                 break;
             }
         }, (void *)(uintptr_t)n);
-        if (m->outgoing) lv_obj_set_style_text_color(b, lv_color_hex(0x3fa7ff), 0);
+        if (m->outgoing) lv_obj_set_style_text_color(b, kOutText, 0);
         if (++n == 150) break;
     }
     // Keep the input row (input and quick-message button) last in the focus order.
@@ -1865,6 +1911,9 @@ void setVolumeLabel(lv_obj_t *item) {
     lv_label_set_text(lv_obj_get_child(item, 1), (String("Volume: ") + g_config.volumePct + "%").c_str());
 }
 
+bool s_themeFromSettings = false;
+lv_obj_t *s_themeItem = nullptr;  // in the newest Settings screen
+
 void openSettings() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_SETTINGS " Settings", &grp);
@@ -1925,6 +1974,14 @@ void openSettings() {
     }
     if (sdHasSlot())
         addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
+    lv_obj_t *th = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *) {
+        // uiLoop() sees the change and rebuilds the UI in the new theme.
+        g_config.theme = g_config.theme == UiTheme::Light ? UiTheme::Dark : UiTheme::Light;
+        configSave();
+        s_themeFromSettings = true;
+    });
+    s_themeItem = th;
+    lv_label_set_text(lv_obj_get_child(th, 1), g_config.theme == UiTheme::Light ? "Theme: Light" : "Theme: Dark");
     addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Firmware update", [](lv_event_t *) { openOta(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
@@ -2091,6 +2148,45 @@ void holdScreenForSetupAp() {
     held = hold;
 }
 
+// Switches to g_config.theme (changed in Settings or the web config). Objects
+// carry colours from when they were built, so rebuild the status bar and home;
+// if this came from Settings, reopen it on the theme item.
+void rebuildForTheme() {
+    const bool inSettings = s_themeFromSettings;
+    s_themeFromSettings = false;
+    closeQuickPicker(-1);
+    closeInfo();
+    popToHome();
+#if HAS_TOUCH && !HAS_KEYBOARD
+    if (s_osk) {
+        lv_obj_delete(s_osk);
+        s_osk = nullptr;
+    }
+#endif
+    if (s_toast) {
+        lv_obj_delete(s_toast);
+        s_toast = nullptr;
+    }
+    themeInit();
+    lv_obj_delete(lv_obj_get_parent(s_sbCall));
+    s_sbBack = nullptr;
+    buildStatusBar();
+    const Screen old = s_stack[0];
+    s_depth = 0;
+    buildHome();
+    lv_group_delete(old.grp);
+    lv_obj_delete(old.scr);
+    updateStatusBar();
+    if (inSettings) {
+        openSettings();
+        lv_group_t *g = s_stack[s_depth - 1].grp;
+        if (s_themeItem) {
+            lv_group_focus_obj(s_themeItem);
+            lv_obj_scroll_to_view(s_themeItem, LV_ANIM_OFF);
+        }
+    }
+}
+
 void tick(lv_timer_t *) {
     holdScreenForSetupAp();
     updateStatusBar();
@@ -2172,5 +2268,6 @@ void uiLoop() {
         openTnc();
     }
     if (s_restore.rebootAtMs && (int32_t)(millis() - s_restore.rebootAtMs) >= 0) ESP.restart();
+    if (g_config.theme != s_appliedTheme) rebuildForTheme();
     toastLoop();
 }
