@@ -2427,8 +2427,8 @@ void setVolumeLabel(lv_obj_t *item) {
 
 // Brightness: a Settings item opening a modal with a slider. Left/Right step
 // it, the slider drags on touch screens, and Done/Back closes it.
-// E-paper reads fine unlit, so its frontlight can go right off.
-constexpr int kBrightnessMin = HAS_EINK ? 0 : 10, kBrightnessStep = 25;
+// Not on e-paper, whose frontlight stays off.
+constexpr int kBrightnessMin = 10, kBrightnessStep = 25;
 
 struct {
     lv_obj_t *bg, *slider, *value, *item;
@@ -2441,7 +2441,7 @@ String brightnessText(const char *prefix) {
 }
 
 void setBrightnessItemLabel(lv_obj_t *item) {
-    lv_label_set_text(lv_obj_get_child(item, 1), brightnessText(HAS_EINK ? "Bright: " : "Brightness: ").c_str());
+    lv_label_set_text(lv_obj_get_child(item, 1), brightnessText("Brightness: ").c_str());
 }
 
 void setBrightness(int level) {
@@ -2577,10 +2577,12 @@ void openSettings() {
         lv_label_set_text(lv_obj_get_child(b, 1), g_config.screenSaver ? EL("At timeout: Screensaver", "Saver: On") : EL("At timeout: Screen off", "Saver: Off"));
     });
     lv_label_set_text(lv_obj_get_child(ss, 1), g_config.screenSaver ? EL("At timeout: Screensaver", "Saver: On") : EL("At timeout: Screen off", "Saver: Off"));
+#if !HAS_EINK
     lv_obj_t *br = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *e) {
         openBrightness((lv_obj_t *)lv_event_get_target(e));
     });
     setBrightnessItemLabel(br);
+#endif
     if (audioPresent()) {
         // Each press moves to the next style or volume and plays the new-message tone with it.
         lv_obj_t *snd = addItem(list, grp, LV_SYMBOL_BELL, "", [](lv_event_t *e) {

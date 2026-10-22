@@ -68,7 +68,7 @@ the time.
 | **Settings** | Everything else (below). |
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it) · Sound and Volume
+turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
 (see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names in two columns so it fits one page.
 
@@ -154,7 +154,7 @@ Shift and Sym apply to the next key only, and lapse after 1.5 seconds.
 The screen is a 240×320 black-and-white e-paper panel with a frontlight, and takes touch; the keyboard types
 and moves around. There is no on-screen keyboard. The UI is always light (no dark theme), nothing animates, and
 the panel redraws only when something on it changes, with a full (flashing) refresh every so often to clear
-ghosting. **Settings → Brightness** sets the frontlight and can go right down to off. The screen doesn't
+ghosting. The frontlight stays off, so there is no brightness setting. The screen doesn't
 rotate, and the board has no sound.
 
 | Keys | Gives |
@@ -387,7 +387,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro) and its timeout, brightness, screen timeout and screensaver, theme (dark/light; not on the T-Deck Pro), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro) and its timeout, brightness (not on the T-Deck Pro), screen timeout and screensaver, theme (dark/light; not on the T-Deck Pro), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |

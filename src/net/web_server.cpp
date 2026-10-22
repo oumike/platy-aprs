@@ -89,7 +89,7 @@ void handleGetConfig() {
     caps["orientation"] = displayCanRotate();
 #if HAS_EINK
     caps["theme"] = false;   // e-paper: always the light monochrome theme
-    caps["minBrightness"] = 0;
+    caps["brightness"] = false;   // frontlight stays off
 #endif
     sendJson(200, doc);
 }

@@ -38,7 +38,6 @@ bool s_pending = false, s_fullPending = true;
 bool s_sleeping = false;
 uint32_t s_pendingSinceMs = 0, s_lastRefreshMs = 0;
 uint8_t s_partials = 0;
-uint8_t s_brightness = 0;
 
 void writeBrightness(uint8_t level) { ledcWrite(TFT_BL_PWM_CH, level); }
 
@@ -321,10 +320,9 @@ void displayBegin() {
                   LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
 }
 
-void displaySetBrightness(uint8_t level) {
-    s_brightness = level;
-    if (!s_sleeping) writeBrightness(level);
-}
+// E-paper reads by ambient light, so the frontlight stays off and there's no
+// brightness setting.
+void displaySetBrightness(uint8_t) { writeBrightness(0); }
 
 // The panel holds its image with no power: sleeping only darkens the
 // frontlight and stops refreshes. Waking redraws it with a full refresh.
