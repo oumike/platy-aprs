@@ -212,7 +212,7 @@ conversation or start a **New message** to a callsign.
   the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
 - Star a conversation to keep it at the top (**Alt+F** on the T-Deck and Mesh Deck keyboards, **Sym+F** on the Pager).
 - **Mark all as read** and **Delete all messages** sit above New message; deleting asks first and keeps starred
-  conversations unless you turn on **Include starred conversations**.
+  conversations unless you select **Include starred conversations**.
 - Long-press a conversation for **Mark as read** or **Delete**. With keys, focus it and press **Right**
   (**Space** on the Pager).
 

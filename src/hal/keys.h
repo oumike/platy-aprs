@@ -14,4 +14,4 @@
 #define RK_SUB_BACK    0x84   // M9: function button below Back (Stations)
 #define RK_MAP         0x85   // M9: Map button (station heat map)
 #define RK_BACK        0x86
-#define RK_FAVORITE    0x87   // Alt+F: star/unstar the selected conversation
+#define RK_FAVORITE    0xC0   // Alt+F: star/unstar the selected conversation
