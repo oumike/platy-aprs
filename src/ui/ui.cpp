@@ -731,14 +731,48 @@ String ageStr(uint32_t heardS) { return geo::formatAge(uptimeS() - heardS).c_str
 
 // ── Monitor ──────────────────────────────────────────────────────────────────
 
+constexpr uint32_t kMonAccentMs = 3000;   // packets that arrive while watching stay orange this long
+constexpr int kMonAccentMax = 16;
+
 struct {
     lv_obj_t *list, *note;
     lv_group_t *grp;
     uint32_t shownSeq;
+    uint32_t accSeq[kMonAccentMax], accMs[kMonAccentMax];
+    uint8_t accNext;
+    bool anyAccent;
 } s_mon;
+
+bool monAccented(uint32_t seq) {
+    for (int i = 0; i < kMonAccentMax; i++)
+        if (s_mon.accSeq[i] == seq && millis() - s_mon.accMs[i] < kMonAccentMs) return true;
+    return false;
+}
+
+// Normal row colours: our own packets blue, APRS-IS dim. Row flags USER_3/USER_4 mark tx/viaIs.
+void monRowColor(lv_obj_t *b) {
+    if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_3)) lv_obj_set_style_text_color(b, kOutText, 0);
+    else if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_4)) lv_obj_set_style_text_color(b, kDimText, 0);
+}
+
+void monExpireAccents() {
+    bool still = false;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(s_mon.list); i++) {
+        lv_obj_t *b = lv_obj_get_child(s_mon.list, i);
+        if (monAccented((uint32_t)(uintptr_t)lv_obj_get_user_data(b))) {
+            still = true;
+            continue;
+        }
+        lv_obj_remove_style(b, &s_stTile, 0);
+        lv_obj_remove_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+        monRowColor(b);
+    }
+    s_mon.anyAccent = still;
+}
 
 void refreshMonitor() {
     if (!s_mon.list) return;
+    if (s_mon.anyAccent) monExpireAccents();
     const uint32_t last = packetLogLastSeq();
     if (last == s_mon.shownSeq) return;
     // While the user is reading further down, don't move the list under them.
@@ -748,6 +782,7 @@ void refreshMonitor() {
         return;
     }
     lv_obj_add_flag(s_mon.note, LV_OBJ_FLAG_HIDDEN);
+    const uint32_t prev = s_mon.shownSeq;
     s_mon.shownSeq = last;
     lv_obj_clean(s_mon.list);
     for (size_t i = 0; i < packetLogCount() && i < 40; i++) {
@@ -755,8 +790,22 @@ void refreshMonitor() {
         char buf[300];
         snprintf(buf, sizeof(buf), "%s%s%s  %s", e->tx ? "TX " : "", e->viaIs ? "IS " : "", ageStr(e->uptimeS).c_str(), e->raw);
         lv_obj_t *b = addWrapItem(s_mon.list, s_mon.grp, buf, nullptr, nullptr);
-        if (e->tx) lv_obj_set_style_text_color(b, kOutText, 0);
-        else if (e->viaIs) lv_obj_set_style_text_color(b, kDimText, 0);
+        lv_obj_set_user_data(b, (void *)(uintptr_t)e->seq);
+        if (e->tx) lv_obj_add_flag(b, LV_OBJ_FLAG_USER_3);
+        else if (e->viaIs) lv_obj_add_flag(b, LV_OBJ_FLAG_USER_4);
+        // Not on first open: only packets that arrive while watching.
+        if (prev && e->seq > prev) {
+            s_mon.accSeq[s_mon.accNext] = e->seq;
+            s_mon.accMs[s_mon.accNext] = millis();
+            s_mon.accNext = (s_mon.accNext + 1) % kMonAccentMax;
+        }
+        if (monAccented(e->seq)) {
+            lv_obj_add_style(b, &s_stTile, 0);
+            lv_obj_add_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+            s_mon.anyAccent = true;
+        } else {
+            monRowColor(b);
+        }
     }
     if (lv_obj_get_child_count(s_mon.list)) lv_group_focus_obj(lv_obj_get_child(s_mon.list, 0));
 }
