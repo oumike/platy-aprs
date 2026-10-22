@@ -130,7 +130,8 @@ indicator. GPS is optional: a module on the UART1 connector is picked up when pr
 ### LilyGo T-LoRa Pager
 
 There is no touch screen: the scroll wheel steps through the controls in order (and changes the value of a
-slider or list being edited), and a click selects (sent when you let go). **Backspace** outside a text field
+slider or list being edited). It scrolls long text too: a box of details scrolls before the wheel moves past
+it, and at the first or last control the screen scrolls to anything beyond it. A click selects (sent when you let go). **Backspace** outside a text field
 goes back. The screen is 480×222.
 
 | Keys | Gives |

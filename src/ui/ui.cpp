@@ -683,7 +683,7 @@ lv_obj_t *makeFavButton(lv_obj_t *parent, lv_group_t *grp, char *call) {
         lv_label_set_text(lv_obj_get_child(btn, 1), now ? "Favorite" : "Add to favorites");
         toast(now ? "Added to favorites" : "Removed from favorites");
     }, LV_EVENT_CLICKED, call);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_USER_1);   // found by Alt+F
+    lv_obj_add_flag(b, LV_OBJ_FLAG_USER_2);   // found by Alt+F (USER_1 means "wants arrows")
     lv_group_add_obj(grp, b);
     return b;
 }
@@ -1373,7 +1373,7 @@ void refreshMessages() {
 }
 
 lv_obj_t *findFavButton(lv_obj_t *o, int depth) {
-    if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_1)) return o;
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_2)) return o;
     if (depth == 0) return nullptr;
     for (uint32_t i = 0; i < lv_obj_get_child_count(o); i++)
         if (lv_obj_t *f = findFavButton(lv_obj_get_child(o, i), depth - 1)) return f;
@@ -1883,8 +1883,8 @@ extern "C" const lv_image_dsc_t splash_img;   // tools/gen_splash.py
 
 // The mascot over a deep-teal gradient, the name, a tagline and, unless null, a
 // footer line.
-// Laid out for 320x240 (every board here). Not part of any group: nothing on it
-// takes focus.
+// Laid out for 320x240 and centred across wider screens. Not part of any group:
+// nothing on it takes focus.
 lv_obj_t *buildSplash(const char *footer) {
     lv_obj_t *scr = lv_obj_create(nullptr);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
@@ -1915,9 +1915,10 @@ lv_obj_t *buildSplash(const char *footer) {
     // of the bill.
     const int blockH = footer ? 162 : 180;
     const int top = areaTop + (areaBottom - areaTop - blockH) / 2;
+    const int left = (lv_display_get_horizontal_resolution(nullptr) - 240) / 2;
     lv_obj_t *img = lv_image_create(scr);
     lv_image_set_src(img, &splash_img);
-    lv_obj_set_pos(img, 40, top);
+    lv_obj_set_pos(img, left, top);
 
     lv_obj_t *cq = lv_label_create(scr);
     lv_label_set_text(cq, "CQ CQ");
@@ -1925,7 +1926,7 @@ lv_obj_t *buildSplash(const char *footer) {
     lv_obj_set_style_text_color(cq, lv_color_hex(0x15506A), 0);
     lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(cq, 88);
-    lv_obj_set_pos(cq, 40, top + 2 + 8);
+    lv_obj_set_pos(cq, left, top + 2 + 8);
 
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, APP_NAME);

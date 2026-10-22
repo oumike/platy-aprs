@@ -182,15 +182,63 @@ bool spatialMove(uint8_t dir) {
     return true;
 }
 
+#if defined(DEVICE_TLORA_PAGER)
+constexpr int32_t kWheelScrollPx = 40;
+
+bool canScroll(lv_obj_t *o, bool down) {
+    return lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) &&
+           (down ? lv_obj_get_scroll_bottom(o) : lv_obj_get_scroll_top(o)) > 0;
+}
+
+// True when moving focus that way would wrap round to the other end.
+bool focusAtEnd(lv_group_t *g, lv_obj_t *f, bool down) {
+    const uint32_t n = lv_group_get_obj_count(g);
+    uint32_t at = n;
+    for (uint32_t i = 0; i < n; i++)
+        if (lv_group_get_obj_by_index(g, i) == f) at = i;
+    if (at == n) return false;
+    for (uint32_t i = down ? at + 1 : 0; i < (down ? n : at); i++) {
+        lv_obj_t *o = lv_group_get_obj_by_index(g, i);
+        if (!hiddenInTree(o) && !lv_obj_has_state(o, LV_STATE_DISABLED)) return false;
+    }
+    return true;
+}
+
+// The wheel scrolls before it moves on: a focused box of text scrolls through
+// its text, and at the first or last control the screen scrolls to whatever
+// lies beyond it (a closing note, the top of a dialog) before focus wraps.
+bool wheelScroll(bool down) {
+    lv_group_t *g = lv_group_get_default();
+    lv_obj_t *f = g ? lv_group_get_focused(g) : nullptr;
+    if (!f) return false;
+    lv_obj_t *target = nullptr;
+    if (canScroll(f, down)) {
+        target = f;
+    } else if (focusAtEnd(g, f, down)) {
+        for (lv_obj_t *o = lv_obj_get_parent(f); o && !target; o = lv_obj_get_parent(o))
+            if (canScroll(o, down)) target = o;
+    }
+    if (!target) return false;
+    lv_obj_scroll_by_bounded(target, 0, down ? -kWheelScrollPx : kWheelScrollPx, LV_ANIM_ON);
+    return true;
+}
+#endif
+
 uint32_t mapKey(uint8_t k) {
     switch (k) {
         case RK_UP:
         case RK_DOWN:
 #if defined(DEVICE_TLORA_PAGER)
             // The wheel is the only way to move: it steps through the controls
-            // in order (text fields included), and only a control being edited
-            // takes it as arrows.
-            if (focusedWantsArrows() && !focusedIsTextarea()) return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
+            // in order (text fields included), scrolling text on the way, and
+            // only a control being edited takes it as arrows.
+            if (focusedWantsArrows() && !focusedIsTextarea()) {
+                // The turn that moves down a list raises a slider.
+                if (lv_obj_check_type(lv_group_get_focused(lv_group_get_default()), &lv_slider_class))
+                    return k == RK_UP ? LV_KEY_DOWN : LV_KEY_UP;
+                return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
+            }
+            if (wheelScroll(k == RK_DOWN)) return 0;
             return k == RK_UP ? LV_KEY_PREV : LV_KEY_NEXT;
 #endif
             if (focusedWantsArrows()) return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
@@ -527,7 +575,8 @@ void hwPoll(uint32_t now) {
     s_rotSteps = 0;
     interrupts();
     if (steps) s_lastRotMs = now;
-    for (int16_t i = 0; i < abs(steps); i++) input(steps > 0 ? RK_UP : RK_DOWN);
+    // A positive count moves down lists and text (confirmed on hardware).
+    for (int16_t i = 0; i < abs(steps); i++) input(steps > 0 ? RK_DOWN : RK_UP);
     // The click works as the T-Deck's trackball click: it wakes the screen,
     // holding it 2 s puts the screen to sleep, so Enter goes out on release.
     // Clicks right after turning the wheel are its detents chattering.
