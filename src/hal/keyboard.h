@@ -15,5 +15,10 @@ void keyboardSetHotkeyHandler(KeyboardHotkeyHandler h);
 // The LVGL keypad device; attach a group to it with lv_indev_set_group().
 lv_indev_t *keyboardIndev();
 
-// Keyboard backlight (T-Deck, T-LoRa Pager), 0 = off .. 255 = full (the Pager is on/off).
+// E-paper builds: run while the panel refresh blocks, so keystrokes queue up
+// instead of overflowing the keyboard controller. Touches no LVGL state.
+void keyboardServiceDuringRefresh();
+uint32_t keyboardLastInputMs();   // millis() of the last key that reached the UI
+
+// Keyboard backlight (T-Deck, T-LoRa Pager, T-Deck Pro), 0 = off .. 255 = full (the Pager is on/off).
 void keyboardSetBacklight(uint8_t duty);

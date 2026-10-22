@@ -349,7 +349,9 @@ String configValidate(const AppConfig &c) {
     if (c.loraPowerDbm < -9 || c.loraPowerDbm > 22) return "LoRa power must be -9 to 22 dBm";
     if (c.wifiSsid.length() > 32) return "Wi-Fi SSID too long";
     if (c.wifiPassword.length() > 0 && c.wifiPassword.length() < 8) return "Wi-Fi password must be at least 8 characters";
+#ifndef DEVICE_TDECK_PRO
     if (c.brightness < 10) return "Brightness must be 10-255";
+#endif
     if (c.screenOnSecs > 86400) return "Screen timeout must be at most 86400 s";
     if (c.hostname.length() == 0 || c.hostname.length() > 32) return "Hostname must be 1-32 characters";
     return "";

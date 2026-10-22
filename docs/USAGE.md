@@ -69,7 +69,7 @@ the time.
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
-(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -148,6 +148,31 @@ goes back. The screen is 480×222.
 | **Sym** + F (outside a text field) | Star / unstar the selected conversation |
 
 Shift and Sym apply to the next key only, and lapse after 1.5 seconds.
+
+### LilyGo T-Deck Pro
+
+The screen is a 240×320 black-and-white e-paper panel with a frontlight, and takes touch; the keyboard types
+and moves around. There is no on-screen keyboard. The UI is always light (no dark theme), nothing animates, and
+the panel redraws only when something on it changes, with a full (flashing) refresh every so often to clear
+ghosting. **Settings → Brightness** sets the frontlight and can go right down to off. The screen doesn't
+rotate, and the board has no sound.
+
+| Keys | Gives |
+|---|---|
+| Letters, Space, Enter, Backspace | As labelled (Backspace outside a text field goes back) |
+| **Shift**, then a letter | Capital |
+| **Sym**, then a key | The symbol printed on it |
+| **Sym** + Enter | Next field |
+| **Sym** + Backspace | Back |
+| **Sym** + Space | Home screen |
+| **Alt** + W / A / S / D | Up / Left / Down / Right |
+| **Alt** + Enter | Next field |
+| **Alt** + H / M / P / T / L | Home / Messages / Map / Stations / Monitor |
+| **Alt** + Backspace | Back |
+| **Alt** + F | Star / unstar the selected conversation (or the open conversation or station) |
+
+Shift and Sym apply to the next key only, and lapse after 1.5 seconds. Alt works held down, or tapped for the
+next key.
 
 ## Connecting a radio
 
@@ -268,7 +293,7 @@ APRS-IS can be switched on and off under **Settings → APRS-IS** on the device.
 Alerts sound for new messages, acks, failed sends and beacons, and once at boot. **Settings → Sound** steps
 through the new-message tone styles **Default**, **Chirpy** and **Bass**, playing each, and **Off**, which
 silences every alert. On the T-Deck Plus, Wio Tracker L2 and T-LoRa Pager (speakers), **Settings → Volume** steps from 0 to
-100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck and CrowPanel have no sound.
+100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck, CrowPanel and T-Deck Pro have no sound.
 Both are also on the web **Device** tab.
 
 ## Message light
@@ -280,7 +305,7 @@ when a message arrives, even with the sound off. **Settings → Message light** 
 30 seconds, 1, 2 or 5 minutes, or **Never** (until the messages are read). Reading the messages stops it
 sooner. Both are also on the web **Device** tab.
 
-On the T-Deck Plus and T-LoRa Pager the keyboard backlight blinks the same way, but only while the screen is off or showing the
+On the T-Deck Plus, T-LoRa Pager and T-Deck Pro the keyboard backlight blinks the same way, but only while the screen is off or showing the
 screensaver; turning the screen on stops it. **Settings → Keyboard blink** turns it on (the default) or off, and
 **Light timeout** works as above. The T-Deck keyboard needs its 2024-12-25 or later firmware; older keyboards ignore it.
 The other boards have no such light.
@@ -312,6 +337,10 @@ screen ignores touch, except on the CrowPanel, which has no screen button and ta
 | Mesh Deck | Tap the top-right (R) shoulder button, or BOOT | Hold R or BOOT, or double-tap the screensaver | Keyboard, d-pad, other touches |
 | CrowPanel 3.5 | Only at the timeout | Double-tap the screen | Other touches |
 | T-LoRa Pager | Tap BOOT, or hold the wheel click for 2 s | Hold BOOT, or click the wheel | Keyboard, turning the wheel |
+| T-Deck Pro | Tap the side button | Hold the side button, or double-tap the screensaver | Keyboard, other touches |
+
+On the T-Deck Pro's e-paper the screensaver is a still picture rather than the drifting platy, and "screen off"
+turns off the frontlight and stops redrawing; the panel keeps showing its last image.
 
 ## Firmware updates
 
@@ -358,7 +387,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager) and its timeout, brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro) and its timeout, brightness, screen timeout and screensaver, theme (dark/light; not on the T-Deck Pro), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |

@@ -74,6 +74,7 @@ jobs:
           pio run -e mesh-deck --disable-auto-clean
           pio run -e crowpanel-35 --disable-auto-clean
           pio run -e tlora-pager --disable-auto-clean
+          pio run -e tdeck-pro --disable-auto-clean
 
       # Flash headroom, tightest board first, so the next one to approach its
       # ceiling is visible here rather than in a failed release. The floor is a

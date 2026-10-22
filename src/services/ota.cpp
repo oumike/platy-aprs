@@ -347,6 +347,8 @@ const char *otaAssetSlug() {
     return "crowpanel-35";
 #elif defined(DEVICE_TLORA_PAGER)
     return "tlora-pager";
+#elif defined(DEVICE_TDECK_PRO)
+    return "tdeck-pro";
 #else
     return "";
 #endif

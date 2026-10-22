@@ -30,6 +30,8 @@ static void gpsPower(bool on) {
     }
 #elif defined(DEVICE_TLORA_PAGER)
     pagerIoSet(XL_GPS_EN, on);
+#elif defined(DEVICE_TDECK_PRO)
+    digitalWrite(PIN_GPS_EN, on ? HIGH : LOW);
 #else
     (void)on;   // T-Deck: the GPS is on the main peripheral rail
 #endif

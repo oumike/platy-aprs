@@ -8,6 +8,8 @@
 #include "mesh_deck_io.h"
 #elif defined(DEVICE_TLORA_PAGER)
 #include "tlora_pager_io.h"
+#elif defined(DEVICE_TDECK_PRO)
+#include "tdeck_pro_io.h"
 #endif
 
 static uint16_t s_battMv = 0;
@@ -94,6 +96,19 @@ void boardBegin() {
     pinMode(PIN_TFT_CS, OUTPUT);
     digitalWrite(PIN_TFT_CS, HIGH);
     pagerIoBegin();
+#elif defined(DEVICE_TDECK_PRO)
+    // Everything on the shared SPI bus deselected, the radio powered, GPS off
+    // until gpsSetEnabled() turns it on.
+    for (int pin : {PIN_TFT_CS, PIN_LORA_CS, PIN_SD_CS}) {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, HIGH);
+    }
+    pinMode(PIN_LORA_POWER, OUTPUT);
+    digitalWrite(PIN_LORA_POWER, HIGH);
+    pinMode(PIN_GPS_EN, OUTPUT);
+    digitalWrite(PIN_GPS_EN, LOW);
+    tdeckProIoBegin();
+    delay(20);
 #endif
 }
 
@@ -112,6 +127,11 @@ uint16_t boardBatteryMilliVolts() {
     s_battLastMs = now;
     // The charger's ADC; the first reading lands one call after the first.
     if (const uint16_t mv = pagerBatteryMv()) s_battMv = mv;
+    return s_battMv;
+#elif defined(DEVICE_TDECK_PRO)
+    if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
+    s_battLastMs = now;
+    if (const uint16_t mv = tdeckProBatteryMv()) s_battMv = mv;
     return s_battMv;
 #else
     if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
@@ -161,6 +181,20 @@ int boardBatteryPercent() {
         if (const int p = meshDeckBatteryPercent(); p >= 0) pct = p;
     }
     return pct;
+#elif defined(DEVICE_TDECK_PRO)
+    // The BQ27220 gauge when it answers, else the charger's voltage.
+    static int pct = -1;
+    static uint32_t lastMs = 0;
+    if (lastMs == 0 || millis() - lastMs >= 5000) {
+        lastMs = millis() | 1;
+        pct = tdeckProBatteryPercent();
+    }
+    if (pct >= 0) return pct;
+    const uint16_t mv = boardBatteryMilliVolts();
+    if (mv == 0) return -1;
+    if (mv >= 4150) return 100;
+    if (mv <= 3300) return 0;
+    return (int)((mv - 3300) * 100 / (4150 - 3300));
 #else
     const uint16_t mv = boardBatteryMilliVolts();
     if (mv == 0) return -1;

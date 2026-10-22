@@ -47,6 +47,8 @@ const lv_font_t *uiFont(int px) {
 namespace {
 
 constexpr int kStatusH = 22;
+// E-paper: every animation frame is a panel refresh, so nothing animates.
+constexpr lv_anim_enable_t kAnim = HAS_EINK ? LV_ANIM_OFF : LV_ANIM_ON;
 // Palette for the current theme (themeColors() sets it; dark values here).
 lv_color_t kGrey = LV_COLOR_MAKE(0x60, 0x66, 0x70);
 lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
@@ -55,6 +57,7 @@ lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
 lv_color_t kBarBg = LV_COLOR_MAKE(0x4a, 0x3f, 0x35);        // status bar, toasts, surfaces
 lv_color_t kDimText = LV_COLOR_MAKE(0x9a, 0xa4, 0xb2);      // secondary text
 lv_color_t kOutText = LV_COLOR_MAKE(0x3f, 0xa7, 0xff);      // our own messages and packets
+lv_color_t kSbOff = LV_COLOR_MAKE(0x60, 0x66, 0x70);        // status-bar icon for a link that is off
 
 struct Screen {
     lv_obj_t *scr;
@@ -86,12 +89,16 @@ lv_theme_t s_theme;
 lv_style_t s_stFocus, s_stCursor, s_stScreen, s_stSurface;
 // Tiles: buttons are orange, list rows brown, lists a padded column of them.
 lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisabled, s_stTileList;
+#if HAS_EINK
+lv_style_t s_stEinkBox, s_stEinkBar;   // black outline for fields; black scrollbars
+#endif
 
 constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
 constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
-constexpr uint32_t kMsgTileUnread = 0xFFB347;
+constexpr uint32_t kMsgTileUnread = HAS_EINK ? 0x000000 : 0xFFB347;
 constexpr int kModalRadius = 12;   // pop-ups and toasts
 UiTheme s_appliedTheme = UiTheme::Dark;
+bool s_dark = true;   // the theme in use (e-paper is always light)
 TextSize s_appliedTextSize = TextSize::Medium;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
@@ -109,10 +116,22 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
         lv_obj_add_style(obj, &s_stDisabled, LV_STATE_DISABLED);
     }
     if (lv_obj_check_type(obj, &lv_list_class)) lv_obj_add_style(obj, &s_stTileList, 0);
+#if HAS_EINK
+    // LVGL's light greys fall to white at 1 bit: outline what must be seen.
+    if (lv_obj_check_type(obj, &lv_textarea_class) || lv_obj_check_type(obj, &lv_dropdown_class) ||
+        lv_obj_check_type(obj, &lv_dropdownlist_class) || lv_obj_check_type(obj, &lv_roller_class) ||
+        lv_obj_check_type(obj, &lv_slider_class) || lv_obj_check_type(obj, &lv_switch_class) ||
+        lv_obj_check_type(obj, &lv_bar_class))
+        lv_obj_add_style(obj, &s_stEinkBox, 0);
+    if (lv_obj_check_type(obj, &lv_checkbox_class)) lv_obj_add_style(obj, &s_stEinkBox, LV_PART_INDICATOR);
+    if (lv_obj_check_type(obj, &lv_textarea_class))
+        lv_obj_set_style_text_color(obj, lv_color_black(), LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_add_style(obj, &s_stEinkBar, LV_PART_SCROLLBAR);
+#endif
     // Our screen colour rather than LVGL's (grey in light, dark brown in dark).
     if (!lv_obj_get_parent(obj)) {
         lv_obj_add_style(obj, &s_stScreen, 0);
-    } else if (s_appliedTheme == UiTheme::Dark &&
+    } else if (s_dark &&
                (lv_obj_check_type(obj, &lv_obj_class) || lv_obj_check_type(obj, &lv_list_class) ||
                 isItem || lv_obj_check_type(obj, &lv_textarea_class) ||
                 lv_obj_check_type(obj, &lv_dropdown_class) || lv_obj_check_type(obj, &lv_dropdownlist_class) ||
@@ -125,6 +144,14 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
 bool s_stylesInited = false;
 
 void themeColors(bool light) {
+#if HAS_EINK
+    // 1 bit: anything that must show is black. Links that are off drop out of
+    // the status bar (white on white) rather than turning grey.
+    (void)light;
+    kGrey = kGreen = kAmber = kRed = kDimText = kOutText = lv_color_black();
+    kBarBg = kSbOff = lv_color_white();
+    return;
+#endif
     if (light) {
         kGrey = lv_color_hex(0x9aa0a8);
         kGreen = lv_color_hex(0x1f9d55);
@@ -133,6 +160,7 @@ void themeColors(bool light) {
         kBarBg = lv_color_hex(0xc6ccd3);
         kDimText = lv_color_hex(0x5f6b7a);
         kOutText = lv_color_hex(0x1565c0);
+        kSbOff = kGrey;
     } else {
         kGrey = lv_color_hex(0x606670);
         kGreen = lv_color_hex(0x4cd07d);
@@ -141,18 +169,24 @@ void themeColors(bool light) {
         kBarBg = lv_color_hex(0x4a3f35);
         kDimText = lv_color_hex(0x9aa4b2);
         kOutText = lv_color_hex(0x3fa7ff);
+        kSbOff = kGrey;
     }
 }
 
 // Applies g_config.theme to LVGL's default theme and our styles. Objects that
 // already exist keep their local colours; rebuildForTheme() remakes them.
 void themeInit() {
-    const bool light = g_config.theme == UiTheme::Light;
+    const bool light = HAS_EINK || g_config.theme == UiTheme::Light;
     s_appliedTheme = g_config.theme;
+    s_dark = !light;
     s_appliedTextSize = g_config.textSize;
     themeColors(light);
     lv_style_t *styles[] = {&s_stFocus, &s_stCursor, &s_stScreen, &s_stSurface, &s_stTile,
-                            &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList};
+                            &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList,
+#if HAS_EINK
+                            &s_stEinkBox, &s_stEinkBar
+#endif
+    };
     for (lv_style_t *st : styles) {
         if (s_stylesInited) lv_style_reset(st);
         lv_style_init(st);
@@ -200,10 +234,44 @@ void themeInit() {
     lv_style_set_border_side(&s_stCursor, LV_BORDER_SIDE_LEFT);
     lv_style_set_border_opa(&s_stCursor, LV_OPA_COVER);
 
+#if HAS_EINK
+    // White tiles and rows outlined in black; focus is a heavier outline (not
+    // inverted, as rows carry their own black text colours).
+    lv_style_set_outline_color(&s_stFocus, lv_color_black());
+    for (lv_style_t *st : {&s_stTile, &s_stRow}) {
+        lv_style_set_radius(st, 6);
+        lv_style_set_bg_color(st, lv_color_white());
+        lv_style_set_text_color(st, lv_color_black());
+        lv_style_set_border_color(st, lv_color_black());
+        lv_style_set_border_width(st, 1);
+        lv_style_set_border_opa(st, LV_OPA_COVER);
+    }
+    for (lv_style_t *st : {&s_stTileFocus, &s_stRowFocus}) {
+        lv_style_set_bg_color(st, lv_color_white());
+        lv_style_set_text_color(st, lv_color_black());
+        lv_style_set_border_color(st, lv_color_black());
+        lv_style_set_border_width(st, 3);
+        lv_style_set_outline_width(st, 0);
+    }
+    lv_style_set_bg_opa(&s_stDisabled, LV_OPA_COVER);
+    lv_style_set_border_width(&s_stDisabled, 0);   // a disabled tile loses its outline
+    lv_style_set_bg_color(&s_stScreen, lv_color_white());
+    lv_style_set_border_color(&s_stCursor, lv_color_black());
+    lv_style_set_anim_duration(&s_stCursor, 0);   // no blinking cursor
+    lv_style_set_border_color(&s_stEinkBox, lv_color_black());
+    lv_style_set_border_width(&s_stEinkBox, 1);
+    lv_style_set_border_opa(&s_stEinkBox, LV_OPA_COVER);
+    lv_style_set_bg_color(&s_stEinkBar, lv_color_black());
+#endif
+
     // Re-init LVGL's default theme in the chosen mode, then layer ours on it.
     lv_theme_t *base = lv_theme_default_get();
+#if HAS_EINK
+    const lv_color_t primary = lv_color_black(), secondary = lv_color_black();
+#else
     const lv_color_t primary = base ? base->color_primary : lv_palette_main(LV_PALETTE_BLUE);
     const lv_color_t secondary = base ? base->color_secondary : lv_palette_main(LV_PALETTE_RED);
+#endif
     base = lv_theme_default_init(nullptr, primary, secondary, !light, uiFont(14));
     s_theme = *base;
     lv_theme_set_parent(&s_theme, base);
@@ -284,6 +352,7 @@ void pushScreen(lv_obj_t *scr, lv_group_t *grp, void (*refresh)() = nullptr) {
     lv_group_set_default(grp);
     lv_indev_set_group(keyboardIndev(), grp);
     lv_screen_load(scr);
+    displayScreenChanged();
     updateBackButton();
     if (refresh) refresh();
 }
@@ -296,6 +365,7 @@ void popScreen() {
     lv_group_set_default(prev.grp);
     lv_indev_set_group(keyboardIndev(), prev.grp);
     lv_screen_load(prev.scr);
+    displayScreenChanged();
     lv_group_delete(top.grp);
     lv_obj_delete(top.scr);
     updateBackButton();
@@ -418,6 +488,11 @@ void buildStatusBar() {
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
     lv_obj_set_style_bg_color(bar, kBarBg, 0);
+#if HAS_EINK
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(bar, lv_color_black(), 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+#endif
     lv_obj_set_style_pad_hor(bar, 6, 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
     lv_obj_set_style_text_font(bar, &lv_font_montserrat_12, 0);   // fixed: the bar height is fixed
@@ -452,8 +527,8 @@ void buildStatusBar() {
     lv_obj_add_flag(s_sbBatt, LV_OBJ_FLAG_HIDDEN);   // mains/USB powered
 #endif
     s_sbTime = sbLabel(bar, "--:--");
-    lv_obj_set_style_text_color(s_sbBt, kGrey, 0);
-    lv_obj_set_style_text_color(s_sbGps, kGrey, 0);
+    lv_obj_set_style_text_color(s_sbBt, kSbOff, 0);
+    lv_obj_set_style_text_color(s_sbGps, kSbOff, 0);
     s_rxSeenBle = g_ble.status().rxFrames;
     s_rxSeenLora = g_lora.status().rxFrames;
     s_isRxSeen = aprsIsStatus().rxLines;
@@ -466,6 +541,7 @@ void setOpa(void *obj, int32_t v) { lv_obj_set_style_opa((lv_obj_t *)obj, (lv_op
 
 // Fade out and back in; repeat = LV_ANIM_REPEAT_INFINITE keeps pulsing until stopped.
 void blink(lv_obj_t *obj, uint32_t halfMs, uint32_t repeat) {
+    if (HAS_EINK) return;   // each frame would be a panel refresh
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, obj);
@@ -526,7 +602,7 @@ void updateStatusBar() {
     lv_label_set_text(s_sbCall, g_config.fullCallsign().c_str());
 
     const WifiStatus w = wifiStatus();
-    lv_color_t wc = kGrey;
+    lv_color_t wc = kSbOff;
     if (w.staConnected) wc = kGreen;
     else if (w.apActive) wc = kAmber;
     lv_obj_set_style_text_color(s_sbWifi, wc, 0);
@@ -559,19 +635,19 @@ void updateStatusBar() {
     if (g_config.rfLink == RfLink::Lora) {
         const LoraState ls = g_lora.status().state;
         lv_label_set_text(s_sbBt, ls == LoraState::Tx ? "LoRa " LV_SYMBOL_UPLOAD : "LoRa");
-        lv_obj_set_style_text_color(s_sbBt, ls == LoraState::Failed ? kRed : ls == LoraState::Off ? kGrey : kGreen, 0);
+        lv_obj_set_style_text_color(s_sbBt, ls == LoraState::Failed ? kRed : ls == LoraState::Off ? kSbOff : kGreen, 0);
     } else {
         const BleStatus b = g_ble.status();
         lv_label_set_text(s_sbBt, LV_SYMBOL_BLUETOOTH);
         lv_obj_set_style_text_color(s_sbBt,
                                     b.state == BleState::Connected                                     ? kGreen
                                     : b.state == BleState::Connecting || b.state == BleState::Waiting ? kAmber
-                                                                                                       : kGrey,
+                                                                                                       : kSbOff,
                                     0);
     }
 
     const GpsFix g = gpsFix();
-    lv_obj_set_style_text_color(s_sbGps, g.valid ? kGreen : g.alive ? kAmber : kGrey, 0);
+    lv_obj_set_style_text_color(s_sbGps, g.valid ? kGreen : g.alive ? kAmber : kSbOff, 0);
 
     updateMsgIcon();
 
@@ -593,6 +669,17 @@ void updateStatusBar() {
     }
 }
 
+// Modal boxes float over a dimmed backdrop; e-paper has no dimming, so they
+// get a heavy outline instead.
+void modalBoxStyle(lv_obj_t *box) {
+    lv_obj_set_style_radius(box, kModalRadius, 0);
+#if HAS_EINK
+    lv_obj_set_style_border_color(box, lv_color_black(), 0);
+    lv_obj_set_style_border_width(box, 2, 0);
+    lv_obj_set_style_border_opa(box, LV_OPA_COVER, 0);
+#endif
+}
+
 // ── Toast ────────────────────────────────────────────────────────────────────
 
 lv_obj_t *s_toast;
@@ -606,6 +693,10 @@ void toast(const String &text, uint32_t ms = 3000) {
         lv_obj_set_style_max_height(s_toast, 60, 0);
         lv_obj_set_style_bg_color(s_toast, g_config.theme == UiTheme::Light ? lv_color_hex(0x2a313b) : kBarBg, 0);
         lv_obj_set_style_text_color(s_toast, lv_color_white(), 0);
+#if HAS_EINK
+        lv_obj_set_style_bg_color(s_toast, lv_color_white(), 0);
+        lv_obj_set_style_text_color(s_toast, lv_color_black(), 0);
+#endif
         lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(s_toast, kAmber, 0);
         lv_obj_set_style_border_width(s_toast, 1, 0);
@@ -743,7 +834,7 @@ String ageStr(uint32_t heardS) { return geo::formatAge(uptimeS() - heardS).c_str
 
 // ── Monitor ──────────────────────────────────────────────────────────────────
 
-constexpr uint32_t kMonAccentMs = 3000;   // packets that arrive while watching stay orange this long
+constexpr uint32_t kMonAccentMs = HAS_EINK ? 0 : 3000;   // packets that arrive while watching stay orange this long
 constexpr int kMonAccentMax = 16;
 
 struct {
@@ -895,8 +986,8 @@ void openStationDetail(const char *call) {
     lv_obj_add_event_cb(box, [](lv_event_t *e) {
         lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
         const uint32_t k = lv_event_get_key(e);
-        if (k == LV_KEY_DOWN || k == LV_KEY_NEXT) lv_obj_scroll_by_bounded(b, 0, -40, LV_ANIM_ON);
-        if (k == LV_KEY_UP || k == LV_KEY_PREV) lv_obj_scroll_by_bounded(b, 0, 40, LV_ANIM_ON);
+        if (k == LV_KEY_DOWN || k == LV_KEY_NEXT) lv_obj_scroll_by_bounded(b, 0, -40, kAnim);
+        if (k == LV_KEY_UP || k == LV_KEY_PREV) lv_obj_scroll_by_bounded(b, 0, 40, kAnim);
     }, LV_EVENT_KEY, nullptr);
     s_stDetail = lv_label_create(box);
     lv_obj_set_width(s_stDetail, lv_pct(100));
@@ -1070,7 +1161,7 @@ void openQuickPicker(lv_obj_t *target) {
     lv_obj_set_style_radius(s_qm.bg, 0, 0);
     lv_obj_set_style_border_width(s_qm.bg, 0, 0);
     lv_obj_set_style_bg_color(s_qm.bg, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_qm.bg, LV_OPA_70, 0);
+    lv_obj_set_style_bg_opa(s_qm.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
     lv_obj_clear_flag(s_qm.bg, LV_OBJ_FLAG_SCROLLABLE);
     // Tapping the backdrop cancels.
     lv_obj_add_event_cb(s_qm.bg, [](lv_event_t *e) {
@@ -1078,7 +1169,7 @@ void openQuickPicker(lv_obj_t *target) {
     }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *box = lv_obj_create(s_qm.bg);
-    lv_obj_set_style_radius(box, kModalRadius, 0);
+    modalBoxStyle(box);
     lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(96), 0);
     lv_obj_center(box);
@@ -1235,8 +1326,8 @@ void openMessageDetail(const ChatMsg &m) {
     lv_obj_add_event_cb(box, [](lv_event_t *e) {
         lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
         const uint32_t k = lv_event_get_key(e);
-        if (k == LV_KEY_DOWN || k == LV_KEY_NEXT) lv_obj_scroll_by_bounded(b, 0, -40, LV_ANIM_ON);
-        if (k == LV_KEY_UP || k == LV_KEY_PREV) lv_obj_scroll_by_bounded(b, 0, 40, LV_ANIM_ON);
+        if (k == LV_KEY_DOWN || k == LV_KEY_NEXT) lv_obj_scroll_by_bounded(b, 0, -40, kAnim);
+        if (k == LV_KEY_UP || k == LV_KEY_PREV) lv_obj_scroll_by_bounded(b, 0, 40, kAnim);
     }, LV_EVENT_KEY, nullptr);
     lv_obj_t *l = lv_label_create(box);
     lv_obj_set_width(l, lv_pct(100));
@@ -1377,7 +1468,7 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     lv_obj_set_style_radius(s_choice.bg, 0, 0);
     lv_obj_set_style_border_width(s_choice.bg, 0, 0);
     lv_obj_set_style_bg_color(s_choice.bg, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_choice.bg, LV_OPA_70, 0);
+    lv_obj_set_style_bg_opa(s_choice.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
     lv_obj_clear_flag(s_choice.bg, LV_OBJ_FLAG_SCROLLABLE);
     // Tapping the backdrop cancels.
     lv_obj_add_event_cb(s_choice.bg, [](lv_event_t *e) {
@@ -1385,7 +1476,7 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *box = lv_obj_create(s_choice.bg);
-    lv_obj_set_style_radius(box, kModalRadius, 0);
+    modalBoxStyle(box);
     lv_obj_set_size(box, lv_pct(80), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(96), 0);
     lv_obj_center(box);
@@ -1427,7 +1518,7 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
         lv_obj_t *bl = lv_label_create(b);
         lv_label_set_text(bl, i < n ? opts[i].label : "Cancel");
         if (grid) lv_obj_center(bl);
-        if (i < n && opts[i].danger) lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_RED), 0);
+        if (i < n && opts[i].danger && !HAS_EINK) lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_RED), 0);
         lv_obj_add_event_cb(b, [](lv_event_t *e) {
             s_pendingChoice = (int)(intptr_t)lv_event_get_user_data(e);
         }, LV_EVENT_CLICKED, (void *)(intptr_t)(i < n ? i : -1));
@@ -2080,6 +2171,12 @@ lv_obj_t *buildSplash(const char *footer) {
     lv_obj_set_style_bg_grad_color(scr, lv_color_hex(0x0A2230), 0);
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    // E-paper: plain white with black text (set before the labels, which inherit it).
+    const bool mono = HAS_EINK;
+    if (mono) {
+        lv_obj_set_style_bg_color(scr, lv_color_white(), 0);
+        lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, 0);
+    }
 
     // The About screen's footer (version, heap, battery) sits at the bottom,
     // and the status bar covers the top while it is open.
@@ -2089,7 +2186,7 @@ lv_obj_t *buildSplash(const char *footer) {
         lv_obj_t *foot = lv_label_create(scr);
         lv_label_set_text(foot, footer);
         lv_obj_set_style_text_font(foot, uiFont(12), 0);
-        lv_obj_set_style_text_color(foot, lv_color_hex(0x9FC7D6), 0);
+        lv_obj_set_style_text_color(foot, mono ? lv_color_black() : lv_color_hex(0x9FC7D6), 0);
         lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -8);
         lv_obj_update_layout(foot);
@@ -2119,14 +2216,14 @@ lv_obj_t *buildSplash(const char *footer) {
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, APP_NAME);
     lv_obj_set_style_text_font(title, uiFont(20), 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_set_style_text_color(title, mono ? lv_color_black() : lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, top + 138);
 
     if (footer) return scr;
     lv_obj_t *tag = lv_label_create(scr);
     lv_label_set_text(tag, "APRS in your pocket");
     lv_obj_set_style_text_font(tag, uiFont(14), 0);
-    lv_obj_set_style_text_color(tag, lv_color_hex(0xFFC440), 0);
+    lv_obj_set_style_text_color(tag, mono ? lv_color_black() : lv_color_hex(0xFFC440), 0);
     lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, top + 164);
     return scr;
 }
@@ -2157,6 +2254,24 @@ void saverStep(lv_timer_t *) {
 
 void saverShow() {
     if (s_saver.bg) return;
+#if HAS_EINK
+    // A still card: moving it would refresh the panel every frame.
+    s_saver.bg = lv_obj_create(lv_layer_sys());
+    lv_obj_remove_style_all(s_saver.bg);
+    lv_obj_set_size(s_saver.bg, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(s_saver.bg, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
+    s_saver.img = lv_image_create(s_saver.bg);
+    lv_image_set_src(s_saver.img, &splash_img);
+    lv_obj_align(s_saver.img, LV_ALIGN_CENTER, 0, -14);
+    lv_obj_t *name = lv_label_create(s_saver.bg);
+    lv_label_set_text(name, APP_NAME);
+    lv_obj_set_style_text_color(name, lv_color_black(), 0);
+    lv_obj_set_style_text_font(name, uiFont(20), 0);
+    lv_obj_align(name, LV_ALIGN_CENTER, 0, 70);
+    return;
+#endif
     s_saver.bg = lv_obj_create(lv_layer_sys());
     lv_obj_remove_style_all(s_saver.bg);
     lv_obj_set_size(s_saver.bg, lv_pct(100), lv_pct(100));
@@ -2178,7 +2293,7 @@ void saverShow() {
 
 void saverHide() {
     if (!s_saver.bg) return;
-    lv_timer_delete(s_saver.timer);
+    if (s_saver.timer) lv_timer_delete(s_saver.timer);
     lv_obj_delete(s_saver.bg);
     s_saver = {};
 }
@@ -2287,7 +2402,8 @@ void setVolumeLabel(lv_obj_t *item) {
 // Brightness row: a list button (child 1 the label, child 2 a slider). Keys
 // keep the row focused and Left/Right step it, so up/down still move through
 // the list; on touch screens the slider drags.
-constexpr int kBrightnessMin = 10, kBrightnessStep = 25;
+// E-paper reads fine unlit, so its frontlight can go right off.
+constexpr int kBrightnessMin = HAS_EINK ? 0 : 10, kBrightnessStep = 25;
 
 void setBrightnessRow(lv_obj_t *row, int level, bool save) {
     level = level < kBrightnessMin ? kBrightnessMin : level > 255 ? 255 : level;
@@ -2430,6 +2546,8 @@ void openSettings() {
     }
     if (sdHasSlot())
         addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
+    s_themeItem = nullptr;
+#if !HAS_EINK
     lv_obj_t *th = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *) {
         // uiLoop() sees the change and rebuilds the UI in the new theme.
         g_config.theme = g_config.theme == UiTheme::Light ? UiTheme::Dark : UiTheme::Light;
@@ -2439,6 +2557,7 @@ void openSettings() {
     });
     s_themeItem = th;
     lv_label_set_text(lv_obj_get_child(th, 1), g_config.theme == UiTheme::Light ? "Theme: Light" : "Theme: Dark");
+#endif
     lv_obj_t *ts = addItem(list, grp, LV_SYMBOL_EDIT, "", [](lv_event_t *) {
         static const ChoiceOpt kOpts[] = {{"Small", false}, {"Medium", false}, {"Large", false}, {"X-Large", false}};
         openChoice("Text size", nullptr, kOpts, 4, [](int pick) {
@@ -2556,11 +2675,11 @@ void openInfo() {
     lv_obj_set_style_radius(s_info.bg, 0, 0);
     lv_obj_set_style_border_width(s_info.bg, 0, 0);
     lv_obj_set_style_bg_color(s_info.bg, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_info.bg, LV_OPA_70, 0);
+    lv_obj_set_style_bg_opa(s_info.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
     lv_obj_clear_flag(s_info.bg, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *box = lv_obj_create(s_info.bg);
-    lv_obj_set_style_radius(box, kModalRadius, 0);
+    modalBoxStyle(box);
     lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(100), 0);
     lv_obj_center(box);

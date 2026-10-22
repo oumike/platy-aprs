@@ -12,7 +12,7 @@ configured from the device or a built-in web page.
 - **Two radio links:** a Bluetooth LE KISS TNC (BTECH/Vero VR-N76 and VR-N7600, Mobilinkd TNC3/TNC4, or any BLE
   KISS device), or the built-in LoRa radio running LoRa APRS.
 - **Beaconing** from GPS with SmartBeaconing, at a fixed interval, or from a fixed position.
-- **Messaging** with acks and retries, quick messages, favorites and new-message alerts (sound, a blinking light on the Mesh Deck, the keyboard backlight on the T-Deck Plus and T-LoRa Pager).
+- **Messaging** with acks and retries, quick messages, favorites and new-message alerts (sound, a blinking light on the Mesh Deck, the keyboard backlight on the T-Deck Plus, T-LoRa Pager and T-Deck Pro).
 - **Stations, a live packet monitor and a map** with offline OpenStreetMap tiles and a heat map of activity.
 - **APRS-IS client, iGate (RF → IS and IS → RF messages) and WIDE1-1 digipeater.**
 - **Web interface** for every setting, plus messaging, monitoring and a JSON API.
@@ -29,10 +29,11 @@ configured from the device or a built-in web page.
 | Attaky Mesh Deck | SX1262 | Keyboard module, d-pad, touch | `mesh-deck` |
 | Elecrow CrowPanel Advance 3.5 | SX1262 (expansion module) | Touch | `crowpanel-35` |
 | LilyGo T-LoRa Pager | SX1262 | Keyboard, scroll wheel | `tlora-pager` |
+| LilyGo T-Deck Pro (e-paper) | SX1262 | Keyboard, touch | `tdeck-pro` |
 
 The CrowPanel aside, all have GPS; on the CrowPanel it is an optional module on its UART connector, and it has no
 battery. The Mesh Deck has no SD card slot, so it keeps no map tile cache, packet log or SD backups. The
-T-Deck Plus and Mesh Deck builds are newer and less tested than the others, and the CrowPanel and T-LoRa Pager
+T-Deck Plus and Mesh Deck builds are newer and less tested than the others, and the CrowPanel, T-LoRa Pager and T-Deck Pro
 builds have not been tested on hardware yet.
 
 ## Install
@@ -67,7 +68,7 @@ You need [PlatformIO](https://platformio.org/install/cli).
 
 ```sh
 scripts/build-upload-monitor.sh            # pick a board, build, flash, open the serial monitor
-scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck, -3 CrowPanel, -l Pager)
+scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck, -3 CrowPanel, -l Pager, -P T-Deck Pro)
 scripts/build-upload-monitor.sh -B         # build every board and print a summary
 pio test -e native                         # unit tests on the host
 ```

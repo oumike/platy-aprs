@@ -4,6 +4,7 @@
 #include "services/notify_led.h"
 #include "hal/audio.h"
 #include "hal/board.h"
+#include "hal/board_pins.h"
 #include "hal/display.h"
 #include "hal/screen.h"
 #include "hal/sd_card.h"
@@ -86,6 +87,10 @@ void handleGetConfig() {
     caps["led"] = notifyLedPresent();
     caps["kbBlink"] = notifyKbBlinkPresent();
     caps["orientation"] = displayCanRotate();
+#if HAS_EINK
+    caps["theme"] = false;   // e-paper: always the light monochrome theme
+    caps["minBrightness"] = 0;
+#endif
     sendJson(200, doc);
 }
 

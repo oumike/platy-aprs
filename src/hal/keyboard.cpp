@@ -13,6 +13,8 @@
 #include "mesh_deck_io.h"
 #elif defined(DEVICE_TLORA_PAGER)
 #include "tlora_pager_io.h"
+#elif defined(DEVICE_TDECK_PRO)
+#include "tdeck_pro_io.h"
 #endif
 
 namespace {
@@ -25,6 +27,7 @@ uint32_t s_nextPollMs = 0;
 
 uint8_t s_ring[32];
 uint8_t s_head = 0, s_tail = 0;
+uint32_t s_lastInputMs = 0;
 
 KeyboardHotkeyHandler s_hotkey = nullptr;
 lv_indev_t *s_indev = nullptr;
@@ -102,6 +105,7 @@ void push(uint8_t k) {
 void input(uint8_t k) {
     if (screenAsleep()) return;
     screenNoteActivity();
+    s_lastInputMs = millis();
     push(k);
 }
 
@@ -278,7 +282,7 @@ void readCb(lv_indev_t *indev, lv_indev_data_t *data) {
     }
     uint8_t raw;
     while (pop(raw)) {
-#if defined(DEVICE_TDECK) || defined(DEVICE_TLORA_PAGER)
+#if defined(DEVICE_TDECK) || defined(DEVICE_TLORA_PAGER) || defined(DEVICE_TDECK_PRO)
         // No Back key: Backspace outside a text field navigates back.
         if (raw == RK_BKSP && !focusedIsTextarea()) raw = RK_BACK;
 #endif
@@ -348,7 +352,12 @@ uint32_t s_lastRotMs = 0, s_clickSinceMs = 0, s_nextKbPollMs = 0;
 constexpr uint32_t kClickSleepHoldMs = 2000;
 #endif
 
-#if defined(DEVICE_M9) || defined(DEVICE_MESH_DECK) || defined(DEVICE_TLORA_PAGER)
+#if defined(DEVICE_TDECK_PRO)
+uint32_t s_nextKbPollMs = 0;
+#endif
+
+#if defined(DEVICE_M9) || defined(DEVICE_MESH_DECK) || defined(DEVICE_TLORA_PAGER) || \
+    defined(DEVICE_TDECK_PRO)
 WakeButton s_bootBtn;   // BOOT: tap = screen off, hold = wake
 #endif
 
@@ -414,8 +423,31 @@ void hwBegin() {
     s_rotPrev = rotAB();
     attachInterrupt(digitalPinToInterrupt(PIN_ROT_A), rotIsr, CHANGE);
     attachInterrupt(digitalPinToInterrupt(PIN_ROT_B), rotIsr, CHANGE);
+#elif defined(DEVICE_TDECK_PRO)
+    // Wire came up in boardBegin().
+    s_present = tdeckProKeyboardBegin();
+    Serial.printf("[kb] T-Deck Pro keyboard %s\n", s_present ? "found" : "not found; will retry");
+    pinMode(PIN_KB_INT, INPUT_PULLUP);
+    ledcSetup(KB_BL_PWM_CH, 12000, 8);
+    ledcAttachPin(PIN_KB_BL, KB_BL_PWM_CH);
+    ledcWrite(KB_BL_PWM_CH, 0);
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
 #endif
 }
+
+#if defined(DEVICE_TDECK_PRO)
+// Empties the controller's FIFO (ten events, five keystrokes) into the ring.
+void tdeckProDrain() {
+    uint8_t keys[10];
+    const int n = tdeckProKeyboardScan(keys, (int)sizeof(keys));
+    for (int i = 0; i < n; i++) {
+#ifdef PLATY_SERIAL_KEYS
+        Serial.printf("[kb] key 0x%02X\n", keys[i]);
+#endif
+        input(keys[i]);
+    }
+}
+#endif
 
 void hwPoll(uint32_t now) {
 #if defined(DEVICE_M9)
@@ -615,6 +647,19 @@ void hwPoll(uint32_t now) {
 #endif
         input(keys[i]);
     }
+#elif defined(DEVICE_TDECK_PRO)
+    // The side button is the screen button.
+    screenServiceWakeButton(s_bootBtn, digitalRead(PIN_BOOT_BTN) == LOW, now, "side button");
+    if (!s_present) {
+        if ((int32_t)(now - s_nextProbeMs) < 0) return;
+        s_nextProbeMs = now + 2000;
+        s_present = tdeckProKeyboardBegin();
+        if (!s_present) return;
+        Serial.println("[kb] T-Deck Pro keyboard found");
+    }
+    if (digitalRead(PIN_KB_INT) != LOW && (int32_t)(now - s_nextKbPollMs) < 0) return;
+    s_nextKbPollMs = now + 120;
+    tdeckProDrain();
 #else
     (void)now;
 #endif
@@ -640,6 +685,19 @@ void keyboardPoll() {
     hwPoll(now);
 }
 
+void keyboardServiceDuringRefresh() {
+#if defined(DEVICE_TDECK_PRO)
+    static uint32_t nextMs = 0;
+    const uint32_t now = millis();
+    if (s_present && (int32_t)(now - nextMs) >= 0 && digitalRead(PIN_KB_INT) == LOW) {
+        nextMs = now + 10;
+        tdeckProDrain();
+    }
+#endif
+}
+
+uint32_t keyboardLastInputMs() { return s_lastInputMs; }
+
 void keyboardSetHotkeyHandler(KeyboardHotkeyHandler h) { s_hotkey = h; }
 
 lv_indev_t *keyboardIndev() { return s_indev; }
@@ -658,4 +716,6 @@ void keyboardSetBacklight(uint8_t duty) {
 #elif defined(DEVICE_TLORA_PAGER)
 // A plain enable line: any duty lights it fully.
 void keyboardSetBacklight(uint8_t duty) { digitalWrite(PIN_KB_BL, duty ? HIGH : LOW); }
+#elif defined(DEVICE_TDECK_PRO)
+void keyboardSetBacklight(uint8_t duty) { ledcWrite(KB_BL_PWM_CH, duty); }
 #endif

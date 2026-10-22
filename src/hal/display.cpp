@@ -1,5 +1,6 @@
-#include "display.h"
 #include "board_pins.h"
+#if !HAS_EINK
+#include "display.h"
 #include "config/config.h"
 #include "screen.h"
 #include <Arduino.h>
@@ -512,3 +513,6 @@ void displaySetOrientation(uint8_t o) {
     lv_display_set_resolution(s_disp, lcd.width(), lcd.height());
     Serial.printf("[display] orientation %u: %dx%d\n", o, lcd.width(), lcd.height());
 }
+
+void displayScreenChanged() {}
+#endif
