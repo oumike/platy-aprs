@@ -1179,8 +1179,9 @@ void openNewMessage(const char *to = "") {
 }
 
 // ── Choice modal ─────────────────────────────────────────────────────────────
-// A title, one button per option and Cancel. The pick is acted on from uiLoop,
-// after the modal is gone; Back or Cancel picks nothing.
+// A title, one button per option and Cancel, and optionally an On/Off toggle
+// (s_choiceToggle, Off to start). The pick is acted on from uiLoop, after the
+// modal is gone; Back or Cancel picks nothing.
 
 typedef void (*ChoiceFn)(int pick);
 struct ChoiceOpt {
@@ -1193,12 +1194,22 @@ struct {
     ChoiceFn fn;
 } s_choice;
 volatile int s_pendingChoice = -2;   // -2 none, -1 cancel, else the option index
+bool s_choiceToggle;
+const char *s_choiceToggleLabel;
+
+void setToggleText(lv_obj_t *b) {
+    lv_label_set_text(lv_obj_get_child(b, 0),
+                      (String(s_choiceToggleLabel) + (s_choiceToggle ? ": On" : ": Off")).c_str());
+}
 
 // focus: the option focused first; -1 focuses Cancel (for confirmations).
-void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int n, ChoiceFn fn, int focus = 0) {
+void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int n, ChoiceFn fn, int focus = 0,
+                const char *toggle = nullptr) {
     if (s_choice.bg) return;
     oskHide();
     s_choice.fn = fn;
+    s_choiceToggle = false;
+    s_choiceToggleLabel = toggle;
     s_choice.bg = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_choice.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
     lv_obj_align(s_choice.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -1226,6 +1237,22 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     if (note) makeNote(box, note);
 
     s_choice.grp = lv_group_create();
+    if (toggle) {
+        lv_obj_t *b = lv_button_create(box);
+        lv_obj_set_width(b, lv_pct(100));
+        lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(b, 1, 0);
+        lv_obj_set_style_border_color(b, lv_palette_main(LV_PALETTE_GREY), 0);
+        lv_obj_t *l = lv_label_create(b);
+        lv_obj_set_width(l, lv_pct(100));
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        setToggleText(b);
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
+            s_choiceToggle = !s_choiceToggle;
+            setToggleText((lv_obj_t *)lv_event_get_target(e));
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_group_add_obj(s_choice.grp, b);
+    }
     lv_obj_t *focusBtn = nullptr;
     for (int i = 0; i <= n; i++) {
         lv_obj_t *b = lv_button_create(box);
@@ -1284,12 +1311,18 @@ void openThreadMenu(size_t idx) {
 
 void confirmDeleteAll() {
     static const ChoiceOpt kOpts[] = {{LV_SYMBOL_TRASH " Delete all", true}};
-    openChoice("Delete all messages?", "Every conversation is removed, from the SD card too. This can't be undone.",
+    openChoice("Delete all messages?", "Conversations are removed from the SD card too. This can't be undone.",
                kOpts, 1, [](int) {
-                   messagesDeleteAll();
+                   if (s_choiceToggle) {
+                       messagesDeleteAll();
+                       toast("All messages deleted");
+                   } else {
+                       for (const ChatThread &t : messagesThreads())
+                           if (!favIs(t.peer.c_str())) messagesDeleteThread(t.peer);
+                       toast("Messages deleted; starred kept");
+                   }
                    updateMsgIcon();
-                   toast("All messages deleted");
-               }, -1);
+               }, -1, "Include starred conversations");
 }
 
 void refreshMessages() {

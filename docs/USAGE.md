@@ -208,7 +208,8 @@ conversation or start a **New message** to a callsign.
   sits left of the box on touch screens and right of it on the M9, where pressing **Right** with the cursor at
   the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
 - Star a conversation to keep it at the top.
-- **Mark all as read** and **Delete all messages** sit above New message; deleting everything asks first.
+- **Mark all as read** and **Delete all messages** sit above New message; deleting asks first and keeps starred
+  conversations unless you turn on **Include starred conversations**.
 - Long-press a conversation for **Mark as read** or **Delete**. With keys, focus it and press **Right**
   (**Space** on the Pager).
 
