@@ -117,6 +117,14 @@ everywhere. There is no on-screen keyboard on this board.
 | **Alt** + H / M / P / S / L | Home / Messages / Map / Stations / Monitor |
 | **Alt** + Backspace | Back |
 
+### Elecrow CrowPanel Advance 3.5
+
+Touch only: tap to use it, and text fields bring up an on-screen keyboard. The back arrow at the left of the
+status bar goes back (hold it for the home screen). The board has no free button, so a **double tap** wakes the
+screen from the screensaver and from off (see [Screen timeout](#screen-timeout)). The screen is 480×320, and
+the LoRa module goes in the J8/J9 expansion slot. It has no battery, so the status bar shows no battery
+indicator. GPS is optional: a module on the UART1 connector is picked up when present.
+
 ## Connecting a radio
 
 The device talks APRS through one RF link at a time: a **Bluetooth KISS TNC** (an external radio or TNC) or the
@@ -229,7 +237,7 @@ APRS-IS can be switched on and off under **Settings → APRS-IS** on the device.
 Alerts sound for new messages, acks, failed sends and beacons, and once at boot. **Settings → Sound** steps
 through the new-message tone styles **Default**, **Chirpy** and **Bass**, playing each, and **Off**, which
 silences every alert. On the T-Deck Plus and Wio Tracker L2 (speakers), **Settings → Volume** steps from 0 to
-100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck has no sound.
+100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck and CrowPanel have no sound.
 Both are also on the web **Device** tab.
 
 ## Screen timeout
@@ -248,12 +256,16 @@ A **screen button** works the same way on every board: **tap** to turn the scree
 **hold for 2 seconds** to unlock. A tap on a dark screen brings up the screensaver for a look, which goes back
 off after the screen timeout (30 s if the timeout is Never); a press in a pocket can't get past it.
 
+On a touch screen, a **double tap** on the screensaver also unlocks it: two quick taps in the same spot. A dark
+screen ignores touch, except on the CrowPanel, which has no screen button and takes the double tap there too.
+
 | Board | Screen off | Unlock | Doesn't unlock it |
 |---|---|---|---|
 | ThinkNode M9 | Hold the d-pad centre, or tap BOOT | Press the d-pad centre, or hold BOOT | Any other key |
-| Wio Tracker L2 | Tap the top Wake button | Hold Wake, or press BOOT | Touch |
-| T-Deck Plus | Hold the trackball click for 2 s | Click the trackball | Keyboard, touch, rolling the ball |
-| Mesh Deck | Tap the top-right (R) shoulder button, or BOOT | Hold R or BOOT | Keyboard, d-pad, touch |
+| Wio Tracker L2 | Tap the top Wake button | Hold Wake, press BOOT, or double-tap the screensaver | Other touches |
+| T-Deck Plus | Hold the trackball click for 2 s | Click the trackball, or double-tap the screensaver | Keyboard, other touches, rolling the ball |
+| Mesh Deck | Tap the top-right (R) shoulder button, or BOOT | Hold R or BOOT, or double-tap the screensaver | Keyboard, d-pad, other touches |
+| CrowPanel 3.5 | Only at the timeout | Double-tap the screen | Other touches |
 
 ## Firmware updates
 
@@ -286,7 +298,8 @@ sent is appended to `/platy/logs/YYYY-MM-DD.log` (UTC dates; `nodate.log` until 
 `RF<` heard, `RF>` sent, `IS<`/`IS>` APRS-IS (only logged with **Also log packets received from APRS-IS** on).
 Logs can be downloaded or deleted on the Device tab.
 
-The Mesh Deck has no SD card slot, so it keeps no packet log, map tiles or SD backups.
+The Mesh Deck has no SD card slot, so it keeps no packet log, map tiles or SD backups. On the CrowPanel the
+card is read over a slower software SPI link; it still does all of the above.
 
 ## The web interface
 

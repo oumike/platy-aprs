@@ -12,6 +12,9 @@
 //   - a board's wake button: tap = screen off when on or in the screensaver,
 //     screensaver when off; hold 2 s = unlock
 //   - a screensaver brought up by a tap goes back off after the timeout
+//   - touch screens: a double tap on the screensaver unlocks; on a board with
+//     no wake button (HAS_WAKE_BUTTON 0) it unlocks a dark screen too
+//     (display.cpp)
 enum class ScreenState : uint8_t { On, Saver, Off };
 
 void screenBegin();

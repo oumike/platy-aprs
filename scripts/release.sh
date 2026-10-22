@@ -13,6 +13,7 @@ RELEASE_ENVS=(
     wio-tracker-l2
     tdeck-plus
     mesh-deck
+    crowpanel-35
 )
 
 # Every release image is merged with this esptool. esptool 5 renamed merge_bin
@@ -36,6 +37,7 @@ env_label() {
         wio-tracker-l2) echo "Seeed Wio Tracker L2" ;;
         tdeck-plus)     echo "LilyGo T-Deck Plus" ;;
         mesh-deck)      echo "Attaky Mesh Deck" ;;
+        crowpanel-35)   echo "Elecrow CrowPanel Advance 3.5" ;;
         *)              echo "$1" ;;
     esac
 }

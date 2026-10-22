@@ -343,6 +343,8 @@ const char *otaAssetSlug() {
     return "tdeck-plus";
 #elif defined(DEVICE_MESH_DECK)
     return "mesh-deck";
+#elif defined(DEVICE_CROWPANEL_35)
+    return "crowpanel-35";
 #else
     return "";
 #endif

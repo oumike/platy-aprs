@@ -177,6 +177,78 @@ public:
     }
 };
 
+#elif defined(DEVICE_CROWPANEL_35)
+
+// ILI9488 alone on SPI3, write-only; GT911 on its own I2C pins, read by
+// LovyanGFX, which rotates touch along with the panel (camillia-mt display.h).
+class LGFX_Board : public lgfx::LGFX_Device {
+    lgfx::Panel_ILI9488 _panel;
+    lgfx::Bus_SPI _bus;
+    lgfx::Light_PWM _light;
+    lgfx::Touch_GT911 _touch;
+
+public:
+    LGFX_Board() {
+        {
+            auto cfg = _bus.config();
+            cfg.spi_host = SPI3_HOST;
+            cfg.spi_mode = 0;
+            cfg.freq_write = 40000000;
+            cfg.freq_read = 16000000;
+            cfg.spi_3wire = false;
+            cfg.use_lock = true;
+            cfg.dma_channel = SPI_DMA_CH_AUTO;
+            cfg.pin_sclk = PIN_TFT_SCK;
+            cfg.pin_mosi = PIN_TFT_MOSI;
+            cfg.pin_miso = -1;
+            cfg.pin_dc = PIN_TFT_DC;
+            _bus.config(cfg);
+            _panel.setBus(&_bus);
+        }
+        {
+            auto cfg = _panel.config();
+            cfg.pin_cs = PIN_TFT_CS;
+            cfg.pin_rst = -1;
+            cfg.pin_busy = -1;
+            cfg.panel_width = TFT_PANEL_W;
+            cfg.panel_height = TFT_PANEL_H;
+            cfg.invert = true;
+            cfg.rgb_order = false;
+            cfg.readable = false;
+            cfg.bus_shared = false;
+            _panel.config(cfg);
+        }
+        {
+            auto cfg = _light.config();
+            cfg.pin_bl = PIN_TFT_BL;
+            cfg.invert = false;
+            cfg.freq = 44000;
+            cfg.pwm_channel = TFT_BL_PWM_CH;
+            _light.config(cfg);
+            _panel.setLight(&_light);
+        }
+        {
+            auto cfg = _touch.config();
+            cfg.x_min = 0;
+            cfg.x_max = TFT_PANEL_W - 1;
+            cfg.y_min = 0;
+            cfg.y_max = TFT_PANEL_H - 1;
+            cfg.pin_int = PIN_TOUCH_INT;
+            cfg.pin_rst = PIN_TOUCH_RST;
+            cfg.bus_shared = false;
+            cfg.offset_rotation = 0;
+            cfg.i2c_port = 0;
+            cfg.i2c_addr = TOUCH_ADDR;
+            cfg.pin_sda = PIN_I2C_SDA;
+            cfg.pin_scl = PIN_I2C_SCL;
+            cfg.freq = I2C_FREQ;
+            _touch.config(cfg);
+            _panel.setTouch(&_touch);
+        }
+        setPanel(&_panel);
+    }
+};
+
 #else  // ST7789 on a shared SPI bus with PWM backlight (M9, T-Deck)
 
 class LGFX_Board : public lgfx::LGFX_Device {
@@ -284,29 +356,84 @@ uint32_t s_nextTouchMs = 0;
 lv_point_t s_lastPt = {0, 0};
 bool s_lastPressed = false;
 
+bool readTouch(lv_point_t &pt) {
+#if defined(DEVICE_MESH_DECK)
+    // Native portrait -> rotation 3 landscape.
+    int16_t x, y;
+    if (!meshDeckReadTouch(x, y)) return false;
+    pt = {(int32_t)(TFT_PANEL_H - 1 - y), (int32_t)x};
+    return true;
+#else
+    lgfx::touch_point_t tp;
+    if (lcd.getTouch(&tp, 1) <= 0) return false;
+    pt = {tp.x, tp.y};
+    return true;
+#endif
+}
+
+// Double tap on the screensaver wakes the screen: two short taps close
+// together in time and place, so a brush from a pocket or sleeve doesn't.
+// It fires on the second release, so neither tap reaches the UI. A board with
+// no wake button (HAS_WAKE_BUTTON 0) takes it on a dark screen as well.
+constexpr uint32_t kTapMaxMs = 300;      // finger down at most this long
+constexpr uint32_t kTapGapMs = 400;      // release to the next press
+constexpr int32_t kTapSlopPx = 40;       // the two taps this close
+struct {
+    bool down;
+    uint32_t downMs, upMs;
+    lv_point_t downPt, firstPt;
+    bool haveFirst;
+} s_dt;
+
+void saverDoubleTap(uint32_t now) {
+    lv_point_t pt;
+    const bool pressed = readTouch(pt);
+    if (pressed && !s_dt.down) {
+        s_dt.down = true;
+        s_dt.downMs = now;
+        s_dt.downPt = pt;
+        if (s_dt.haveFirst && now - s_dt.upMs > kTapGapMs) s_dt.haveFirst = false;
+    } else if (!pressed && s_dt.down) {
+        s_dt.down = false;
+        if (now - s_dt.downMs > kTapMaxMs) {
+            s_dt.haveFirst = false;
+            return;
+        }
+        if (s_dt.haveFirst && LV_ABS(s_dt.downPt.x - s_dt.firstPt.x) <= kTapSlopPx &&
+            LV_ABS(s_dt.downPt.y - s_dt.firstPt.y) <= kTapSlopPx) {
+            s_dt.haveFirst = false;
+            screenTryWake("double tap");
+            return;
+        }
+        s_dt.haveFirst = true;
+        s_dt.firstPt = s_dt.downPt;
+        s_dt.upMs = now;
+    }
+}
+
 void touchCb(lv_indev_t *, lv_indev_data_t *data) {
     // GT911 polling over I2C is slow; 25 ms is plenty for UI work.
-    // Touch never wakes the screen (camillia-mt's policy on every board here:
-    // the panel reacts to pockets and sleeves), so a dark panel isn't polled.
+    // Touch never reaches the UI while locked (camillia-mt's policy: the panel
+    // reacts to pockets and sleeves). Only the double-tap wake is watched: on
+    // the screensaver, and on a dark panel where there is no wake button.
+    const uint32_t now = millis();
     if (screenAsleep()) {
+        const bool watch = screenState() == ScreenState::Saver || !HAS_WAKE_BUTTON;
+        if (watch && (int32_t)(now - s_nextTouchMs) >= 0) {
+            s_nextTouchMs = now + 25;
+            saverDoubleTap(now);
+        } else if (!watch) {
+            s_dt = {};
+        }
         s_lastPressed = false;
         data->point = s_lastPt;
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
-    const uint32_t now = millis();
+    s_dt = {};
     if ((int32_t)(now - s_nextTouchMs) >= 0) {
         s_nextTouchMs = now + 25;
-#if defined(DEVICE_MESH_DECK)
-        // Native portrait -> rotation 3 landscape.
-        int16_t x, y;
-        s_lastPressed = meshDeckReadTouch(x, y);
-        if (s_lastPressed) s_lastPt = {(int32_t)(TFT_PANEL_H - 1 - y), (int32_t)x};
-#else
-        lgfx::touch_point_t tp;
-        s_lastPressed = lcd.getTouch(&tp, 1) > 0;
-        if (s_lastPressed) s_lastPt = {tp.x, tp.y};
-#endif
+        s_lastPressed = readTouch(s_lastPt);
     }
     if (s_lastPressed) screenNoteActivity();
     data->point = s_lastPt;

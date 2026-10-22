@@ -73,12 +73,24 @@ void boardBegin() {
     pinMode(PIN_LORA_CS, OUTPUT);
     digitalWrite(PIN_LORA_CS, HIGH);
     meshDeckIoBegin();   // touch must be out of reset before the panel init
+#elif defined(DEVICE_CROWPANEL_35)
+    // Route the expansion slot to the LoRa module, not the microphone.
+    pinMode(PIN_SLOT_SELECT, OUTPUT);
+    digitalWrite(PIN_SLOT_SELECT, LOW);
+    pinMode(PIN_LORA_CS, OUTPUT);
+    digitalWrite(PIN_LORA_CS, HIGH);
+    pinMode(PIN_SD_CS, OUTPUT);
+    digitalWrite(PIN_SD_CS, HIGH);
+    delay(10);
 #endif
 }
 
 uint16_t boardBatteryMilliVolts() {
     const uint32_t now = millis();
-#if defined(DEVICE_MESH_DECK)
+#if !HAS_BATTERY
+    (void)now;
+    return 0;
+#elif defined(DEVICE_MESH_DECK)
     if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
     s_battLastMs = now;
     if (const uint16_t mv = meshDeckBatteryMv()) s_battMv = mv;
@@ -120,7 +132,9 @@ uint16_t boardBatteryMilliVolts() {
 }
 
 int boardBatteryPercent() {
-#if defined(DEVICE_MESH_DECK)
+#if !HAS_BATTERY
+    return -1;
+#elif defined(DEVICE_MESH_DECK)
     // The MAX17048 tracks charge itself; better than a voltage curve.
     static int pct = -1;
     static uint32_t lastMs = 0;

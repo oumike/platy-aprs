@@ -101,7 +101,10 @@ bool startRadio() {
     const AppConfig &c = g_config;
     if (!s_radio) {
         SPI.begin(PIN_LORA_SCK, PIN_LORA_MISO, PIN_LORA_MOSI);
-        s_radio = new Radio(new Module(PIN_LORA_CS, PIN_LORA_DIO1, PIN_LORA_RST, PIN_LORA_BUSY));
+        // Casts: on the CrowPanel CS is GPIO0, and a literal 0 also matches the
+        // RadioLibHal* overload.
+        s_radio = new Radio(new Module((uint32_t)PIN_LORA_CS, (uint32_t)PIN_LORA_DIO1,
+                                       (uint32_t)PIN_LORA_RST, (uint32_t)PIN_LORA_BUSY));
     }
     s_radio->reset();
     int st = s_radio->begin(c.loraFreqMhz, c.loraBwKhz, c.loraSf, c.loraCr, kSyncWord, c.loraPowerDbm,

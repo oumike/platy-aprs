@@ -17,7 +17,7 @@ configured from the device or a built-in web page.
 - **APRS-IS client, iGate (RF → IS and IS → RF messages) and WIDE1-1 digipeater.**
 - **Web interface** for every setting, plus messaging, monitoring and a JSON API.
 - **Over-the-air updates**, signed and verified on the device before it switches to them.
-- **Screen timeout** with pocket-safe wake buttons, backups to file or SD card, and a packet log on SD.
+- **Screen timeout** with pocket-safe wake buttons (or a double tap on touch screens), backups to file or SD card, and a packet log on SD.
 
 ## Supported boards
 
@@ -27,9 +27,12 @@ configured from the device or a built-in web page.
 | Seeed Wio Tracker L2 | SX1262 | Touch, buttons | `wio-tracker-l2` |
 | LilyGo T-Deck Plus | SX1262 | Keyboard, trackball, touch | `tdeck-plus` |
 | Attaky Mesh Deck | SX1262 | Keyboard module, d-pad, touch | `mesh-deck` |
+| Elecrow CrowPanel Advance 3.5 | SX1262 (expansion module) | Touch | `crowpanel-35` |
 
-All four have GPS. The Mesh Deck has no SD card slot, so it keeps no map tile cache, packet log or SD backups.
-The T-Deck Plus and Mesh Deck builds are newer and less tested than the others.
+The first four have GPS; on the CrowPanel it is an optional module on its UART connector, and it has no
+battery. The Mesh Deck has no SD card slot, so it keeps no map tile cache, packet log or SD backups. The
+T-Deck Plus and Mesh Deck builds are newer and less tested than the others, and the CrowPanel build has not
+been tested on hardware yet.
 
 ## Install
 
@@ -63,7 +66,7 @@ You need [PlatformIO](https://platformio.org/install/cli).
 
 ```sh
 scripts/build-upload-monitor.sh            # pick a board, build, flash, open the serial monitor
-scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck)
+scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck, -3 CrowPanel)
 scripts/build-upload-monitor.sh -B         # build every board and print a summary
 pio test -e native                         # unit tests on the host
 ```

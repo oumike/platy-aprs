@@ -397,6 +397,9 @@ void buildStatusBar() {
     s_sbGps = sbLabel(bar, LV_SYMBOL_GPS);
     s_sbWifi = sbLabel(bar, LV_SYMBOL_WIFI);
     s_sbBatt = sbLabel(bar, "");
+#if !HAS_BATTERY
+    lv_obj_add_flag(s_sbBatt, LV_OBJ_FLAG_HIDDEN);   // mains/USB powered
+#endif
     s_sbTime = sbLabel(bar, "--:--");
     lv_obj_set_style_text_color(s_sbBt, kGrey, 0);
     lv_obj_set_style_text_color(s_sbGps, kGrey, 0);

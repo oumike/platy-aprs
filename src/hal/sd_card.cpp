@@ -20,7 +20,9 @@ String sdStatusText() { return "no slot"; }
 fs::FS &sdFs() { return LittleFS; }
 bool sdMakeDirs(const char *) { return false; }
 #else
-#if SD_USE_MMC
+#if SD_USE_SOFT_SPI
+#include "sd_soft_spi.h"
+#elif SD_USE_MMC
 #include <SD_MMC.h>
 #define CARD SD_MMC
 #include "wio_l2_io.h"
@@ -40,8 +42,27 @@ uint32_t s_lastAttemptMs = 0;
 constexpr uint32_t kBackoffMs[] = {2000, 5000, 15000, 30000, 60000};
 constexpr uint32_t kMinAttemptGapMs = 3000;   // a failed probe can block for seconds
 
+#if SD_USE_SOFT_SPI
+// Bit-banged on pins of its own (both SPI hosts are taken), so nothing else
+// needs deselecting.
+void cardEnd() { sdSoftEnd(); }
+bool cardPresent() { return sdSoftMounted(); }
+uint64_t cardTotal() { return sdSoftCardSize(); }
+uint64_t cardUsed() { return sdSoftUsedBytes(); }
+#else
+void cardEnd() { CARD.end(); }
+bool cardPresent() { return CARD.cardType() != CARD_NONE; }
+uint64_t cardTotal() { return CARD.totalBytes(); }
+uint64_t cardUsed() { return CARD.usedBytes(); }
+#endif
+
 bool tryMount() {
-#if SD_USE_MMC
+#if SD_USE_SOFT_SPI
+    if (!sdSoftBegin()) return false;
+    Serial.printf("[sd] mounted (soft SPI, %s), %llu MB\n", sdSoftCardTypeName(),
+                  (unsigned long long)(sdSoftCardSize() / (1024ULL * 1024ULL)));
+    return true;
+#elif SD_USE_MMC
     // As camillia-mt: power the slot (expander bit 14) and set the 1-bit pins on
     // every attempt, and leave it unpowered when there is nothing to mount. A
     // short power cycle first, so a card left half-initialised by an earlier
@@ -117,7 +138,7 @@ bool attempt() {
 }  // namespace
 
 bool sdBegin() {
-#if !SD_USE_MMC
+#if !SD_USE_MMC && !SD_USE_SOFT_SPI
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI);
 #endif
     return attempt();
@@ -134,23 +155,23 @@ bool sdMounted() { return s_mounted; }
 uint32_t sdMountCount() { return s_mountCount; }
 
 bool sdRemount() {
-    if (s_mounted && CARD.cardType() != CARD_NONE) return true;
+    if (s_mounted && cardPresent()) return true;
     if (s_mounted) {
         // The card was pulled.
         Serial.println("[sd] card gone");
         s_mounted = false;
-        CARD.end();
+        cardEnd();
     }
     if (s_lastAttemptMs && millis() - s_lastAttemptMs < kMinAttemptGapMs) return false;
     return attempt();
 }
 
-uint64_t sdTotalBytes() { return s_mounted ? CARD.totalBytes() : 0; }
-uint64_t sdUsedBytes() { return s_mounted ? CARD.usedBytes() : 0; }
+uint64_t sdTotalBytes() { return s_mounted ? cardTotal() : 0; }
+uint64_t sdUsedBytes() { return s_mounted ? cardUsed() : 0; }
 
 String sdStatusText() {
     if (s_mounted) {
-        const uint64_t total = CARD.totalBytes(), used = CARD.usedBytes();
+        const uint64_t total = cardTotal(), used = cardUsed();
         char buf[40];
         if (total >= 1024ULL * 1024ULL * 1024ULL)
             snprintf(buf, sizeof(buf), "%.1f GB card", total / (1024.0 * 1024.0 * 1024.0));
@@ -163,7 +184,11 @@ String sdStatusText() {
     return left > 0 ? "no card (retry in " + String((left + 999) / 1000) + " s)" : String("no card");
 }
 
+#if SD_USE_SOFT_SPI
+fs::FS &sdFs() { return sdSoftFs(); }
+#else
 fs::FS &sdFs() { return CARD; }
+#endif
 
 bool sdMakeDirs(const char *path) {
     if (!s_mounted) return false;
@@ -173,7 +198,7 @@ bool sdMakeDirs(const char *path) {
     while (true) {
         const int slash = full.indexOf('/', start);
         p = slash < 0 ? full : full.substring(0, slash);
-        if (!CARD.exists(p) && !CARD.mkdir(p)) return false;
+        if (!sdFs().exists(p) && !sdFs().mkdir(p)) return false;
         if (slash < 0) return true;
         start = slash + 1;
     }
