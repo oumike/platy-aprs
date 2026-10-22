@@ -75,7 +75,8 @@ constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, h
 // ── Theme: high-contrast keypad focus + glowing buttons ──────────────────────
 
 lv_theme_t s_theme;
-lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor;
+lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor, s_stScreen;
+UiTheme s_appliedTheme = UiTheme::Dark;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
     const bool isBtn = lv_obj_check_type(obj, &lv_button_class);
@@ -89,9 +90,10 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
         lv_obj_add_style(obj, &s_stCursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     }
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
+    // Light theme: grey screens rather than LVGL's white.
+    if (!lv_obj_get_parent(obj) && s_appliedTheme == UiTheme::Light) lv_obj_add_style(obj, &s_stScreen, 0);
 }
 
-UiTheme s_appliedTheme = UiTheme::Dark;
 bool s_stylesInited = false;
 
 void themeColors(bool light) {
@@ -100,7 +102,7 @@ void themeColors(bool light) {
         kGreen = lv_color_hex(0x1f9d55);
         kAmber = lv_color_hex(0xc77700);
         kRed = lv_color_hex(0xd32f2f);
-        kBarBg = lv_color_hex(0xdfe4ea);
+        kBarBg = lv_color_hex(0xc6ccd3);
         kItemFocusBg = lv_color_hex(0xffe0a8);
         kItemFocusText = lv_color_hex(0x000000);
         kDimText = lv_color_hex(0x5f6b7a);
@@ -124,7 +126,7 @@ void themeInit() {
     const bool light = g_config.theme == UiTheme::Light;
     s_appliedTheme = g_config.theme;
     themeColors(light);
-    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor};
+    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor, &s_stScreen};
     for (lv_style_t *st : styles) {
         if (s_stylesInited) lv_style_reset(st);
         lv_style_init(st);
@@ -152,6 +154,8 @@ void themeInit() {
     lv_style_set_shadow_spread(&s_stBtnGlowFocus, 2);
     lv_style_set_shadow_opa(&s_stBtnGlowFocus, LV_OPA_80);
     lv_style_set_text_color(&s_stBtnGlowFocus, lv_color_white());
+
+    lv_style_set_bg_color(&s_stScreen, lv_color_hex(0xdde0e4));
 
     lv_style_set_border_color(&s_stCursor, kAmber);
     lv_style_set_border_width(&s_stCursor, 3);
@@ -262,6 +266,36 @@ void popScreen() {
 
 void popToHome() {
     while (s_depth > 1) popScreen();
+}
+
+// Tiles (home, Messages): dark orange with black text in both themes; focus
+// lightens the tile and outlines it instead of the usual amber glow, which
+// wouldn't show on orange.
+constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
+
+void styleTile(lv_obj_t *b) {
+    const lv_color_t outline = g_config.theme == UiTheme::Light ? lv_color_black() : lv_color_white();
+    lv_obj_set_style_radius(b, 10, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(kTileBg), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(b, lv_color_black(), 0);
+    lv_obj_set_style_border_width(b, 0, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(kTileFocusBg), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(b, lv_color_black(), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_shadow_width(b, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_color(b, outline, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_outline_pad(b, 1, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_bg_opa(b, LV_OPA_50, LV_STATE_DISABLED);
+}
+
+// A list laid out as a column of full-width tiles.
+void styleTileList(lv_obj_t *list) {
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 3, 0);
+    lv_obj_set_style_pad_row(list, 6, 0);
 }
 
 lv_obj_t *makeList(lv_obj_t *parent) {
@@ -1333,10 +1367,12 @@ void refreshMessages() {
             messagesMarkAllRead();
             updateMsgIcon();
         });
+        styleTile(b);
         if (!messagesUnread()) lv_obj_add_state(b, LV_STATE_DISABLED);
-        addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_TRASH, "Delete all messages", [](lv_event_t *) { confirmDeleteAll(); });
+        styleTile(addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_TRASH, "Delete all messages",
+                          [](lv_event_t *) { confirmDeleteAll(); }));
     }
-    addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
+    styleTile(addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); }));
     std::stable_partition(threads.begin(), threads.end(),
                           [](const ChatThread &t) { return favIs(t.peer.c_str()); });
     size_t n = 0;
@@ -1360,8 +1396,13 @@ void refreshMessages() {
             if (k == LV_KEY_RIGHT || k == ' ') openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
         }, LV_EVENT_KEY, (void *)(uintptr_t)n);
         lv_obj_set_user_data(b, (void *)(uintptr_t)(n + 1));
-        if (t.unread) lv_obj_set_style_text_color(b, kAmber, 0);
-        if (favIs(t.peer.c_str())) markFavorite(b);
+        styleTile(b);
+        // Amber would vanish on the orange tile: unread is white, the star black.
+        if (t.unread) lv_obj_set_style_text_color(b, lv_color_white(), 0);
+        if (favIs(t.peer.c_str())) {
+            markFavorite(b);
+            lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_black(), 0);
+        }
         if (s_msgs.refocus[0] && t.peer.equalsIgnoreCase(s_msgs.refocus)) refocusObj = b;
         if (++n == 40) break;
     }
@@ -1404,6 +1445,7 @@ void openMessages() {
     s_msgs.grp = grp;
     s_msgs.gen = 0;
     s_msgs.list = makeList(scr);
+    styleTileList(s_msgs.list);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_msgs.list = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshMessages);
 }
@@ -2367,10 +2409,6 @@ void refreshHome() {
     s_home.apWasActive = ap;
 }
 
-// Home tiles: dark orange with black text in both themes; focus lightens the
-// tile and outlines it instead of the usual amber glow, which wouldn't show.
-constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
-
 void buildHome() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(nullptr, &grp);
@@ -2408,25 +2446,14 @@ void buildHome() {
     lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_grid_dsc_array(grid, kCols, kRowDsc);
 
-    const lv_color_t outline = g_config.theme == UiTheme::Light ? lv_color_black() : lv_color_white();
     lv_obj_t *first = nullptr;
     for (int i = 0; i < kN; i++) {
         const Tile &t = kTiles[i];
         lv_obj_t *b = lv_button_create(grid);
         const bool span = i == kN - 1 && kN % 2;
         lv_obj_set_grid_cell(b, LV_GRID_ALIGN_STRETCH, i % 2, span ? 2 : 1, LV_GRID_ALIGN_STRETCH, i / 2, 1);
-        lv_obj_set_style_radius(b, 10, 0);
+        styleTile(b);
         lv_obj_set_style_pad_all(b, 4, 0);
-        lv_obj_set_style_bg_color(b, lv_color_hex(kTileBg), 0);
-        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(b, lv_color_black(), 0);
-        lv_obj_set_style_shadow_width(b, 0, 0);
-        lv_obj_set_style_bg_color(b, lv_color_hex(kTileFocusBg), LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_text_color(b, lv_color_black(), LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_shadow_width(b, 0, LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_outline_color(b, outline, LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
-        lv_obj_set_style_outline_pad(b, 1, LV_STATE_FOCUS_KEY);
 
         lv_obj_t *l = lv_label_create(b);
         lv_label_set_text_fmt(l, "%s  %s", t.icon, narrow && t.shortLabel ? t.shortLabel : t.label);
