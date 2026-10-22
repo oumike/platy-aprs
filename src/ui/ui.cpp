@@ -407,11 +407,6 @@ lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char 
                   lv_event_cb_t cb) {
     lv_obj_t *b = lv_list_add_button(list, icon, text);
     styleTile(b);   // menu/action items are orange; content rows stay brown
-#if HAS_EINK
-    // No scrolling marquee on e-paper: wrap, so text the scroll buttons
-    // squeeze isn't cut off.
-    lv_label_set_long_mode(lv_obj_get_child(b, -1), LV_LABEL_LONG_MODE_WRAP);
-#endif
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(grp, b);
     return b;
@@ -2536,7 +2531,7 @@ lv_obj_t *s_textSizeItem = nullptr;
 lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
 Orientation s_appliedOrient = Orientation::Landscape;
 
-// E-paper Settings swaps in short labels so the menu fits on one page.
+// E-paper Settings swaps in short labels to keep the list short.
 #define EL(full, brief) (HAS_EINK ? (brief) : (full))
 
 void openSettings() {
@@ -2687,24 +2682,15 @@ void openSettings() {
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
 #if HAS_TOUCH
-    // Wide touch screens (CrowPanel landscape) and e-paper: two columns of
-    // tiles. E-paper also drops the icons and tightens the rows so the short
-    // labels fit on one page without scrolling.
+    // Wide touch screens (CrowPanel landscape): two columns of tiles with the
+    // full labels.
     const int32_t hres = lv_display_get_horizontal_resolution(nullptr);
-    if (hres >= 400 || HAS_EINK) {
+    if (hres >= 400) {
         lv_obj_set_flex_flow(list, LV_FLEX_FLOW_ROW_WRAP);
-        lv_obj_set_style_pad_column(list, HAS_EINK ? 4 : 6, 0);
-        if (HAS_EINK) lv_obj_set_style_pad_row(list, 4, 0);
-        const int32_t colW = (hres - 8 - 6 - (HAS_EINK ? 4 : 6)) / 2;   // screen pad, list pad, column gap
-        for (uint32_t i = 0; i < lv_obj_get_child_count(list); i++) {
-            lv_obj_t *item = lv_obj_get_child(list, i);
-            lv_obj_set_width(item, colW);
-#if HAS_EINK
-            lv_obj_add_flag(lv_obj_get_child(item, 0), LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_pad_ver(item, 5, 0);
-            lv_obj_set_style_pad_hor(item, 6, 0);
-#endif
-        }
+        lv_obj_set_style_pad_column(list, 6, 0);
+        const int32_t colW = (hres - 8 - 6 - 6) / 2;   // screen pad, list pad, column gap
+        for (uint32_t i = 0; i < lv_obj_get_child_count(list); i++)
+            lv_obj_set_width(lv_obj_get_child(list, i), colW);
     }
 #endif
     pushScreen(scr, grp);
@@ -2966,12 +2952,10 @@ void tick(lv_timer_t *) {
 // ── Scroll buttons (e-paper): Up/Down down the right edge of any screen that
 // scrolls, since dragging an e-paper list is slow and hard to follow. ───────
 
-constexpr int kScrollBtnW = 30, kScrollBtnH = 64;
+constexpr int kScrollBtnW = 24, kScrollBtnH = 44;
 struct {
     lv_obj_t *up, *down;
     uint32_t lastMs;
-    lv_obj_t *padded;     // the screen given room for them, and its own right padding
-    int32_t padWas;
 } s_scrollBtns;
 
 bool scrolls(lv_obj_t *o) {
@@ -3014,9 +2998,7 @@ lv_obj_t *makeScrollBtn(const char *sym, int dir) {
     return b;
 }
 
-// Shows the buttons, and makes room for them, while the screen scrolls. Hiding
-// is judged with the room made and showing without it; narrowing only makes
-// content taller, so this can't flip back and forth.
+// Shows the buttons, drawn over the content, while the screen scrolls.
 void scrollButtonsLoop() {
     if (millis() - s_scrollBtns.lastMs < 250) return;
     s_scrollBtns.lastMs = millis();
@@ -3027,24 +3009,8 @@ void scrollButtonsLoop() {
         lv_obj_align(s_scrollBtns.down, LV_ALIGN_BOTTOM_RIGHT, -2, -4);
     }
     if (!s_depth) return;
-    lv_obj_t *root = s_stack[s_depth - 1].scr;
     const bool modal = s_qm.bg || s_choice.bg || s_info.bg || s_bright.bg || s_saver.bg;
-    const bool show = !modal && lv_screen_active() == root && scrollTarget();
-    if (s_scrollBtns.padded && s_scrollBtns.padded != root) {
-        // Another screen is current: give the old one back its padding if it's
-        // still open underneath; if it was closed, it's gone.
-        for (int i = 0; i < s_depth; i++)
-            if (s_stack[i].scr == s_scrollBtns.padded) lv_obj_set_style_pad_right(s_scrollBtns.padded, s_scrollBtns.padWas, 0);
-        s_scrollBtns.padded = nullptr;
-    }
-    if (show && s_scrollBtns.padded != root) {
-        s_scrollBtns.padded = root;
-        s_scrollBtns.padWas = lv_obj_get_style_pad_right(root, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(root, kScrollBtnW + 6, 0);
-    } else if (!show && s_scrollBtns.padded == root) {
-        s_scrollBtns.padded = nullptr;
-        lv_obj_set_style_pad_right(root, s_scrollBtns.padWas, 0);
-    }
+    const bool show = !modal && lv_screen_active() == s_stack[s_depth - 1].scr && scrollTarget();
     for (lv_obj_t *b : {s_scrollBtns.up, s_scrollBtns.down}) {
         if (show == lv_obj_has_flag(b, LV_OBJ_FLAG_HIDDEN)) {
             if (show) lv_obj_remove_flag(b, LV_OBJ_FLAG_HIDDEN);

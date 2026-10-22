@@ -70,7 +70,7 @@ the time.
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
 (see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
-Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names in two columns so it fits one page.
+Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
 `LoRa`), GPS (green with a fix, amber while searching), Wi-Fi (`AP` while the setup network is on), battery and
