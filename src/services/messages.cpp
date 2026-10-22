@@ -342,6 +342,25 @@ void messagesMarkRead(const String &peer) {
     if (any) changed();
 }
 
+void messagesMarkAllRead() {
+    bool any = false;
+    for (size_t i = 0; i < s_count; i++) {
+        ChatMsg &m = at(i);
+        if (m.unread) {
+            m.unread = false;
+            any = true;
+        }
+    }
+    if (any) changed();
+}
+
+void messagesDeleteAll() {
+    if (!s_count) return;
+    s_head = 0;
+    s_count = 0;
+    changed();
+}
+
 void messagesDeleteThread(const String &peer) {
     // Compact the ring, keeping order.
     size_t w = 0;

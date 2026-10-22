@@ -58,6 +58,8 @@ const ChatMsg *messagesAt(size_t i);   // 0 = oldest
 std::vector<ChatThread> messagesThreads();   // most recent first
 void messagesMarkRead(const String &peer);
 void messagesDeleteThread(const String &peer);
+void messagesMarkAllRead();
+void messagesDeleteAll();   // every conversation, outgoing still pending included
 uint32_t messagesUnread();
 
 // Called for each new incoming message addressed to us (for UI banners).

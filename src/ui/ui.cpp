@@ -1178,6 +1178,86 @@ void openNewMessage(const char *to = "") {
     lv_group_focus_obj(to[0] ? s_new.text : s_new.to);
 }
 
+// ── Choice modal ─────────────────────────────────────────────────────────────
+// A title, one button per option and Cancel. The pick is acted on from uiLoop,
+// after the modal is gone; Back or Cancel picks nothing.
+
+typedef void (*ChoiceFn)(int pick);
+struct ChoiceOpt {
+    const char *label;
+    bool danger;
+};
+struct {
+    lv_obj_t *bg;
+    lv_group_t *grp;
+    ChoiceFn fn;
+} s_choice;
+volatile int s_pendingChoice = -2;   // -2 none, -1 cancel, else the option index
+
+// focus: the option focused first; -1 focuses Cancel (for confirmations).
+void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int n, ChoiceFn fn, int focus = 0) {
+    if (s_choice.bg) return;
+    oskHide();
+    s_choice.fn = fn;
+    s_choice.bg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_choice.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_align(s_choice.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_radius(s_choice.bg, 0, 0);
+    lv_obj_set_style_border_width(s_choice.bg, 0, 0);
+    lv_obj_set_style_bg_color(s_choice.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_choice.bg, LV_OPA_70, 0);
+    lv_obj_clear_flag(s_choice.bg, LV_OBJ_FLAG_SCROLLABLE);
+    // Tapping the backdrop cancels.
+    lv_obj_add_event_cb(s_choice.bg, [](lv_event_t *e) {
+        if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingChoice = -1;
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *box = lv_obj_create(s_choice.bg);
+    lv_obj_set_size(box, lv_pct(80), LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(box, lv_pct(96), 0);
+    lv_obj_center(box);
+    lv_obj_set_style_pad_all(box, 8, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 6, 0);
+    lv_obj_t *t = lv_label_create(box);
+    lv_obj_set_width(t, lv_pct(100));
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(t, title);
+    if (note) makeNote(box, note);
+
+    s_choice.grp = lv_group_create();
+    lv_obj_t *focusBtn = nullptr;
+    for (int i = 0; i <= n; i++) {
+        lv_obj_t *b = lv_button_create(box);
+        lv_obj_set_width(b, lv_pct(100));
+        lv_label_set_text(lv_label_create(b), i < n ? opts[i].label : "Cancel");
+        if (i < n && opts[i].danger) lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
+            s_pendingChoice = (int)(intptr_t)lv_event_get_user_data(e);
+        }, LV_EVENT_CLICKED, (void *)(intptr_t)(i < n ? i : -1));
+        lv_group_add_obj(s_choice.grp, b);
+        if (i == (focus < 0 ? n : focus)) focusBtn = b;
+    }
+    lv_group_set_default(s_choice.grp);
+    lv_indev_set_group(keyboardIndev(), s_choice.grp);
+    if (focusBtn) lv_group_focus_obj(focusBtn);
+}
+
+// Called from uiLoop, never from an event callback (it deletes objects).
+void closeChoice(int pick) {
+    if (!s_choice.bg) return;
+    const ChoiceFn fn = s_choice.fn;
+    lv_obj_delete(s_choice.bg);
+    lv_group_delete(s_choice.grp);
+    s_choice = {};
+    lv_group_t *g = s_stack[s_depth - 1].grp;
+    lv_group_set_default(g);
+    lv_indev_set_group(keyboardIndev(), g);
+    if (pick >= 0 && fn) fn(pick);
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+
 struct {
     lv_obj_t *list;
     lv_group_t *grp;
@@ -1185,7 +1265,32 @@ struct {
     uint32_t favGen;
     uint32_t lastBuildS;
     char peers[40][10];
+    char picked[10];   // the conversation a long press opened the menu for
 } s_msgs;
+
+void openThreadMenu(size_t idx) {
+    strlcpy(s_msgs.picked, s_msgs.peers[idx], sizeof(s_msgs.picked));
+    static const ChoiceOpt kOpts[] = {{LV_SYMBOL_OK " Mark as read", false}, {LV_SYMBOL_TRASH " Delete", true}};
+    openChoice(s_msgs.picked, nullptr, kOpts, 2, [](int pick) {
+        if (pick == 0) {
+            messagesMarkRead(s_msgs.picked);
+        } else {
+            messagesDeleteThread(s_msgs.picked);
+            toast(String("Deleted conversation with ") + s_msgs.picked);
+        }
+        updateMsgIcon();
+    });
+}
+
+void confirmDeleteAll() {
+    static const ChoiceOpt kOpts[] = {{LV_SYMBOL_TRASH " Delete all", true}};
+    openChoice("Delete all messages?", "Every conversation is removed, from the SD card too. This can't be undone.",
+               kOpts, 1, [](int) {
+                   messagesDeleteAll();
+                   updateMsgIcon();
+                   toast("All messages deleted");
+               }, -1);
+}
 
 void refreshMessages() {
     if (!s_msgs.list) return;
@@ -1195,8 +1300,16 @@ void refreshMessages() {
     s_msgs.lastBuildS = uptimeS();
     const int fi = focusedIndex(s_msgs.list);
     lv_obj_clean(s_msgs.list);
-    addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
     auto threads = messagesThreads();
+    if (!threads.empty()) {
+        lv_obj_t *b = addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_OK, "Mark all as read", [](lv_event_t *) {
+            messagesMarkAllRead();
+            updateMsgIcon();
+        });
+        if (!messagesUnread()) lv_obj_add_state(b, LV_STATE_DISABLED);
+        addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_TRASH, "Delete all messages", [](lv_event_t *) { confirmDeleteAll(); });
+    }
+    addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
     std::stable_partition(threads.begin(), threads.end(),
                           [](const ChatThread &t) { return favIs(t.peer.c_str()); });
     size_t n = 0;
@@ -1206,9 +1319,19 @@ void refreshMessages() {
         if (t.unread) line += "  (" + String(t.unread) + " new)";
         if (t.lastUptimeS) line += "  " + ageStr(t.lastUptimeS);
         line += "\n" + String(t.lastOutgoing ? "You: " : "") + t.lastText;
-        lv_obj_t *b = addWrapItem(s_msgs.list, s_msgs.grp, line.c_str(), [](lv_event_t *e) {
+        // Short click opens it, so a long press (the menu) doesn't also open it.
+        lv_obj_t *b = addWrapItem(s_msgs.list, s_msgs.grp, line.c_str(), nullptr, nullptr);
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
             openThread(s_msgs.peers[(size_t)(uintptr_t)lv_event_get_user_data(e)]);
-        }, (void *)(uintptr_t)n);
+        }, LV_EVENT_SHORT_CLICKED, (void *)(uintptr_t)n);
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
+            openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
+        }, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)n);
+        // Keys can't be held, so Right (or Space, for the Pager's wheel) opens it there.
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
+            const uint32_t k = lv_event_get_key(e);
+            if (k == LV_KEY_RIGHT || k == ' ') openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
+        }, LV_EVENT_KEY, (void *)(uintptr_t)n);
         if (t.unread) lv_obj_set_style_text_color(b, kAmber, 0);
         if (favIs(t.peer.c_str())) markFavorite(b);
         if (++n == 40) break;
@@ -2240,6 +2363,7 @@ void rebuildForTheme() {
     s_themeFromSettings = false;
     closeQuickPicker(-1);
     closeInfo();
+    closeChoice(-1);
     popToHome();
 #if HAS_TOUCH && !HAS_KEYBOARD
     if (s_osk) {
@@ -2317,6 +2441,12 @@ void uiLoop() {
         const int pick = s_pendingQuick;
         s_pendingQuick = -2;
         closeQuickPicker(pick);
+        if (nav == Nav::Back || nav == Nav::None) return;
+    }
+    if (s_choice.bg && (s_pendingChoice != -2 || nav != Nav::None)) {
+        const int pick = s_pendingChoice;
+        s_pendingChoice = -2;
+        closeChoice(pick);
         if (nav == Nav::Back || nav == Nav::None) return;
     }
     if (s_pendingCloseInfo || (nav != Nav::None && s_info.bg)) {
