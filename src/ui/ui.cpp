@@ -272,17 +272,23 @@ void popToHome() {
 // lightens the tile and outlines it instead of the usual amber glow, which
 // wouldn't show on orange.
 constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
+// Conversation tiles in Messages: dark brown with light text.
+constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
+constexpr uint32_t kMsgTileUnread = 0xFFB347;
 
-void styleTile(lv_obj_t *b) {
+void styleTile(lv_obj_t *b, uint32_t bg = kTileBg, uint32_t focusBg = kTileFocusBg, uint32_t text = 0x000000) {
     const lv_color_t outline = g_config.theme == UiTheme::Light ? lv_color_black() : lv_color_white();
     lv_obj_set_style_radius(b, 10, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(kTileBg), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(b, lv_color_black(), 0);
+    lv_obj_set_style_text_color(b, lv_color_hex(text), 0);
     lv_obj_set_style_border_width(b, 0, 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(kTileFocusBg), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_text_color(b, lv_color_black(), LV_STATE_FOCUS_KEY);
+    // LVGL widens a focused or pressed list row, which clips the rounded ends.
+    lv_obj_set_style_transform_width(b, 0, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_transform_width(b, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(b, lv_color_hex(focusBg), LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(b, lv_color_hex(text), LV_STATE_FOCUS_KEY);
     lv_obj_set_style_shadow_width(b, 0, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_color(b, outline, LV_STATE_FOCUS_KEY);
     lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
@@ -1396,12 +1402,14 @@ void refreshMessages() {
             if (k == LV_KEY_RIGHT || k == ' ') openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
         }, LV_EVENT_KEY, (void *)(uintptr_t)n);
         lv_obj_set_user_data(b, (void *)(uintptr_t)(n + 1));
-        styleTile(b);
-        // Amber would vanish on the orange tile: unread is white, the star black.
-        if (t.unread) lv_obj_set_style_text_color(b, lv_color_white(), 0);
+        styleTile(b, kMsgTileBg, kMsgTileFocusBg, kMsgTileText);
+        if (t.unread) {
+            lv_obj_set_style_text_color(b, lv_color_hex(kMsgTileUnread), 0);
+            lv_obj_set_style_text_color(b, lv_color_hex(kMsgTileUnread), LV_STATE_FOCUS_KEY);
+        }
         if (favIs(t.peer.c_str())) {
             markFavorite(b);
-            lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_black(), 0);
+            lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(kMsgTileUnread), 0);
         }
         if (s_msgs.refocus[0] && t.peer.equalsIgnoreCase(s_msgs.refocus)) refocusObj = b;
         if (++n == 40) break;
