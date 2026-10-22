@@ -407,6 +407,11 @@ lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char 
                   lv_event_cb_t cb) {
     lv_obj_t *b = lv_list_add_button(list, icon, text);
     styleTile(b);   // menu/action items are orange; content rows stay brown
+#if HAS_EINK
+    // No scrolling marquee on e-paper: wrap, so text the scroll buttons
+    // squeeze isn't cut off.
+    lv_label_set_long_mode(lv_obj_get_child(b, -1), LV_LABEL_LONG_MODE_WRAP);
+#endif
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(grp, b);
     return b;
@@ -2175,7 +2180,7 @@ void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
 
 // ── Splash ───────────────────────────────────────────────────────────────────
 
-extern "C" const lv_image_dsc_t splash_img, splash_img_mono;   // tools/gen_splash.py
+extern "C" const lv_image_dsc_t splash_img, splash_img_mono, splash_img_mono_small;   // tools/gen_splash.py
 // E-paper gets line art drawn for 1 bit rather than the colour image cut down.
 const lv_image_dsc_t *const kSplashImg = HAS_EINK ? &splash_img_mono : &splash_img;
 
@@ -2281,14 +2286,16 @@ void saverShow() {
     lv_obj_set_style_bg_color(s_saver.bg, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
     lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
+    // The smaller platy and the name, centred together.
+    lv_obj_set_flex_flow(s_saver.bg, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_saver.bg, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(s_saver.bg, 8, 0);
     s_saver.img = lv_image_create(s_saver.bg);
-    lv_image_set_src(s_saver.img, kSplashImg);
-    lv_obj_align(s_saver.img, LV_ALIGN_CENTER, 0, -14);
+    lv_image_set_src(s_saver.img, &splash_img_mono_small);
     lv_obj_t *name = lv_label_create(s_saver.bg);
     lv_label_set_text(name, APP_NAME);
     lv_obj_set_style_text_color(name, lv_color_black(), 0);
-    lv_obj_set_style_text_font(name, uiFont(20), 0);
-    lv_obj_align(name, LV_ALIGN_CENTER, 0, 70);
+    lv_obj_set_style_text_font(name, uiFont(16), 0);
     return;
 #endif
     s_saver.bg = lv_obj_create(lv_layer_sys());
@@ -2418,48 +2425,108 @@ void setVolumeLabel(lv_obj_t *item) {
     lv_label_set_text(lv_obj_get_child(item, 1), (String("Volume: ") + g_config.volumePct + "%").c_str());
 }
 
-// Brightness row: a list button (child 1 the label, child 2 a slider). Keys
-// keep the row focused and Left/Right step it, so up/down still move through
-// the list; on touch screens the slider drags.
+// Brightness: a Settings item opening a modal with a slider. Left/Right step
+// it, the slider drags on touch screens, and Done/Back closes it.
 // E-paper reads fine unlit, so its frontlight can go right off.
 constexpr int kBrightnessMin = HAS_EINK ? 0 : 10, kBrightnessStep = 25;
 
-void setBrightnessRow(lv_obj_t *row, int level, bool save) {
+struct {
+    lv_obj_t *bg, *slider, *value, *item;
+    lv_group_t *grp;
+} s_bright;
+volatile bool s_pendingCloseBright = false;
+
+String brightnessText(const char *prefix) {
+    return String(prefix) + (g_config.brightness * 100 + 127) / 255 + "%";
+}
+
+void setBrightnessItemLabel(lv_obj_t *item) {
+    lv_label_set_text(lv_obj_get_child(item, 1), brightnessText(HAS_EINK ? "Bright: " : "Brightness: ").c_str());
+}
+
+void setBrightness(int level) {
     level = level < kBrightnessMin ? kBrightnessMin : level > 255 ? 255 : level;
     g_config.brightness = (uint8_t)level;
     screenApplyBrightness();
-    lv_label_set_text(lv_obj_get_child(row, 1),
-                      (String("Brightness: ") + (level * 100 + 127) / 255 + "%").c_str());
-    lv_obj_t *slider = lv_obj_get_child(row, 2);
-    if (lv_slider_get_value(slider) != level) lv_slider_set_value(slider, level, LV_ANIM_OFF);
-    if (save) configSave();
+    if (lv_slider_get_value(s_bright.slider) != level) lv_slider_set_value(s_bright.slider, level, LV_ANIM_OFF);
+    lv_label_set_text(s_bright.value, brightnessText("").c_str());
 }
 
-void addBrightnessRow(lv_obj_t *list, lv_group_t *grp) {
-    // Select steps up and wraps to the dimmest level after full.
-    lv_obj_t *row = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *e) {
-        const int b = g_config.brightness;
-        setBrightnessRow((lv_obj_t *)lv_event_get_target(e), b >= 255 ? kBrightnessMin : b + kBrightnessStep, true);
-    });
-    lv_obj_add_event_cb(row, [](lv_event_t *e) {
+void openBrightness(lv_obj_t *item) {
+    if (s_bright.bg) return;
+    oskHide();
+    s_bright.item = item;
+    s_bright.bg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_bright.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_align(s_bright.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_radius(s_bright.bg, 0, 0);
+    lv_obj_set_style_border_width(s_bright.bg, 0, 0);
+    lv_obj_set_style_bg_color(s_bright.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_bright.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
+    lv_obj_clear_flag(s_bright.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s_bright.bg, [](lv_event_t *e) {
+        if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingCloseBright = true;
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *box = lv_obj_create(s_bright.bg);
+    modalBoxStyle(box);
+    lv_obj_set_size(box, lv_pct(80), LV_SIZE_CONTENT);
+    lv_obj_center(box);
+    lv_obj_set_style_pad_all(box, 10, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(box, 12, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *t = lv_label_create(box);
+    lv_label_set_text(t, LV_SYMBOL_EYE_OPEN " Brightness");
+    s_bright.value = lv_label_create(box);
+    lv_obj_set_style_text_font(s_bright.value, uiFont(18), 0);
+
+    s_bright.grp = lv_group_create();
+    s_bright.slider = lv_slider_create(box);
+    lv_slider_set_range(s_bright.slider, kBrightnessMin, 255);
+    lv_obj_set_width(s_bright.slider, lv_pct(90));
+    lv_obj_set_height(s_bright.slider, 10);
+    lv_obj_set_ext_click_area(s_bright.slider, 14);
+    // Keys step in big jumps rather than the slider's own single steps.
+    lv_obj_add_event_cb(s_bright.slider, [](lv_event_t *e) {
         const uint32_t k = lv_event_get_key(e);
+        if (k == LV_KEY_ENTER) s_pendingCloseBright = true;
         if (k != LV_KEY_LEFT && k != LV_KEY_RIGHT) return;
-        const int step = k == LV_KEY_RIGHT ? kBrightnessStep : -kBrightnessStep;
-        setBrightnessRow((lv_obj_t *)lv_event_get_target(e), g_config.brightness + step, true);
-    }, LV_EVENT_KEY, nullptr);
-    lv_obj_t *slider = lv_slider_create(row);
-    lv_group_remove_obj(slider);
-    lv_slider_set_range(slider, kBrightnessMin, 255);
-    lv_obj_set_width(slider, lv_pct(40));
-    lv_obj_set_height(slider, 8);
-    lv_obj_set_style_margin_right(slider, 10, 0);
-    lv_obj_set_ext_click_area(slider, 12);
-    lv_obj_add_event_cb(slider, [](lv_event_t *e) {
-        lv_obj_t *s = (lv_obj_t *)lv_event_get_target(e);
-        setBrightnessRow(lv_obj_get_parent(s), lv_slider_get_value(s), false);
+        setBrightness(g_config.brightness + (k == LV_KEY_RIGHT ? kBrightnessStep : -kBrightnessStep));
+        lv_event_stop_processing(e);
+    }, (lv_event_code_t)(LV_EVENT_KEY | LV_EVENT_PREPROCESS), nullptr);
+    lv_obj_add_event_cb(s_bright.slider, [](lv_event_t *e) {
+        setBrightness(lv_slider_get_value((lv_obj_t *)lv_event_get_target(e)));
     }, LV_EVENT_VALUE_CHANGED, nullptr);
-    lv_obj_add_event_cb(slider, [](lv_event_t *) { configSave(); }, LV_EVENT_RELEASED, nullptr);
-    setBrightnessRow(row, g_config.brightness, false);
+    lv_group_add_obj(s_bright.grp, s_bright.slider);
+
+    lv_obj_t *done = lv_button_create(box);
+    lv_obj_set_width(done, lv_pct(100));
+    lv_obj_t *dl = lv_label_create(done);
+    lv_label_set_text(dl, "Done");
+    lv_obj_center(dl);
+    lv_obj_add_event_cb(done, [](lv_event_t *) { s_pendingCloseBright = true; }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(s_bright.grp, done);
+
+    setBrightness(g_config.brightness);
+    lv_group_set_default(s_bright.grp);
+    lv_indev_set_group(keyboardIndev(), s_bright.grp);
+    lv_group_focus_obj(s_bright.slider);
+}
+
+// Called from uiLoop, never from an event callback (it deletes objects).
+void closeBrightness() {
+    if (!s_bright.bg) return;
+    configSave();
+    lv_obj_t *item = s_bright.item;
+    lv_obj_delete(s_bright.bg);
+    lv_group_delete(s_bright.grp);
+    s_bright = {};
+    lv_group_t *g = s_stack[s_depth - 1].grp;
+    lv_group_set_default(g);
+    lv_indev_set_group(keyboardIndev(), g);
+    if (item) setBrightnessItemLabel(item);
 }
 
 bool s_themeFromSettings = false;
@@ -2469,18 +2536,21 @@ lv_obj_t *s_textSizeItem = nullptr;
 lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
 Orientation s_appliedOrient = Orientation::Landscape;
 
+// E-paper Settings swaps in short labels so the menu fits on one page.
+#define EL(full, brief) (HAS_EINK ? (brief) : (full))
+
 void openSettings() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_SETTINGS " Settings", &grp);
     lv_obj_t *list = makeList(scr);
-    addItem(list, grp, LV_SYMBOL_WIFI, "Open setup access point", [](lv_event_t *) {
+    addItem(list, grp, LV_SYMBOL_WIFI, EL("Open setup access point", "Setup AP"), [](lv_event_t *) {
         if (!wifiOpenSetupAp()) toast("Connected to Wi-Fi; setup AP stays off");
         openWifi(false);
     });
-    addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi networks", [](lv_event_t *) { openWifi(true); });
-    addItem(list, grp, LV_SYMBOL_EDIT, "Quick messages", [](lv_event_t *) { openQuickMsgs(); });
-    addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
-    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link & pairing", [](lv_event_t *) { openTnc(); });
+    addItem(list, grp, LV_SYMBOL_WIFI, EL("Wi-Fi networks", "Wi-Fi"), [](lv_event_t *) { openWifi(true); });
+    addItem(list, grp, LV_SYMBOL_EDIT, EL("Quick messages", "Quick msgs"), [](lv_event_t *) { openQuickMsgs(); });
+    addItem(list, grp, LV_SYMBOL_GPS, EL("GPS & beacon", "GPS/beacon"), [](lv_event_t *) { openGps(); });
+    addItem(list, grp, LV_SYMBOL_BLUETOOTH, EL("Radio link & pairing", "Radio link"), [](lv_event_t *) { openTnc(); });
     lv_obj_t *is = addItem(list, grp, LV_SYMBOL_UPLOAD, "", [](lv_event_t *e) {
         g_config.aprsIsEnabled = !g_config.aprsIsEnabled;
         configSave();
@@ -2496,18 +2566,21 @@ void openSettings() {
         configSave();
         lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
         lv_label_set_text(lv_obj_get_child(b, 1),
-                          (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
+                          (String(EL("Screen timeout: ", "Sleep: ")) + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
     });
     lv_label_set_text(lv_obj_get_child(to, 1),
-                      (String("Screen timeout: ") + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
+                      (String(EL("Screen timeout: ", "Sleep: ")) + screenTimeoutLabel(g_config.screenOnSecs)).c_str());
     lv_obj_t *ss = addItem(list, grp, LV_SYMBOL_IMAGE, "", [](lv_event_t *e) {
         g_config.screenSaver = !g_config.screenSaver;
         configSave();
         lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
-        lv_label_set_text(lv_obj_get_child(b, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
+        lv_label_set_text(lv_obj_get_child(b, 1), g_config.screenSaver ? EL("At timeout: Screensaver", "Saver: On") : EL("At timeout: Screen off", "Saver: Off"));
     });
-    lv_label_set_text(lv_obj_get_child(ss, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
-    addBrightnessRow(list, grp);
+    lv_label_set_text(lv_obj_get_child(ss, 1), g_config.screenSaver ? EL("At timeout: Screensaver", "Saver: On") : EL("At timeout: Screen off", "Saver: Off"));
+    lv_obj_t *br = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *e) {
+        openBrightness((lv_obj_t *)lv_event_get_target(e));
+    });
+    setBrightnessItemLabel(br);
     if (audioPresent()) {
         // Each press moves to the next style or volume and plays the new-message tone with it.
         lv_obj_t *snd = addItem(list, grp, LV_SYMBOL_BELL, "", [](lv_event_t *e) {
@@ -2547,9 +2620,9 @@ void openSettings() {
             notifyLedApplySetting();
             if (g_config.kbBlink) notifyLedPreview(LedColor::White);
             lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
-                              g_config.kbBlink ? "Keyboard blink: On" : "Keyboard blink: Off");
+                              g_config.kbBlink ? EL("Keyboard blink: On", "Kbd blink: On") : EL("Keyboard blink: Off", "Kbd blink: Off"));
         });
-        lv_label_set_text(lv_obj_get_child(kb, 1), g_config.kbBlink ? "Keyboard blink: On" : "Keyboard blink: Off");
+        lv_label_set_text(lv_obj_get_child(kb, 1), g_config.kbBlink ? EL("Keyboard blink: On", "Kbd blink: On") : EL("Keyboard blink: Off", "Kbd blink: Off"));
     }
     if (notifyLightPresent()) {
         lv_obj_t *lto = addItem(list, grp, LV_SYMBOL_CHARGE, "", [](lv_event_t *e) {
@@ -2558,13 +2631,13 @@ void openSettings() {
             g_config.ledTimeoutSecs = kLedTimeoutSecs[(i + 1) % kLedTimeoutCount];
             configSave();
             lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
-                              (String("Light timeout: ") + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
+                              (String(EL("Light timeout: ", "Blink: ")) + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
         });
         lv_label_set_text(lv_obj_get_child(lto, 1),
-                          (String("Light timeout: ") + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
+                          (String(EL("Light timeout: ", "Blink: ")) + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
     }
     if (sdHasSlot())
-        addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });
+        addItem(list, grp, LV_SYMBOL_SD_CARD, EL("Backup settings to SD card", "SD backup"), [](lv_event_t *) { backupToSdNow(); });
     s_themeItem = nullptr;
 #if !HAS_EINK
     lv_obj_t *th = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *) {
@@ -2589,7 +2662,7 @@ void openSettings() {
         }, (int)g_config.textSize, nullptr, true);
     });
     s_textSizeItem = ts;
-    lv_label_set_text(lv_obj_get_child(ts, 1), (String("Text size: ") + textSizeLabel(g_config.textSize)).c_str());
+    lv_label_set_text(lv_obj_get_child(ts, 1), (String(EL("Text size: ", "Text: ")) + textSizeLabel(g_config.textSize)).c_str());
     s_orientItem = nullptr;
     if (displayCanRotate()) {
         lv_obj_t *ori = addItem(list, grp, LV_SYMBOL_REFRESH, "", [](lv_event_t *) {
@@ -2608,21 +2681,27 @@ void openSettings() {
         lv_label_set_text(lv_obj_get_child(ori, 1),
                           (String("Orientation: ") + orientationLabel(g_config.orientation)).c_str());
     }
-    addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Firmware update", [](lv_event_t *) { openOta(); });
+    addItem(list, grp, LV_SYMBOL_DOWNLOAD, EL("Firmware update", "Update"), [](lv_event_t *) { openOta(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
 #if HAS_TOUCH
-    // Wide touch screens (CrowPanel landscape): two columns of tiles with the
-    // full labels; the brightness slider keeps a whole row.
+    // Wide touch screens (CrowPanel landscape) and e-paper: two columns of
+    // tiles. E-paper also drops the icons and tightens the rows so the short
+    // labels fit on one page without scrolling.
     const int32_t hres = lv_display_get_horizontal_resolution(nullptr);
-    if (hres >= 400) {
+    if (hres >= 400 || HAS_EINK) {
         lv_obj_set_flex_flow(list, LV_FLEX_FLOW_ROW_WRAP);
-        lv_obj_set_style_pad_column(list, 6, 0);
-        const int32_t colW = (hres - 8 - 6 - 6) / 2;   // screen pad, list pad, column gap
+        lv_obj_set_style_pad_column(list, HAS_EINK ? 4 : 6, 0);
+        if (HAS_EINK) lv_obj_set_style_pad_row(list, 4, 0);
+        const int32_t colW = (hres - 8 - 6 - (HAS_EINK ? 4 : 6)) / 2;   // screen pad, list pad, column gap
         for (uint32_t i = 0; i < lv_obj_get_child_count(list); i++) {
             lv_obj_t *item = lv_obj_get_child(list, i);
-            const bool slider = lv_obj_get_child_count(item) > 2;
-            lv_obj_set_width(item, slider ? lv_pct(100) : colW);
+            lv_obj_set_width(item, colW);
+#if HAS_EINK
+            lv_obj_add_flag(lv_obj_get_child(item, 0), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_pad_ver(item, 5, 0);
+            lv_obj_set_style_pad_hor(item, 6, 0);
+#endif
         }
     }
 #endif
@@ -2947,7 +3026,7 @@ void scrollButtonsLoop() {
     }
     if (!s_depth) return;
     lv_obj_t *root = s_stack[s_depth - 1].scr;
-    const bool modal = s_qm.bg || s_choice.bg || s_info.bg || s_saver.bg;
+    const bool modal = s_qm.bg || s_choice.bg || s_info.bg || s_bright.bg || s_saver.bg;
     const bool show = !modal && lv_screen_active() == root && scrollTarget();
     if (s_scrollBtns.padded && s_scrollBtns.padded != root) {
         // Another screen is current: give the old one back its padding if it's
@@ -3021,6 +3100,11 @@ void uiLoop() {
         closeChoice(pick);
         if (nav == Nav::Back || nav == Nav::None) return;
     }
+    if (s_pendingCloseBright || (nav != Nav::None && s_bright.bg)) {
+        s_pendingCloseBright = false;
+        closeBrightness();
+        if (nav == Nav::Back || nav == Nav::None) return;
+    }
     if (s_pendingCloseInfo || (nav != Nav::None && s_info.bg)) {
         s_pendingCloseInfo = false;
         closeInfo();
@@ -3029,7 +3113,7 @@ void uiLoop() {
     }
     if (s_pendingFav) {
         s_pendingFav = false;
-        if (!s_qm.bg && !s_info.bg && !s_choice.bg) toggleFavoriteKey();
+        if (!s_qm.bg && !s_info.bg && !s_choice.bg && !s_bright.bg) toggleFavoriteKey();
     }
     if (nav == Nav::Back) popScreen();
     else if (nav == Nav::Home) popToHome();
