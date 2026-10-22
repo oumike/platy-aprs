@@ -165,6 +165,18 @@ bool myPosition(double &lat, double &lon) {
 
 bool routerCanSend() { return rfLink().connected() || aprsIsReady(); }
 
+String routerSendBlocked() {
+    // Only mention the radio when one is set up (a LoRa link, or a saved TNC).
+    const bool radio = g_config.rfLink == RfLink::Lora || g_config.tncAddress.length();
+    const char *link = g_config.rfLink == RfLink::Lora ? "LoRa radio not running" : "TNC not connected";
+    if (!g_config.aprsIsEnabled) return radio ? String(link) : String("No radio link or APRS-IS");
+    const AprsIsStatus st = aprsIsStatus();
+    String is;
+    if (st.connected && !st.verified) is = "APRS-IS login not verified (check callsign/passcode)";
+    else is = String("APRS-IS ") + st.state;
+    return radio ? String(link) + "; " + is : is;
+}
+
 bool routerSendInfo(const std::string &info, String &err) {
     if (g_config.callsign.isEmpty() || g_config.callsign.equalsIgnoreCase("N0CALL")) {
         err = "Set your callsign first";
@@ -172,8 +184,7 @@ bool routerSendInfo(const std::string &info, String &err) {
     }
     const bool rf = rfLink().connected(), is = aprsIsReady();
     if (!rf && !is) {
-        const char *link = g_config.rfLink == RfLink::Lora ? "LoRa radio not running" : "TNC not connected";
-        err = g_config.aprsIsEnabled ? String(link) + " and APRS-IS not connected" : String(link);
+        err = routerSendBlocked();
         return false;
     }
     ax25::Frame f;

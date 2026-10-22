@@ -17,6 +17,8 @@ bool myPosition(double &lat, double &lon);
 
 // True when routerSendInfo() has somewhere to send (TNC or verified APRS-IS).
 bool routerCanSend();
+// Why nothing can send right now, e.g. "APRS-IS login not verified (check callsign/passcode)".
+String routerSendBlocked();
 
 // Transmit an APRS info field from our callsign: over RF via the configured
 // path when the TNC is connected, and to APRS-IS when logged in. Logged to the
