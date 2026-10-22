@@ -339,10 +339,24 @@ void oskHide() {}
 void oskAttach(lv_obj_t *) {}
 #endif
 
+// The callsign takes whatever room the icons leave; when it wouldn't fit
+// whole (Back button and a busy bar on a narrow screen), it's left out.
+void fitCallsign() {
+    if (!s_sbCall) return;
+    // E-paper's narrow bar shows the bare callsign, without the SSID.
+    const String call = HAS_EINK ? g_config.callsign : g_config.fullCallsign();
+    lv_obj_update_layout(lv_obj_get_parent(s_sbCall));
+    lv_text_attributes_t attr = {};
+    const int32_t need = lv_text_get_width(call.c_str(), call.length(), lv_obj_get_style_text_font(s_sbCall, LV_PART_MAIN), &attr);
+    const char *want = need <= lv_obj_get_content_width(s_sbCall) ? call.c_str() : "";
+    if (strcmp(lv_label_get_text(s_sbCall), want)) lv_label_set_text(s_sbCall, want);
+}
+
 void updateBackButton() {
     if (!s_sbBack) return;
     if (s_depth > 1) lv_obj_remove_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+    fitCallsign();
 }
 
 void pushScreen(lv_obj_t *scr, lv_group_t *grp, void (*refresh)() = nullptr) {
@@ -515,6 +529,7 @@ void buildStatusBar() {
 #endif
     s_sbCall = sbLabel(bar, "");
     lv_obj_set_flex_grow(s_sbCall, 1);
+    lv_label_set_long_mode(s_sbCall, LV_LABEL_LONG_MODE_CLIP);
     s_sbMsg = sbLabel(bar, "");
     lv_obj_set_style_text_color(s_sbMsg, kAmber, 0);
     buildTncIcon(bar);
@@ -599,7 +614,6 @@ void rxBlinkTimer(lv_timer_t *) {
 }
 
 void updateStatusBar() {
-    lv_label_set_text(s_sbCall, g_config.fullCallsign().c_str());
 
     const WifiStatus w = wifiStatus();
     lv_color_t wc = kSbOff;
@@ -667,6 +681,7 @@ void updateStatusBar() {
         localtime_r(&now, &tm);
         lv_label_set_text_fmt(s_sbTime, "%02d:%02d", tm.tm_hour, tm.tm_min);
     }
+    fitCallsign();
 }
 
 // Modal boxes float over a dimmed backdrop; e-paper has no dimming, so they
@@ -1427,8 +1442,10 @@ void openNewMessage(const char *to = "") {
     lv_obj_add_event_cb(s_new.to, [](lv_event_t *) { lv_group_focus_obj(s_new.text); }, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(s_new.text, [](lv_event_t *) { sendNew(); }, LV_EVENT_READY, nullptr);
     lv_obj_t *b = lv_button_create(scr);
+    lv_obj_set_width(b, lv_pct(100));
     lv_obj_t *l = lv_label_create(b);
     lv_label_set_text(l, LV_SYMBOL_UPLOAD " Send");
+    lv_obj_center(l);
     lv_obj_add_event_cb(b, [](lv_event_t *) { sendNew(); }, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(grp, b);
     makeNote(scr, "Up/down moves between fields. Max 67 characters.");
@@ -2158,7 +2175,9 @@ void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
 
 // ── Splash ───────────────────────────────────────────────────────────────────
 
-extern "C" const lv_image_dsc_t splash_img;   // tools/gen_splash.py
+extern "C" const lv_image_dsc_t splash_img, splash_img_mono;   // tools/gen_splash.py
+// E-paper gets line art drawn for 1 bit rather than the colour image cut down.
+const lv_image_dsc_t *const kSplashImg = HAS_EINK ? &splash_img_mono : &splash_img;
 
 // The mascot over a deep-teal gradient, the name, a tagline and, unless null, a
 // footer line.
@@ -2202,13 +2221,13 @@ lv_obj_t *buildSplash(const char *footer) {
     const int top = areaTop + (areaBottom - areaTop - blockH) / 2;
     const int left = (lv_display_get_horizontal_resolution(nullptr) - 240) / 2;
     lv_obj_t *img = lv_image_create(scr);
-    lv_image_set_src(img, &splash_img);
+    lv_image_set_src(img, kSplashImg);
     lv_obj_set_pos(img, left, top);
 
     lv_obj_t *cq = lv_label_create(scr);
     lv_label_set_text(cq, "CQ CQ");
     lv_obj_set_style_text_font(cq, uiFont(16), 0);
-    lv_obj_set_style_text_color(cq, lv_color_hex(0x15506A), 0);
+    lv_obj_set_style_text_color(cq, mono ? lv_color_black() : lv_color_hex(0x15506A), 0);
     lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(cq, 88);
     lv_obj_set_pos(cq, left, top + 2 + 8);
@@ -2263,7 +2282,7 @@ void saverShow() {
     lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
     lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
     s_saver.img = lv_image_create(s_saver.bg);
-    lv_image_set_src(s_saver.img, &splash_img);
+    lv_image_set_src(s_saver.img, kSplashImg);
     lv_obj_align(s_saver.img, LV_ALIGN_CENTER, 0, -14);
     lv_obj_t *name = lv_label_create(s_saver.bg);
     lv_label_set_text(name, APP_NAME);
@@ -2862,6 +2881,98 @@ void tick(lv_timer_t *) {
     refreshInfo();
 }
 
+#if HAS_EINK
+// ── Scroll buttons (e-paper): Up/Down down the right edge of any screen that
+// scrolls, since dragging an e-paper list is slow and hard to follow. ───────
+
+constexpr int kScrollBtnW = 30, kScrollBtnH = 64;
+struct {
+    lv_obj_t *up, *down;
+    uint32_t lastMs;
+    lv_obj_t *padded;     // the screen given room for them, and its own right padding
+    int32_t padWas;
+} s_scrollBtns;
+
+bool scrolls(lv_obj_t *o) {
+    return lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) && !lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) &&
+           !lv_obj_check_type(o, &lv_textarea_class) &&
+           (lv_obj_get_scroll_top(o) > 0 || lv_obj_get_scroll_bottom(o) > 0);
+}
+
+// The outermost thing on the current screen that has more to show.
+lv_obj_t *scrollTarget() {
+    lv_obj_t *queue[48];
+    int head = 0, tail = 0;
+    queue[tail++] = s_stack[s_depth - 1].scr;
+    while (head < tail) {
+        lv_obj_t *o = queue[head++];
+        if (scrolls(o)) return o;
+        const uint32_t n = lv_obj_get_child_count(o);
+        for (uint32_t i = 0; i < n && tail < 48; i++) queue[tail++] = lv_obj_get_child(o, i);
+    }
+    return nullptr;
+}
+
+void scrollPage(lv_event_t *e) {
+    lv_obj_t *t = scrollTarget();
+    if (!t) return;
+    const int32_t page = std::max<int32_t>(lv_obj_get_height(t) - 40, 40);
+    const int dir = (int)(intptr_t)lv_event_get_user_data(e);   // +1 up, -1 down
+    lv_obj_scroll_by_bounded(t, 0, dir * page, LV_ANIM_OFF);
+}
+
+lv_obj_t *makeScrollBtn(const char *sym, int dir) {
+    lv_obj_t *b = lv_button_create(lv_layer_top());
+    lv_obj_set_size(b, kScrollBtnW, kScrollBtnH);
+    lv_obj_set_style_pad_all(b, 0, 0);
+    lv_obj_t *l = lv_label_create(b);
+    lv_label_set_text(l, sym);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(b, scrollPage, LV_EVENT_CLICKED, (void *)(intptr_t)dir);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+    return b;
+}
+
+// Shows the buttons, and makes room for them, while the screen scrolls. Hiding
+// is judged with the room made and showing without it; narrowing only makes
+// content taller, so this can't flip back and forth.
+void scrollButtonsLoop() {
+    if (millis() - s_scrollBtns.lastMs < 250) return;
+    s_scrollBtns.lastMs = millis();
+    if (!s_scrollBtns.up) {
+        s_scrollBtns.up = makeScrollBtn(LV_SYMBOL_UP, 1);
+        lv_obj_align(s_scrollBtns.up, LV_ALIGN_TOP_RIGHT, -2, kStatusH + 4);
+        s_scrollBtns.down = makeScrollBtn(LV_SYMBOL_DOWN, -1);
+        lv_obj_align(s_scrollBtns.down, LV_ALIGN_BOTTOM_RIGHT, -2, -4);
+    }
+    if (!s_depth) return;
+    lv_obj_t *root = s_stack[s_depth - 1].scr;
+    const bool modal = s_qm.bg || s_choice.bg || s_info.bg || s_saver.bg;
+    const bool show = !modal && lv_screen_active() == root && scrollTarget();
+    if (s_scrollBtns.padded && s_scrollBtns.padded != root) {
+        // Another screen is current: give the old one back its padding if it's
+        // still open underneath; if it was closed, it's gone.
+        for (int i = 0; i < s_depth; i++)
+            if (s_stack[i].scr == s_scrollBtns.padded) lv_obj_set_style_pad_right(s_scrollBtns.padded, s_scrollBtns.padWas, 0);
+        s_scrollBtns.padded = nullptr;
+    }
+    if (show && s_scrollBtns.padded != root) {
+        s_scrollBtns.padded = root;
+        s_scrollBtns.padWas = lv_obj_get_style_pad_right(root, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(root, kScrollBtnW + 6, 0);
+    } else if (!show && s_scrollBtns.padded == root) {
+        s_scrollBtns.padded = nullptr;
+        lv_obj_set_style_pad_right(root, s_scrollBtns.padWas, 0);
+    }
+    for (lv_obj_t *b : {s_scrollBtns.up, s_scrollBtns.down}) {
+        if (show == lv_obj_has_flag(b, LV_OBJ_FLAG_HIDDEN)) {
+            if (show) lv_obj_remove_flag(b, LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+#endif
+
 }  // namespace
 
 lv_obj_t *uiBuildSplash(const char *footer) { return buildSplash(footer); }
@@ -2957,4 +3068,7 @@ void uiLoop() {
         rebuildForTheme();
     }
     toastLoop();
+#if HAS_EINK
+    scrollButtonsLoop();
+#endif
 }
