@@ -532,6 +532,13 @@ bool labelFits(const lv_area_t &a) {
     return true;
 }
 
+// Width of an ASCII label (lv_text_get_width is private since LVGL 9.5).
+int32_t textWidth(const char *t, const lv_font_t *font) {
+    int32_t w = 0;
+    for (; *t; t++) w += lv_font_get_glyph_width(font, (uint8_t)t[0], (uint8_t)t[1]);
+    return w;
+}
+
 void addMarker(int sx, int sy, const char *text, lv_color_t color, bool highlight) {
     Map &m = *s_map;
     lv_obj_t *dot = lv_obj_create(m.markers);
@@ -546,7 +553,7 @@ void addMarker(int sx, int sy, const char *text, lv_color_t color, bool highligh
     lv_obj_set_style_border_width(dot, highlight ? 2 : 1, 0);
 
     const lv_area_t a = {sx + d / 2 + 1, sy - 8,
-                         sx + d / 2 + 1 + (int32_t)lv_text_get_width(text, strlen(text), &lv_font_montserrat_12, 0) + 4,
+                         sx + d / 2 + 1 + textWidth(text, &lv_font_montserrat_12) + 4,
                          sy + 7};
     if (!highlight && !labelFits(a)) return;
     if (s_labelCount < kMaxMarkers + 1) s_labels[s_labelCount++] = a;
