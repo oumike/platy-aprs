@@ -6,6 +6,7 @@
 static const char kWebUiHtml[] PROGMEM = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Platy APRS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 88 88'%3E%3Crect width='88' height='88' rx='14' fill='%2312161b'/%3E%3Cg fill='none' stroke='%233fa7ff' stroke-width='4' stroke-linecap='round'%3E%3Cpath d='M60 18a14 14 0 0 1 10 10'/%3E%3Cpath d='M62 8a24 24 0 0 1 18 18' opacity='0.6'/%3E%3C/g%3E%3Cellipse cx='17' cy='58' rx='12' ry='7' fill='%236d4c33' transform='rotate%28-12 17 58%29'/%3E%3Cellipse cx='40' cy='56' rx='22' ry='15' fill='%238d6748'/%3E%3Cellipse cx='32' cy='70' rx='6' ry='3' fill='%236d4c33'/%3E%3Cellipse cx='50' cy='70' rx='6' ry='3' fill='%236d4c33'/%3E%3Ccircle cx='56' cy='46' r='11' fill='%238d6748'/%3E%3Cpath d='M62 44 h14 a6 6 0 0 1 0 12 h-14 z' fill='%232a313b'/%3E%3Ccircle cx='57' cy='42' r='2.2' fill='%23f3f6fa'/%3E%3Ccircle cx='57.6' cy='42' r='1.1' fill='%2312161b'/%3E%3Cline x1='52' y1='36' x2='56' y2='22' stroke='%23ffb300' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='56' cy='21' r='2.6' fill='%23ffb300'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#111418;--card:#1b2027;--fg:#e6e6e6;--mut:#8a94a3;--acc:#3fa7ff;--bad:#ff6b6b;--ok:#4cd07d}
 *{box-sizing:border-box}body{margin:0;padding-bottom:64px;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
