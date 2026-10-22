@@ -52,8 +52,8 @@ on a network.
 
 <p align="center"><img src="screenshots/home.png" width="480" alt="The home menu under the status bar"></p>
 
-The home screen is a grid of buttons, two to a row (on 320-wide screens **Send beacon now** and **Status &
-connection info** read **Beacon** and **Status**). On the CrowPanels there is no **Status & connection info** button:
+The home screen is a grid of buttons, two to a row (where **Send beacon now** and **Status & connection info**
+don't fit on one line, as on 320-wide screens or with large text, they read **Beacon** and **Status**). On the CrowPanels there is no **Status & connection info** button:
 the same information, and the setup AP's QR code while it is on, stays on the left of the home screen with the
 buttons on the right. The **status bar** across the top of every screen shows your callsign, unread
 messages, the radio link (Bluetooth TNC or LoRa) and APRS-IS (each blinks on traffic), GPS, Wi-Fi, battery and

@@ -58,6 +58,10 @@ namespace {
 constexpr int kSb = 2;   // status-bar scale: drawn icons and the back button
 constexpr int kStatusH = 66;
 #define SB_FONT lv_font_montserrat_28
+#elif defined(DEVICE_CROWPANEL_35)
+constexpr int kSb = 2;
+constexpr int kStatusH = 44;
+#define SB_FONT lv_font_montserrat_24
 #else
 constexpr int kSb = 1;
 constexpr int kStatusH = 22;
@@ -2883,8 +2887,6 @@ void buildHome() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(nullptr, &grp);
 
-    // 320-wide screens get the short labels.
-    const bool narrow = lv_display_get_horizontal_resolution(nullptr) < 400;
     struct Tile {
         const char *icon, *label, *shortLabel;
         lv_event_cb_t cb;
@@ -2957,7 +2959,7 @@ void buildHome() {
         lv_obj_set_style_pad_all(b, 4, 0);
 
         lv_obj_t *l = lv_label_create(b);
-        lv_label_set_text_fmt(l, "%s  %s", t.icon, narrow && t.shortLabel ? t.shortLabel : t.label);
+        lv_label_set_text_fmt(l, "%s  %s", t.icon, t.label);
         lv_obj_set_width(l, lv_pct(100));
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -2969,6 +2971,19 @@ void buildHome() {
         if (!first) first = b;
     }
     lv_group_focus_obj(first);
+
+    // A label that would wrap (narrow screen, big text) takes its short form.
+    lv_obj_update_layout(grid);
+    for (int i = 0; i < kN; i++) {
+        if (!kTiles[i].shortLabel) continue;
+        lv_obj_t *l = lv_obj_get_child(lv_obj_get_child(grid, i), 0);
+        const lv_font_t *f = lv_obj_get_style_text_font(l, LV_PART_MAIN);
+        const char *txt = lv_label_get_text(l);
+        lv_text_attributes_t attr = {};
+        attr.letter_space = lv_obj_get_style_text_letter_space(l, LV_PART_MAIN);
+        if (lv_text_get_width(txt, strlen(txt), f, &attr) > lv_obj_get_content_width(l))
+            lv_label_set_text_fmt(l, "%s  %s", kTiles[i].icon, kTiles[i].shortLabel);
+    }
 
     pushScreen(scr, grp, refreshHome);
 #if HOME_STATUS_PANEL
