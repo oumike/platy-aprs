@@ -36,7 +36,16 @@ aprs::SmartBeaconParams params() {
     return p;
 }
 
-bool useSmart() { return g_config.beaconMode == BeaconMode::Gps && g_config.smart.enabled; }
+bool fixedSet() { return g_config.fixedLat != 0 || g_config.fixedLon != 0; }
+
+// GPS mode falls back to the fixed position when the receiver is turned off or
+// not sending anything (no module fitted). A short grace after boot lets it start.
+bool gpsFallback(const GpsFix &f) {
+    if (g_config.beaconMode != BeaconMode::Gps || !fixedSet()) return false;
+    return !f.enabled || (!f.alive && millis() > 15000);
+}
+
+bool useSmart() { return g_config.beaconMode == BeaconMode::Gps && g_config.smart.enabled && !gpsFallback(gpsFix()); }
 
 // Builds the report from GPS (preferred in GPS mode) or the fixed position.
 bool buildReport(aprs::PositionReport &r, int &course, String &err) {
@@ -46,7 +55,7 @@ bool buildReport(aprs::PositionReport &r, int &course, String &err) {
     r.messaging = true;
     course = 0;
     const GpsFix f = gpsFix();
-    const bool fixedSet = g_config.fixedLat != 0 || g_config.fixedLon != 0;
+    const bool fixedOk = fixedSet();
     if (f.valid && g_config.beaconMode != BeaconMode::Fixed) {
         r.lat = f.lat;
         r.lon = f.lon;
@@ -61,7 +70,7 @@ bool buildReport(aprs::PositionReport &r, int &course, String &err) {
         }
         return true;
     }
-    if (fixedSet && g_config.beaconMode != BeaconMode::Gps) {
+    if (fixedOk && (g_config.beaconMode != BeaconMode::Gps || gpsFallback(f))) {
         r.lat = g_config.fixedLat;
         r.lon = g_config.fixedLon;
         if (g_config.fixedAltM) {
@@ -72,7 +81,7 @@ bool buildReport(aprs::PositionReport &r, int &course, String &err) {
     }
     err = g_config.beaconMode == BeaconMode::Fixed ? "No fixed position set" : "No GPS fix";
     // Beacon now with mode off: use whatever we have.
-    if (g_config.beaconMode == BeaconMode::Off && fixedSet) {
+    if (g_config.beaconMode == BeaconMode::Off && fixedOk) {
         r.lat = g_config.fixedLat;
         r.lon = g_config.fixedLon;
         return true;
@@ -119,8 +128,8 @@ void beaconLoop() {
     }
     const uint32_t now = uptimeS();
     bool due;
-    if (mode == BeaconMode::Gps) {
-        const GpsFix f = gpsFix();
+    const GpsFix f = gpsFix();
+    if (mode == BeaconMode::Gps && !gpsFallback(f)) {
         if (!f.valid) {
             s_waiting = f.enabled ? "GPS fix" : "GPS (turned off)";
             return;
@@ -128,7 +137,7 @@ void beaconLoop() {
         due = useSmart() ? s_sb.due(now, f.speedKmh, f.course, params())
                          : (!s_sb.hasSent() || now - s_sb.lastS() >= g_config.beaconIntervalS);
     } else {
-        if (g_config.fixedLat == 0 && g_config.fixedLon == 0) {
+        if (!fixedSet()) {
             s_waiting = "fixed position";
             return;
         }
@@ -149,7 +158,10 @@ void beaconLoop() {
 BeaconStatus beaconStatus() {
     BeaconStatus b;
     const BeaconMode m = g_config.beaconMode;
-    b.mode = m == BeaconMode::Off ? "off" : m == BeaconMode::Fixed ? "fixed" : useSmart() ? "smart" : "gps";
+    b.mode = m == BeaconMode::Off ? "off" : m == BeaconMode::Fixed      ? "fixed"
+             : gpsFallback(gpsFix()) ? "gps (using fixed)"
+             : useSmart()            ? "smart"
+                                     : "gps";
     b.sentAny = s_sb.hasSent();
     b.lastAgoS = b.sentAny ? uptimeS() - s_sb.lastS() : 0;
     b.nextInS = -1;
