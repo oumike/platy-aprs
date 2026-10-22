@@ -128,6 +128,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
 <label>Theme</label><select data-k="device.theme"><option value="dark">Dark</option><option value="light">Light</option></select>
+<label>Text size</label><select data-k="device.textSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option><option value="xlarge">X-Large</option></select>
 <div class="ori"><label>Orientation</label><select data-k="device.orientation"><option value="landscape">Landscape</option><option value="landscape180">Landscape 180</option><option value="portrait">Portrait</option><option value="portrait180">Portrait 180</option></select></div>
 <div class="snd"><label>Alert sound</label><select data-k="device.sound"><option value="default">Default</option><option value="chirpy">Chirpy</option><option value="bass">Bass</option><option value="off">Off</option></select></div>
 <div class="vol"><label>Volume</label><select data-k="device.volume" data-t="num"><option>0</option><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></div>

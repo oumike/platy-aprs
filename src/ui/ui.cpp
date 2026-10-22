@@ -35,6 +35,15 @@
 
 LV_FONT_DECLARE(font_star_14);
 
+const lv_font_t *uiFont(int px) {
+    static const lv_font_t *const kFonts[] = {&lv_font_montserrat_10, &lv_font_montserrat_12,
+                                              &lv_font_montserrat_14, &lv_font_montserrat_16,
+                                              &lv_font_montserrat_18, &lv_font_montserrat_20,
+                                              &lv_font_montserrat_22, &lv_font_montserrat_24};
+    int i = (px - 10) / 2 + ((int)g_config.textSize - (int)TextSize::Medium);
+    return kFonts[std::max(0, std::min(i, 7))];
+}
+
 namespace {
 
 constexpr int kStatusH = 22;
@@ -83,6 +92,7 @@ constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileTe
 constexpr uint32_t kMsgTileUnread = 0xFFB347;
 constexpr int kModalRadius = 12;   // pop-ups and toasts
 UiTheme s_appliedTheme = UiTheme::Dark;
+TextSize s_appliedTextSize = TextSize::Medium;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
     const bool isBtn = lv_obj_check_type(obj, &lv_button_class);
@@ -139,6 +149,7 @@ void themeColors(bool light) {
 void themeInit() {
     const bool light = g_config.theme == UiTheme::Light;
     s_appliedTheme = g_config.theme;
+    s_appliedTextSize = g_config.textSize;
     themeColors(light);
     lv_style_t *styles[] = {&s_stFocus, &s_stCursor, &s_stScreen, &s_stSurface, &s_stTile,
                             &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList};
@@ -193,7 +204,7 @@ void themeInit() {
     lv_theme_t *base = lv_theme_default_get();
     const lv_color_t primary = base ? base->color_primary : lv_palette_main(LV_PALETTE_BLUE);
     const lv_color_t secondary = base ? base->color_secondary : lv_palette_main(LV_PALETTE_RED);
-    base = lv_theme_default_init(nullptr, primary, secondary, !light, LV_FONT_DEFAULT);
+    base = lv_theme_default_init(nullptr, primary, secondary, !light, uiFont(14));
     s_theme = *base;
     lv_theme_set_parent(&s_theme, base);
     lv_theme_set_apply_cb(&s_theme, themeApply);
@@ -212,7 +223,7 @@ lv_obj_t *newScreen(const char *title, lv_group_t **grpOut) {
     if (title) {
         lv_obj_t *t = lv_label_create(scr);
         lv_label_set_text(t, title);
-        lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(t, uiFont(16), 0);
     }
     *grpOut = lv_group_create();
     return scr;
@@ -409,7 +420,7 @@ void buildStatusBar() {
     lv_obj_set_style_bg_color(bar, kBarBg, 0);
     lv_obj_set_style_pad_hor(bar, 6, 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
-    lv_obj_set_style_text_font(bar, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(bar, &lv_font_montserrat_12, 0);   // fixed: the bar height is fixed
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -643,7 +654,7 @@ int focusedIndex(lv_obj_t *list) {
 }
 
 lv_obj_t *addWrapItem(lv_obj_t *list, lv_group_t *grp, const char *text, lv_event_cb_t cb, void *ud,
-                      const lv_font_t *font = &lv_font_montserrat_12) {
+                      const lv_font_t *font = uiFont(12)) {
     lv_obj_t *b = lv_list_add_button(list, nullptr, text);
     lv_obj_t *l = lv_obj_get_child(b, 0);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
@@ -660,7 +671,7 @@ lv_obj_t *makeNote(lv_obj_t *parent, const char *text) {
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(l, lv_pct(100));
     lv_obj_set_style_text_color(l, kGrey, 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, uiFont(12), 0);
     lv_label_set_text(l, text);
     return l;
 }
@@ -691,7 +702,7 @@ lv_obj_t *addRow(lv_obj_t *list, lv_group_t *grp, bool fav, const char *text, co
     lv_label_set_text(l, text);
     lv_obj_set_flex_grow(l, 1);
     lv_obj_t *r = lv_label_create(b);
-    lv_obj_set_style_text_font(r, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(r, uiFont(12), 0);
     lv_obj_set_style_text_color(r, kDimText, 0);
     lv_label_set_text(r, right);
     if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
@@ -890,7 +901,7 @@ void openStationDetail(const char *call) {
     s_stDetail = lv_label_create(box);
     lv_obj_set_width(s_stDetail, lv_pct(100));
     lv_label_set_long_mode(s_stDetail, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(s_stDetail, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(s_stDetail, uiFont(12), 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_stDetail = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshStationDetail);
 }
@@ -1086,7 +1097,7 @@ void openQuickPicker(lv_obj_t *target) {
         if (!g_config.quickMsgs[i].length()) continue;
         addWrapItem(list, s_qm.grp, g_config.quickMsgs[i].c_str(),
                     [](lv_event_t *e) { s_pendingQuick = (int)(uintptr_t)lv_event_get_user_data(e); },
-                    (void *)(uintptr_t)i, &lv_font_montserrat_14);
+                    (void *)(uintptr_t)i, uiFont(14));
     }
     if (!lv_obj_get_child_count(list))
         makeNote(box, "No quick messages set. Add them under Settings > Quick messages or in the web config.");
@@ -1230,7 +1241,7 @@ void openMessageDetail(const ChatMsg &m) {
     lv_obj_t *l = lv_label_create(box);
     lv_obj_set_width(l, lv_pct(100));
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, uiFont(12), 0);
     lv_label_set_text(l, t.c_str());
     pushScreen(scr, grp);
 }
@@ -1353,8 +1364,9 @@ volatile int s_pendingChoice = -2;   // -2 none, -1 cancel, else the option inde
 bool s_choiceToggle;
 
 // focus: the option focused first; -1 focuses Cancel (for confirmations).
+// grid: options two to a row (Cancel still spans the box).
 void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int n, ChoiceFn fn, int focus = 0,
-                const char *toggle = nullptr) {
+                const char *toggle = nullptr, bool grid = false) {
     if (s_choice.bg) return;
     oskHide();
     s_choice.fn = fn;
@@ -1378,8 +1390,9 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     lv_obj_set_style_max_height(box, lv_pct(96), 0);
     lv_obj_center(box);
     lv_obj_set_style_pad_all(box, 8, 0);
-    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_flow(box, grid ? LV_FLEX_FLOW_ROW_WRAP : LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(box, 6, 0);
+    lv_obj_set_style_pad_column(box, 6, 0);
     lv_obj_t *t = lv_label_create(box);
     lv_obj_set_width(t, lv_pct(100));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
@@ -1400,11 +1413,20 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
         }, LV_EVENT_VALUE_CHANGED, nullptr);
         lv_group_add_obj(s_choice.grp, cb);
     }
+    if (grid) lv_obj_update_layout(box);
     lv_obj_t *focusBtn = nullptr;
     for (int i = 0; i <= n; i++) {
         lv_obj_t *b = lv_button_create(box);
-        lv_obj_set_width(b, lv_pct(100));
-        lv_label_set_text(lv_label_create(b), i < n ? opts[i].label : "Cancel");
+        if (grid && i < n) {
+            // Two per row: half the content width less half the column gap.
+            lv_obj_set_width(b, (lv_obj_get_content_width(box) - 6) / 2);
+            lv_obj_set_height(b, 56);
+        } else {
+            lv_obj_set_width(b, lv_pct(100));
+        }
+        lv_obj_t *bl = lv_label_create(b);
+        lv_label_set_text(bl, i < n ? opts[i].label : "Cancel");
+        if (grid) lv_obj_center(bl);
         if (i < n && opts[i].danger) lv_obj_set_style_bg_color(b, lv_palette_main(LV_PALETTE_RED), 0);
         lv_obj_add_event_cb(b, [](lv_event_t *e) {
             s_pendingChoice = (int)(intptr_t)lv_event_get_user_data(e);
@@ -1762,7 +1784,7 @@ void openWifi(bool scan) {
     s_wifi.info = lv_label_create(scr);
     lv_label_set_long_mode(s_wifi.info, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_wifi.info, lv_pct(100));
-    lv_obj_set_style_text_font(s_wifi.info, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(s_wifi.info, uiFont(12), 0);
     lv_obj_t *b = lv_button_create(scr);
     lv_label_set_text(lv_label_create(b), LV_SYMBOL_REFRESH " Scan for networks");
     lv_obj_add_event_cb(b, [](lv_event_t *) { wifiScanUi(); }, LV_EVENT_CLICKED, nullptr);
@@ -1805,7 +1827,7 @@ void addBondRow(lv_obj_t *parent, lv_group_t *grp, const String &info, const cha
     lv_obj_t *l = lv_label_create(row);
     lv_obj_add_style(l, &s_stRow, 0);
     lv_obj_set_style_pad_all(l, 6, 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, uiFont(12), 0);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
     lv_obj_set_flex_grow(l, 1);
     lv_label_set_text(l, info.c_str());
@@ -1942,7 +1964,7 @@ void openTnc() {
         lv_obj_set_style_pad_ver(b, 4, 0);
         lv_obj_t *l = lv_label_create(b);
         lv_label_set_text(l, txt);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(l, uiFont(12), 0);
         lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
         lv_obj_set_width(l, lv_pct(100));
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -2028,7 +2050,7 @@ void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
         }
         lv_obj_t *b = addWrapItem(list, grp, line.c_str(), [](lv_event_t *e) {
             restoreFromSd((size_t)(uintptr_t)lv_event_get_user_data(e));
-        }, (void *)(uintptr_t)s_restore.names.size(), &lv_font_montserrat_14);
+        }, (void *)(uintptr_t)s_restore.names.size(), uiFont(14));
         if (!first) first = b;
         s_restore.names.push_back(f.name);
     }
@@ -2066,7 +2088,7 @@ lv_obj_t *buildSplash(const char *footer) {
     if (footer) {
         lv_obj_t *foot = lv_label_create(scr);
         lv_label_set_text(foot, footer);
-        lv_obj_set_style_text_font(foot, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(foot, uiFont(12), 0);
         lv_obj_set_style_text_color(foot, lv_color_hex(0x9FC7D6), 0);
         lv_obj_set_style_text_align(foot, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -8);
@@ -2088,7 +2110,7 @@ lv_obj_t *buildSplash(const char *footer) {
 
     lv_obj_t *cq = lv_label_create(scr);
     lv_label_set_text(cq, "CQ CQ");
-    lv_obj_set_style_text_font(cq, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(cq, uiFont(16), 0);
     lv_obj_set_style_text_color(cq, lv_color_hex(0x15506A), 0);
     lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(cq, 88);
@@ -2096,14 +2118,14 @@ lv_obj_t *buildSplash(const char *footer) {
 
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, APP_NAME);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(title, uiFont(20), 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, top + 138);
 
     if (footer) return scr;
     lv_obj_t *tag = lv_label_create(scr);
     lv_label_set_text(tag, "APRS in your pocket");
-    lv_obj_set_style_text_font(tag, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(tag, uiFont(14), 0);
     lv_obj_set_style_text_color(tag, lv_color_hex(0xFFC440), 0);
     lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, top + 164);
     return scr;
@@ -2308,6 +2330,7 @@ void addBrightnessRow(lv_obj_t *list, lv_group_t *grp) {
 bool s_themeFromSettings = false;
 lv_obj_t *s_themeItem = nullptr;  // in the newest Settings screen
 lv_obj_t *s_orientItem = nullptr;
+lv_obj_t *s_textSizeItem = nullptr;
 lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
 Orientation s_appliedOrient = Orientation::Landscape;
 
@@ -2416,14 +2439,32 @@ void openSettings() {
     });
     s_themeItem = th;
     lv_label_set_text(lv_obj_get_child(th, 1), g_config.theme == UiTheme::Light ? "Theme: Light" : "Theme: Dark");
+    lv_obj_t *ts = addItem(list, grp, LV_SYMBOL_EDIT, "", [](lv_event_t *) {
+        static const ChoiceOpt kOpts[] = {{"Small", false}, {"Medium", false}, {"Large", false}, {"X-Large", false}};
+        openChoice("Text size", nullptr, kOpts, 4, [](int pick) {
+            if ((TextSize)pick == g_config.textSize) return;
+            // uiLoop() sees the change and rebuilds the UI with the new fonts.
+            g_config.textSize = (TextSize)pick;
+            configSave();
+            s_themeFromSettings = true;
+            s_refocusItem = &s_textSizeItem;
+        }, (int)g_config.textSize, nullptr, true);
+    });
+    s_textSizeItem = ts;
+    lv_label_set_text(lv_obj_get_child(ts, 1), (String("Text size: ") + textSizeLabel(g_config.textSize)).c_str());
     s_orientItem = nullptr;
     if (displayCanRotate()) {
         lv_obj_t *ori = addItem(list, grp, LV_SYMBOL_REFRESH, "", [](lv_event_t *) {
-            // uiLoop() rotates the display and rebuilds the UI.
-            g_config.orientation = (Orientation)(((uint8_t)g_config.orientation + 1) % 4);
-            configSave();
-            s_themeFromSettings = true;
-            s_refocusItem = &s_orientItem;
+            static const ChoiceOpt kOpts[] = {{"Landscape", false}, {"Landscape 180", false},
+                                              {"Portrait", false}, {"Portrait 180", false}};
+            openChoice("Orientation", nullptr, kOpts, 4, [](int pick) {
+                if ((Orientation)pick == g_config.orientation) return;
+                // uiLoop() rotates the display and rebuilds the UI.
+                g_config.orientation = (Orientation)pick;
+                configSave();
+                s_themeFromSettings = true;
+                s_refocusItem = &s_orientItem;
+            }, (int)g_config.orientation, nullptr, true);
         });
         s_orientItem = ori;
         lv_label_set_text(lv_obj_get_child(ori, 1),
@@ -2615,7 +2656,7 @@ void buildHome() {
         lv_obj_set_width(l, lv_pct(100));
         lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(l, uiFont(16), 0);
         lv_obj_center(l);
 
         lv_obj_add_event_cb(b, t.cb, LV_EVENT_CLICKED, nullptr);
@@ -2793,7 +2834,7 @@ void uiLoop() {
             displaySetOrientation((uint8_t)s_appliedOrient);
             rebuildForTheme();
         }
-    } else if (g_config.theme != s_appliedTheme) {
+    } else if (g_config.theme != s_appliedTheme || g_config.textSize != s_appliedTextSize) {
         rebuildForTheme();
     }
     toastLoop();

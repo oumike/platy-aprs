@@ -8,3 +8,6 @@ void uiShowSplash();
 lv_obj_t *uiBuildSplash(const char *footer);
 void uiBegin();
 void uiLoop();
+// The Montserrat font for a design size (12, 14, 16, 20 at Medium), shifted
+// one step (2 px) per text-size level from g_config.textSize.
+const lv_font_t *uiFont(int px);

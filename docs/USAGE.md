@@ -69,7 +69,7 @@ the time.
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
-(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Orientation (CrowPanel and Wio Tracker L2: Landscape, Landscape 180, Portrait or Portrait 180; also on the web Device tab) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -190,6 +190,8 @@ comment, and the digipeater path (default `WIDE1-1,WIDE2-1`).
 - **GPS** at a fixed interval (SmartBeaconing off).
 - **Fixed position**: a latitude, longitude and altitude you enter, beaconed at the interval.
 - **Off**.
+
+In GPS mode, if the GPS is turned off or not responding (no module fitted), the beacon uses the fixed position instead, when one is set. A working GPS that is still waiting for a fix keeps waiting.
 
 Beacons go out once a callsign is set and the radio link (or APRS-IS) is up. **Send beacon now** is on the home
 screen, under **Settings → GPS & beacon**, and on the Beacon tab. To avoid flooding the channel, no beacon

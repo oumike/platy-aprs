@@ -1,4 +1,5 @@
 #include "map_view.h"
+#include "ui.h"
 #include "hal/board_pins.h"
 
 #include <Arduino.h>
@@ -553,14 +554,14 @@ void addMarker(int sx, int sy, const char *text, lv_color_t color, bool highligh
     lv_obj_set_style_border_width(dot, highlight ? 2 : 1, 0);
 
     const lv_area_t a = {sx + d / 2 + 1, sy - 8,
-                         sx + d / 2 + 1 + textWidth(text, &lv_font_montserrat_12) + 4,
+                         sx + d / 2 + 1 + textWidth(text, uiFont(12)) + 4,
                          sy + 7};
     if (!highlight && !labelFits(a)) return;
     if (s_labelCount < kMaxMarkers + 1) s_labels[s_labelCount++] = a;
 
     lv_obj_t *l = lv_label_create(m.markers);
     lv_label_set_text(l, text);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, uiFont(12), 0);
     lv_obj_set_style_text_color(l, highlight ? lv_color_white() : lv_color_black(), 0);
     lv_obj_set_style_bg_color(l, highlight ? lv_color_hex(0x1565c0) : lv_color_white(), 0);
     lv_obj_set_style_bg_opa(l, highlight ? LV_OPA_COVER : LV_OPA_70, 0);
@@ -856,7 +857,7 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
     m->info = lv_label_create(root);
     lv_obj_set_width(m->info, w);
     lv_obj_align(m->info, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_text_font(m->info, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(m->info, uiFont(12), 0);
     lv_obj_set_style_text_color(m->info, lv_color_white(), 0);
     lv_obj_set_style_bg_color(m->info, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(m->info, LV_OPA_60, 0);

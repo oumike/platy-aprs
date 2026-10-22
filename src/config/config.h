@@ -14,6 +14,10 @@ enum class UiTheme : uint8_t { Dark, Light };
 enum class Orientation : uint8_t { Landscape, Landscape180, Portrait, Portrait180 };
 const char *orientationKey(Orientation o);     // "landscape", "landscape180", ...
 const char *orientationLabel(Orientation o);   // "Landscape", "Landscape 180", ...
+// UI text size; Medium is the original size.
+enum class TextSize : uint8_t { Small, Medium, Large, XLarge };
+const char *textSizeKey(TextSize t);     // "small", "medium", "large", "xlarge"
+const char *textSizeLabel(TextSize t);   // "Small", "Medium", "Large", "X-Large"
 // New-message light colour, on boards with an RGB status LED (Mesh Deck).
 enum class LedColor : uint8_t { Off, Red, Green, Blue, Yellow, Cyan, Magenta, White };
 constexpr uint8_t kLedColorCount = 8;
@@ -95,6 +99,7 @@ struct AppConfig {
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
     UiTheme theme = UiTheme::Dark;
     Orientation orientation = Orientation::Landscape;
+    TextSize textSize = TextSize::Medium;
     LedColor ledColor = LedColor::Blue;   // new-message blink; LED boards only
     uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never (LED and keyboard)
     bool kbBlink = true;                  // T-Deck keyboard backlight blink, screen off
