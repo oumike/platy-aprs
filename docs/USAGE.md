@@ -143,6 +143,7 @@ goes back. The screen is 480×222.
 | **Sym** + Enter | Next field |
 | **Sym** + Backspace | Back |
 | **Sym** + Space | Home screen |
+| **Sym** + F (outside a text field) | Star / unstar the selected conversation |
 
 Shift and Sym apply to the next key only, and lapse after 1.5 seconds.
 
@@ -209,7 +210,7 @@ conversation or start a **New message** to a callsign.
 - The list button next to the message box opens your five **quick messages**; picking one fills it in. It
   sits left of the box on touch screens and right of it on the M9, where pressing **Right** with the cursor at
   the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
-- Star a conversation to keep it at the top (**Alt+F** on the T-Deck and Mesh Deck keyboards).
+- Star a conversation to keep it at the top (**Alt+F** on the T-Deck and Mesh Deck keyboards, **Sym+F** on the Pager).
 - **Mark all as read** and **Delete all messages** sit above New message; deleting asks first and keeps starred
   conversations unless you turn on **Include starred conversations**.
 - Long-press a conversation for **Mark as read** or **Delete**. With keys, focus it and press **Right**

@@ -67,7 +67,7 @@ uint32_t s_modMs = 0;
 
 // Plain and Sym per key number - 1 (camillia-mt's map). Shift capitalises
 // letters. Sym+Backspace is Back and Sym+Space is Home: the keyboard has no
-// navigation keys of its own.
+// navigation keys of its own. Sym+F ('-') outside a text field stars (keyboard.cpp).
 const uint8_t kMap[kKeyCount][2] = {
     {'q', '1'}, {'w', '2'}, {'e', '3'}, {'r', '4'}, {'t', '5'},
     {'y', '6'}, {'u', '7'}, {'i', '8'}, {'o', '9'}, {'p', '0'},

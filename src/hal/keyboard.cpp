@@ -234,6 +234,10 @@ void readCb(lv_indev_t *indev, lv_indev_data_t *data) {
         // No Back key: Backspace outside a text field navigates back.
         if (raw == RK_BKSP && !focusedIsTextarea()) raw = RK_BACK;
 #endif
+#if defined(DEVICE_TLORA_PAGER)
+        // No Alt: Sym+F ('-') outside a text field is the Alt+F favorite toggle.
+        if (raw == '-' && !focusedIsTextarea()) raw = RK_FAVORITE;
+#endif
         if (s_hotkey && s_hotkey(raw)) continue;
         const uint32_t key = mapKey(raw);
         if (!key) continue;
