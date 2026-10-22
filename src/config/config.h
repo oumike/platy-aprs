@@ -10,6 +10,13 @@ enum class AlertSound : uint8_t { Default, Chirpy, Bass, Off };
 constexpr uint8_t kAlertSoundCount = 4;
 const char *alertSoundKey(AlertSound s);   // JSON value: "default", "chirpy", ...
 enum class UiTheme : uint8_t { Dark, Light };
+// New-message light colour, on boards with an RGB status LED (Mesh Deck).
+enum class LedColor : uint8_t { Off, Red, Green, Blue, Yellow, Cyan, Magenta, White };
+constexpr uint8_t kLedColorCount = 8;
+const char *ledColorKey(LedColor c);   // JSON value: "off", "red", ...
+// Blink timeout choices in seconds; 0 = never stop while messages are unread.
+extern const uint16_t kLedTimeoutSecs[];
+extern const int kLedTimeoutCount;
 
 struct SmartBeaconConfig {
     bool enabled = true;
@@ -83,6 +90,8 @@ struct AppConfig {
     uint8_t brightness = 160;
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
     UiTheme theme = UiTheme::Dark;
+    LedColor ledColor = LedColor::Blue;   // new-message blink; LED boards only
+    uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never
     bool screenSaver = true;      // at the timeout: screensaver (true) or screen off
     bool otaAutoInstall = false;  // install a newer release without asking
     String timezone = "EST5EDT,M3.2.0,M11.1.0";

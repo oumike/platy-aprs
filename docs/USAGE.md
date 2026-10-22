@@ -68,7 +68,7 @@ the time.
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Sound and Volume
-(see [Sound](#sound)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light and Light timeout (Mesh Deck, see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -240,6 +240,15 @@ silences every alert. On the T-Deck Plus and Wio Tracker L2 (speakers), **Settin
 100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck and CrowPanel have no sound.
 Both are also on the web **Device** tab.
 
+## Message light
+
+The Mesh Deck's RGB lights (the one on the front and one on each keyboard half) double-blink once a second
+when a message arrives, even with the sound off. **Settings → Message light** steps through **Red**, **Green**,
+**Blue** (the default), **Yellow**, **Cyan**, **Magenta**, **White** and **Off**, blinking each.
+**Settings → Light timeout** sets how long the blinking lasts after the newest message: 5, 10, 15 (the default) or
+30 seconds, 1, 2 or 5 minutes, or **Never** (until the messages are read). Reading the messages stops it
+sooner. Both are also on the web **Device** tab. The other boards have no such light.
+
 ## Screen timeout
 
 After the screen timeout with no input, the backlight dims for the last 10 seconds and then the screen locks:
@@ -312,7 +321,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light and its timeout (Mesh Deck), brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |

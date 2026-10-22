@@ -1,5 +1,6 @@
 #include "messages.h"
 #include "alerts.h"
+#include "notify_led.h"
 #include "aprs/aprs_encoder.h"
 #include "ax25/ax25.h"
 #include <algorithm>
@@ -262,6 +263,7 @@ void messagesOnRx(const aprs::Packet &p, MsgVia via, const char *path, const cha
     strlcpy(m.relay, relay ? relay : "", sizeof(m.relay));
     changed();
     alertPlay(Alert::Message);
+    notifyLedMessage();
     Serial.printf("[msg] from %s: %s\n", m.peer, m.text);
     if (s_hook) s_hook(m);
 }

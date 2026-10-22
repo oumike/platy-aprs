@@ -14,6 +14,15 @@ const char *alertSoundKey(AlertSound s) {
     }
 }
 
+const char *ledColorKey(LedColor c) {
+    static const char *const kKeys[kLedColorCount] = {"off", "red", "green", "blue",
+                                                       "yellow", "cyan", "magenta", "white"};
+    return (uint8_t)c < kLedColorCount ? kKeys[(uint8_t)c] : "off";
+}
+
+const uint16_t kLedTimeoutSecs[] = {5, 10, 15, 30, 60, 120, 300, 0};
+const int kLedTimeoutCount = sizeof(kLedTimeoutSecs) / sizeof(kLedTimeoutSecs[0]);
+
 static const char *kPath = "/config.json";
 
 String AppConfig::fullCallsign() const {
@@ -111,6 +120,8 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["screenOnSecs"] = c.screenOnSecs;
     d["screenSaver"] = c.screenSaver;
     d["theme"] = c.theme == UiTheme::Light ? "light" : "dark";
+    d["ledColor"] = ledColorKey(c.ledColor);
+    d["ledTimeoutSecs"] = c.ledTimeoutSecs;
     d["otaAutoInstall"] = c.otaAutoInstall;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
@@ -253,6 +264,17 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         takeNum(d, "screenOnSecs", c.screenOnSecs);
         take(d, "screenSaver", c.screenSaver);
         if (d["theme"].is<const char *>()) c.theme = !strcmp(d["theme"].as<const char *>(), "light") ? UiTheme::Light : UiTheme::Dark;
+        if (d["ledColor"].is<const char *>()) {
+            const char *s = d["ledColor"].as<const char *>();
+            for (uint8_t i = 0; i < kLedColorCount; i++)
+                if (!strcmp(s, ledColorKey((LedColor)i))) c.ledColor = (LedColor)i;
+        }
+        if (d["ledTimeoutSecs"].is<long>()) {
+            // Only the offered choices; anything else keeps the current one.
+            const long v = d["ledTimeoutSecs"].as<long>();
+            for (int i = 0; i < kLedTimeoutCount; i++)
+                if (v == kLedTimeoutSecs[i]) c.ledTimeoutSecs = kLedTimeoutSecs[i];
+        }
         take(d, "otaAutoInstall", c.otaAutoInstall);
         takeStr(d, "timezone", c.timezone);
         String pw;

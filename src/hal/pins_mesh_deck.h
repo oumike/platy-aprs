@@ -10,6 +10,7 @@
 #define HAS_KEYBOARD       1    // keyboard module: no on-screen keyboard
 #define HAS_BUZZER         0
 #define HAS_SD_CARD        0
+#define HAS_NOTIFY_LED     1    // RGB LEDs: front (0x59 P10-12) and each keyboard half
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         0
 

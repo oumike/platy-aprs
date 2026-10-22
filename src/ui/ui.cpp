@@ -11,6 +11,7 @@
 #include "net/aprs_is.h"
 #include "net/wifi_manager.h"
 #include "services/alerts.h"
+#include "services/notify_led.h"
 #include "services/backup.h"
 #include "services/beacon.h"
 #include "services/messages.h"
@@ -1974,6 +1975,28 @@ void openSettings() {
             });
             setVolumeLabel(vol);
         }
+    }
+    if (notifyLedPresent()) {
+        // Each press moves to the next colour and blinks it once.
+        lv_obj_t *led = addItem(list, grp, LV_SYMBOL_CHARGE, "", [](lv_event_t *e) {
+            g_config.ledColor = (LedColor)(((uint8_t)g_config.ledColor + 1) % kLedColorCount);
+            configSave();
+            notifyLedPreview(g_config.ledColor);
+            lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
+                              (String("Message light: ") + ledColorLabel(g_config.ledColor)).c_str());
+        });
+        lv_label_set_text(lv_obj_get_child(led, 1),
+                          (String("Message light: ") + ledColorLabel(g_config.ledColor)).c_str());
+        lv_obj_t *lto = addItem(list, grp, LV_SYMBOL_CHARGE, "", [](lv_event_t *e) {
+            int i = 0;
+            while (i < kLedTimeoutCount && kLedTimeoutSecs[i] != g_config.ledTimeoutSecs) i++;
+            g_config.ledTimeoutSecs = kLedTimeoutSecs[(i + 1) % kLedTimeoutCount];
+            configSave();
+            lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
+                              (String("Light timeout: ") + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
+        });
+        lv_label_set_text(lv_obj_get_child(lto, 1),
+                          (String("Light timeout: ") + ledTimeoutLabel(g_config.ledTimeoutSecs)).c_str());
     }
     if (sdHasSlot())
         addItem(list, grp, LV_SYMBOL_SD_CARD, "Backup settings to SD card", [](lv_event_t *) { backupToSdNow(); });

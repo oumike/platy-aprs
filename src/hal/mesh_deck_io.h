@@ -13,3 +13,5 @@ bool meshDeckKeyboardPresent();
 // Scans the matrix and writes the keys pressed since the last scan to out (ASCII
 // or keys.h codes, modifiers applied); returns how many.
 int meshDeckKeyboardScan(uint8_t *out, int max);
+// The RGB status LED on the front and the one on each keyboard half, together.
+void meshDeckSetLed(bool r, bool g, bool b);

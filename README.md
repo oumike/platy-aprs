@@ -12,7 +12,7 @@ configured from the device or a built-in web page.
 - **Two radio links:** a Bluetooth LE KISS TNC (BTECH/Vero VR-N76 and VR-N7600, Mobilinkd TNC3/TNC4, or any BLE
   KISS device), or the built-in LoRa radio running LoRa APRS.
 - **Beaconing** from GPS with SmartBeaconing, at a fixed interval, or from a fixed position.
-- **Messaging** with acks and retries, quick messages, favorites and new-message alerts.
+- **Messaging** with acks and retries, quick messages, favorites and new-message alerts (sound, and a blinking light on the Mesh Deck).
 - **Stations, a live packet monitor and a map** with offline OpenStreetMap tiles and a heat map of activity.
 - **APRS-IS client, iGate (RF → IS and IS → RF messages) and WIDE1-1 digipeater.**
 - **Web interface** for every setting, plus messaging, monitoring and a JSON API.

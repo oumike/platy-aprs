@@ -1,6 +1,7 @@
 #include "alerts.h"
 #include "hal/audio.h"
 #include "hal/board_pins.h"
+#include "notify_led.h"
 
 namespace {
 #define SEQ(name, ...) const Tone name[] = {__VA_ARGS__}
@@ -73,4 +74,7 @@ const char *alertSoundLabel(AlertSound s) {
     }
 }
 
-void alertsLoop() { audioLoop(); }
+void alertsLoop() {
+    audioLoop();
+    notifyLedLoop();
+}

@@ -157,6 +157,8 @@ namespace {
 
 constexpr uint8_t kKbAddr[2] = {MD_KB_LEFT_ADDR, MD_KB_RIGHT_ADDR};
 constexpr uint8_t kP1Rows = 0x1F, kP1LedOff = 0xE0;   // P15..P17: the half's RGB LED, active low
+// The LED bits ride along in every row write, so the scan keeps them as set.
+uint8_t s_kbLed = kP1LedOff;
 constexpr uint8_t kReleaseScans = 2;
 
 // Modifiers are matrix keys. Codes below 0x08 never reach the UI.
@@ -188,7 +190,7 @@ uint8_t s_kbRelCount[2][5] = {};
 bool kbConfigure(uint8_t half) {
     const uint8_t a = kKbAddr[half];
     return writeReg(a, kAwConfig0, 0xFF) && writeReg(a, kAwConfig1, 0x00) &&   // columns in, rows out
-           writeReg(a, kAwOutput0, 0x00) && writeReg(a, kAwOutput1, kP1Rows | kP1LedOff);
+           writeReg(a, kAwOutput0, 0x00) && writeReg(a, kAwOutput1, kP1Rows | s_kbLed);
 }
 
 // Pressed-bit mask per row. The idle rows are driven high, as the working
@@ -196,7 +198,7 @@ bool kbConfigure(uint8_t half) {
 bool kbScanHalf(uint8_t half, uint8_t rows[5]) {
     const uint8_t a = kKbAddr[half];
     for (uint8_t r = 0; r < 5; r++) {
-        if (!writeReg(a, kAwOutput1, (uint8_t)((kP1Rows & ~(1u << r)) | kP1LedOff))) return false;
+        if (!writeReg(a, kAwOutput1, (uint8_t)((kP1Rows & ~(1u << r)) | s_kbLed))) return false;
         delayMicroseconds(50);
         uint8_t cols;
         if (!readRegs(a, kAwInput0, &cols, 1)) return false;
@@ -204,7 +206,7 @@ bool kbScanHalf(uint8_t half, uint8_t rows[5]) {
         // A whole row down is a glitched read (0x00), not five fingers.
         if (rows[r] == 0x1F) return false;
     }
-    writeReg(a, kAwOutput1, kP1Rows | kP1LedOff);
+    writeReg(a, kAwOutput1, kP1Rows | s_kbLed);
     return true;
 }
 
@@ -277,6 +279,30 @@ bool meshDeckKeyboardBegin() {
 }
 
 bool meshDeckKeyboardPresent() { return s_kbReady[0] || s_kbReady[1]; }
+
+// The front LED is P10 red, P11 green, P12 blue on the 0x59 expander; each
+// keyboard half has its own on P17 red, P16 green, P15 blue. All active low.
+void meshDeckSetLed(bool r, bool g, bool b) {
+    if (s_expander) {
+        constexpr uint8_t kMask = 0x07;
+        static bool configured = false;
+        uint8_t out = 0xFF;
+        if (readRegs(MD_EXPANDER_ADDR, kAwOutput1, &out, 1)) {
+            out = (uint8_t)((out | kMask) & ~((r ? 1u : 0u) | (g ? 2u : 0u) | (b ? 4u : 0u)));
+            writeReg(MD_EXPANDER_ADDR, kAwOutput1, out);
+            if (!configured) {
+                // Outputs only after the level is set, so it never flashes on.
+                // P13..P17 keep their direction (P13 is the touch reset).
+                uint8_t cfg = 0xFF;
+                if (readRegs(MD_EXPANDER_ADDR, kAwConfig1, &cfg, 1))
+                    configured = writeReg(MD_EXPANDER_ADDR, kAwConfig1, (uint8_t)(cfg & ~kMask));
+            }
+        }
+    }
+    s_kbLed = (uint8_t)(kP1LedOff & ~((r ? 0x80u : 0u) | (g ? 0x40u : 0u) | (b ? 0x20u : 0u)));
+    for (uint8_t h = 0; h < 2; h++)
+        if (s_kbReady[h]) writeReg(kKbAddr[h], kAwOutput1, kP1Rows | s_kbLed);
+}
 
 int meshDeckKeyboardScan(uint8_t *out, int max) {
     uint8_t fresh[5];

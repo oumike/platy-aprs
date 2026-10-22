@@ -1,6 +1,7 @@
 #include <lvgl.h>
 #include "web_server.h"
 #include "config/config.h"
+#include "services/notify_led.h"
 #include "hal/audio.h"
 #include "hal/board.h"
 #include "hal/display.h"
@@ -82,6 +83,7 @@ void handleGetConfig() {
     JsonObject caps = doc["caps"].to<JsonObject>();
     caps["sound"] = audioPresent();
     caps["volume"] = audioHasVolume();
+    caps["led"] = notifyLedPresent();
     sendJson(200, doc);
 }
 
