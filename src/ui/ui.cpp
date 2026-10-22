@@ -912,10 +912,50 @@ struct {
     uint32_t favGen;
     uint32_t lastBuildS;
     char calls[60][10];
+    uint16_t packets[60];   // per row, to spot stations heard again
+    size_t shown;
+    bool built;
+    char accCall[kMonAccentMax][10];
+    uint32_t accMs[kMonAccentMax];
+    uint8_t accNext;
+    bool anyAccent;
 } s_sta;
+
+bool staAccented(const char *call) {
+    for (int i = 0; i < kMonAccentMax; i++)
+        if (!strcmp(s_sta.accCall[i], call) && millis() - s_sta.accMs[i] < kMonAccentMs) return true;
+    return false;
+}
+
+// Orange while accented; otherwise the brown row with an amber star and dim age.
+void staRowAccent(lv_obj_t *b, bool on) {
+    if (on) {
+        lv_obj_add_style(b, &s_stTile, 0);
+        lv_obj_add_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+    } else {
+        lv_obj_remove_style(b, &s_stTile, 0);
+        lv_obj_remove_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+    }
+    const uint32_t n = lv_obj_get_child_count(b);
+    if (n == 3) lv_obj_set_style_text_color(lv_obj_get_child(b, 0), on ? lv_color_black() : kAmber, 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(b, n - 1), on ? lv_color_black() : kDimText, 0);
+}
+
+void staExpireAccents() {
+    bool still = false;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(s_sta.list); i++) {
+        lv_obj_t *b = lv_obj_get_child(s_sta.list, i);
+        const size_t idx = (uintptr_t)lv_obj_get_user_data(b);
+        if (!idx) continue;
+        if (staAccented(s_sta.calls[idx - 1])) still = true;
+        else staRowAccent(b, false);
+    }
+    s_sta.anyAccent = still;
+}
 
 void refreshStations() {
     if (!s_sta.list) return;
+    if (s_sta.anyAccent) staExpireAccents();
     // Rebuild on new data, and every 30 s so the ages stay current.
     if (s_sta.gen == g_dataGen && s_sta.favGen == g_favGen && uptimeS() - s_sta.lastBuildS < 30) return;
     s_sta.gen = g_dataGen;
@@ -925,6 +965,13 @@ void refreshStations() {
     char keep[10] = "";
     const int fi = focusedIndex(s_sta.list);
     if (fi >= 0) strlcpy(keep, s_sta.calls[fi], sizeof(keep));
+
+    // Previous rows, to accent stations that are new or heard again since.
+    char prevCalls[60][10];
+    uint16_t prevPackets[60];
+    const size_t prevN = s_sta.shown;
+    memcpy(prevCalls, s_sta.calls, sizeof(prevCalls));
+    memcpy(prevPackets, s_sta.packets, sizeof(prevPackets));
 
     lv_obj_clean(s_sta.list);
     lv_obj_t *refocus = nullptr;
@@ -942,9 +989,26 @@ void refreshStations() {
                 openStationDetail(s_sta.calls[idx]);
             }, (void *)(uintptr_t)n);
             if (keep[0] && !strcmp(keep, s->call)) refocus = b;
+            s_sta.packets[n] = s->packets;
+            lv_obj_set_user_data(b, (void *)(uintptr_t)(n + 1));
+            if (s_sta.built) {
+                size_t j = 0;
+                while (j < prevN && strcmp(prevCalls[j], s->call)) j++;
+                if (j == prevN || prevPackets[j] != s->packets) {
+                    strlcpy(s_sta.accCall[s_sta.accNext], s->call, sizeof(s_sta.accCall[0]));
+                    s_sta.accMs[s_sta.accNext] = millis();
+                    s_sta.accNext = (s_sta.accNext + 1) % kMonAccentMax;
+                }
+            }
+            if (staAccented(s->call)) {
+                staRowAccent(b, true);
+                s_sta.anyAccent = true;
+            }
             n++;
         }
     }
+    s_sta.shown = n;
+    s_sta.built = true;
     if (refocus) lv_group_focus_obj(refocus);
     if (n) lv_obj_add_flag(s_sta.empty, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_remove_flag(s_sta.empty, LV_OBJ_FLAG_HIDDEN);
@@ -953,8 +1017,8 @@ void refreshStations() {
 void openStations() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_LIST " Stations", &grp);
+    s_sta = {};
     s_sta.grp = grp;
-    s_sta.gen = 0;
     s_sta.empty = makeNote(scr, "No stations heard yet.");
     s_sta.list = makeList(scr);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_sta.list = nullptr; }, LV_EVENT_DELETE, nullptr);
