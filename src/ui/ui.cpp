@@ -1666,7 +1666,80 @@ struct {
     bool wasScanning;
 } s_tnc;
 
-bool s_reopenTnc;  // rebuild the radio screen after an RF-link switch
+bool s_reopenTnc;  // rebuild the radio screen after an RF-link switch or a deleted pairing
+
+// Paired radios (BLE bonds), shown on the radio screen.
+struct {
+    std::vector<BleBond> shown;
+    uint8_t reopenIn;   // ticks until the screen re-reads the bond store
+} s_bonds;
+
+// One paired radio: its details in a brown cell, a Remove button beside it.
+void addBondRow(lv_obj_t *parent, lv_group_t *grp, const String &info, const char *btnText, lv_event_cb_t cb,
+                void *ud) {
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(row, 3, 0);   // room for the focus outline
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 6, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *l = lv_label_create(row);
+    lv_obj_add_style(l, &s_stRow, 0);
+    lv_obj_set_style_pad_all(l, 6, 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_flex_grow(l, 1);
+    lv_label_set_text(l, info.c_str());
+    lv_obj_t *b = lv_button_create(row);
+    lv_obj_set_style_pad_hor(b, 8, 0);
+    lv_obj_t *bl = lv_label_create(b);
+    lv_label_set_text(bl, btnText);
+    lv_obj_center(bl);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
+    lv_group_add_obj(grp, b);
+}
+
+void buildBonds(lv_obj_t *scr, lv_group_t *grp) {
+    lv_obj_t *t = lv_label_create(scr);
+    lv_label_set_text(t, "Paired radios");
+    s_bonds.shown = g_ble.bonds();
+    s_bonds.reopenIn = 0;
+    for (size_t i = 0; i < s_bonds.shown.size(); i++) {
+        const auto &b = s_bonds.shown[i];
+        const bool saved = g_config.tncName.length() && b.address.equalsIgnoreCase(g_config.tncAddress);
+        addBondRow(scr, grp, saved ? g_config.tncName + "\n" + b.address : b.address, "Remove", [](lv_event_t *e) {
+            const size_t idx = (uintptr_t)lv_event_get_user_data(e);
+            if (idx >= s_bonds.shown.size()) return;
+            g_ble.forgetBond(s_bonds.shown[idx].address, s_bonds.shown[idx].addressType);
+            toast("Pairing deleted");
+            s_bonds.reopenIn = 1;   // deletion runs on the BLE task
+        }, (void *)(uintptr_t)i);
+    }
+    if (s_bonds.shown.empty()) makeNote(scr, "No paired radios.");
+    if (s_bonds.shown.size() > 1) {
+        addBondRow(scr, grp, "All pairings", "Remove all", [](lv_event_t *) {
+            g_ble.forgetBond();
+            toast("All pairings deleted");
+            s_bonds.reopenIn = 1;
+        }, nullptr);
+    }
+    if (g_config.tncAddress.length()) {
+        const String info = String("Saved radio\n") + (g_config.tncName.length() ? g_config.tncName : g_config.tncAddress);
+        addBondRow(scr, grp, info, "Remove", [](lv_event_t *) {
+            g_ble.forgetBond(g_config.tncAddress, g_config.tncAddressType);
+            g_config.tncAddress = "";
+            g_config.tncName = "";
+            configSave();
+            g_ble.reconfigure();
+            toast("Saved radio removed");
+            s_bonds.reopenIn = 1;
+        }, nullptr);
+    }
+    makeNote(scr, "After removing a pairing, also remove this device from the radio's Bluetooth list, then Connect "
+                  "to pair again.");
+}
 
 String loraSummary() {
     const LoraStatus l = g_lora.status();
@@ -1677,6 +1750,7 @@ String loraSummary() {
 
 void refreshTnc() {
     if (!s_tnc.info) return;
+    if (s_bonds.reopenIn && --s_bonds.reopenIn == 0) s_reopenTnc = true;
     if (g_config.rfLink == RfLink::Lora) {
         const LoraStatus l = g_lora.status();
         String t = loraSummary() + "\nSF" + String(g_config.loraSf) + "  BW" + String(g_config.loraBwKhz, 1) +
@@ -1779,81 +1853,13 @@ void openTnc() {
     btn("Connect", [](lv_event_t *) { g_ble.connectNow(); });
     btn("Disconnect", [](lv_event_t *) { g_ble.disconnect(); });
 
+    buildBonds(scr, grp);
+    // Scan results go last, matching their place in the focus order.
     s_tnc.list = makeList(scr);
+    lv_obj_set_height(s_tnc.list, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(s_tnc.list, 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_tnc.info = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshTnc);
-}
-
-// ── Paired radios (BLE bonds) ────────────────────────────────────────────────
-
-struct {
-    lv_obj_t *list;
-    lv_group_t *grp;
-    std::vector<BleBond> shown;
-    uint8_t rebuildIn;   // ticks until the list re-reads the bond store
-} s_bonds;
-
-void rebuildBonds() {
-    if (!s_bonds.list) return;
-    s_bonds.shown = g_ble.bonds();
-    lv_obj_clean(s_bonds.list);
-    String saved = g_config.tncAddress;
-    saved.toLowerCase();
-    for (size_t i = 0; i < s_bonds.shown.size(); i++) {
-        const auto &b = s_bonds.shown[i];
-        String line = LV_SYMBOL_TRASH " ";
-        if (saved.length() && b.address.equalsIgnoreCase(saved) && g_config.tncName.length()) {
-            line += g_config.tncName + "  " + b.address;
-        } else {
-            line += b.address;
-        }
-        addWrapItem(s_bonds.list, s_bonds.grp, line.c_str(), [](lv_event_t *e) {
-            const size_t idx = (uintptr_t)lv_event_get_user_data(e);
-            if (idx >= s_bonds.shown.size()) return;
-            g_ble.forgetBond(s_bonds.shown[idx].address, s_bonds.shown[idx].addressType);
-            toast("Pairing deleted");
-            s_bonds.rebuildIn = 1;
-        }, (void *)(uintptr_t)i);
-    }
-    if (s_bonds.shown.empty()) addWrapItem(s_bonds.list, s_bonds.grp, "No paired radios", nullptr, nullptr);
-    if (s_bonds.shown.size() > 1) {
-        addWrapItem(s_bonds.list, s_bonds.grp, LV_SYMBOL_TRASH " Forget all pairings", [](lv_event_t *) {
-            g_ble.forgetBond();
-            toast("All pairings deleted");
-            s_bonds.rebuildIn = 1;
-        }, nullptr);
-    }
-    if (g_config.tncAddress.length()) {
-        const String l = String(LV_SYMBOL_CLOSE " Remove saved radio (") +
-                         (g_config.tncName.length() ? g_config.tncName : g_config.tncAddress) + ")";
-        addWrapItem(s_bonds.list, s_bonds.grp, l.c_str(), [](lv_event_t *) {
-            g_ble.forgetBond(g_config.tncAddress, g_config.tncAddressType);
-            g_config.tncAddress = "";
-            g_config.tncName = "";
-            configSave();
-            g_ble.reconfigure();
-            toast("Saved radio removed");
-            s_bonds.rebuildIn = 1;
-        }, nullptr);
-    }
-    if (lv_obj_get_child_count(s_bonds.list)) lv_group_focus_obj(lv_obj_get_child(s_bonds.list, 0));
-}
-
-void refreshBonds() {
-    // Deletion runs on the BLE task; re-read the store on the next tick.
-    if (s_bonds.rebuildIn && --s_bonds.rebuildIn == 0) rebuildBonds();
-}
-
-void openBonds() {
-    lv_group_t *grp;
-    lv_obj_t *scr = newScreen(LV_SYMBOL_BLUETOOTH " Paired radios", &grp);
-    s_bonds.grp = grp;
-    s_bonds.rebuildIn = 0;
-    makeNote(scr, "Select one to delete it. Also remove this device from the radio's Bluetooth list, then Connect to pair again.");
-    s_bonds.list = makeList(scr);
-    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_bonds.list = nullptr; }, LV_EVENT_DELETE, nullptr);
-    rebuildBonds();
-    pushScreen(scr, grp, refreshBonds);
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────
@@ -2197,8 +2203,7 @@ void openSettings() {
     addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi networks", [](lv_event_t *) { openWifi(true); });
     addItem(list, grp, LV_SYMBOL_EDIT, "Quick messages", [](lv_event_t *) { openQuickMsgs(); });
     addItem(list, grp, LV_SYMBOL_GPS, "GPS & beacon", [](lv_event_t *) { openGps(); });
-    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link (TNC / LoRa)", [](lv_event_t *) { openTnc(); });
-    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Paired radios", [](lv_event_t *) { openBonds(); });
+    addItem(list, grp, LV_SYMBOL_BLUETOOTH, "Radio link & pairing", [](lv_event_t *) { openTnc(); });
     lv_obj_t *is = addItem(list, grp, LV_SYMBOL_UPLOAD, "", [](lv_event_t *e) {
         g_config.aprsIsEnabled = !g_config.aprsIsEnabled;
         configSave();

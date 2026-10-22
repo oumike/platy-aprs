@@ -68,7 +68,7 @@ the time.
 | **Settings** | Everything else (below). |
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
+turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
 (see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
@@ -153,14 +153,14 @@ Shift and Sym apply to the next key only, and lapse after 1.5 seconds.
 
 The device talks APRS through one RF link at a time: a **Bluetooth KISS TNC** (an external radio or TNC) or the
 board's **built-in LoRa radio**. Switch between them on the web **Radio** tab, or with **Use LoRa / Use BLE
-TNC** under **Settings → Radio link**. The status bar shows which is in use.
+TNC** under **Settings → Radio link & pairing**. The status bar shows which is in use.
 
 ### Bluetooth KISS TNC
 
 Works with the BTECH/Vero VR-N76 and VR-N7600, Mobilinkd TNC3/TNC4, and any BLE device that speaks KISS.
 
 1. Put the radio in Bluetooth pairing mode.
-2. Web **Radio** tab → **Scan**, or **Settings → Radio link** on the device. Devices offering the KISS service
+2. Web **Radio** tab → **Scan**, or **Settings → Radio link & pairing** on the device. Devices offering the KISS service
    are marked `[KISS]`.
 3. Pick your radio. The device connects, and reconnects on its own from then on.
 
@@ -168,7 +168,7 @@ The defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961
 set on the Radio tab.
 
 **Receive works but sending fails?** The pairing keys no longer match (typical after erasing either side).
-Delete the pairing under **Settings → Paired radios** (or **Paired radios** on the web Radio tab), remove the
+Delete the pairing with **Remove** under **Settings → Radio link & pairing** (or **Paired radios** on the web Radio tab), remove the
 device from the radio's Bluetooth list too, and connect again.
 
 ### LoRa APRS
