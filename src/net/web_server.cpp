@@ -85,6 +85,7 @@ void handleGetConfig() {
     caps["volume"] = audioHasVolume();
     caps["led"] = notifyLedPresent();
     caps["kbBlink"] = notifyKbBlinkPresent();
+    caps["orientation"] = displayCanRotate();
     sendJson(200, doc);
 }
 

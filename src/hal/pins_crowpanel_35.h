@@ -11,6 +11,7 @@
 #define HAS_KEYBOARD       0
 #define HAS_BUZZER         0    // GPIO8 is the I2S amp's MCLK; not driven
 #define HAS_BATTERY        0
+#define HAS_ROTATION       1
 #define HAS_WAKE_BUTTON    0    // double tap wakes the screen from off as well
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         0

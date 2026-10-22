@@ -14,6 +14,16 @@ const char *alertSoundKey(AlertSound s) {
     }
 }
 
+const char *orientationKey(Orientation o) {
+    static const char *const k[] = {"landscape", "landscape180", "portrait", "portrait180"};
+    return k[(uint8_t)o & 3];
+}
+
+const char *orientationLabel(Orientation o) {
+    static const char *const k[] = {"Landscape", "Landscape 180", "Portrait", "Portrait 180"};
+    return k[(uint8_t)o & 3];
+}
+
 const char *ledColorKey(LedColor c) {
     static const char *const kKeys[kLedColorCount] = {"off", "red", "green", "blue",
                                                        "yellow", "cyan", "magenta", "white"};
@@ -120,6 +130,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["screenOnSecs"] = c.screenOnSecs;
     d["screenSaver"] = c.screenSaver;
     d["theme"] = c.theme == UiTheme::Light ? "light" : "dark";
+    d["orientation"] = orientationKey(c.orientation);
     d["ledColor"] = ledColorKey(c.ledColor);
     d["ledTimeoutSecs"] = c.ledTimeoutSecs;
     d["kbBlink"] = c.kbBlink;
@@ -265,6 +276,10 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
         takeNum(d, "screenOnSecs", c.screenOnSecs);
         take(d, "screenSaver", c.screenSaver);
         if (d["theme"].is<const char *>()) c.theme = !strcmp(d["theme"].as<const char *>(), "light") ? UiTheme::Light : UiTheme::Dark;
+        if (d["orientation"].is<const char *>()) {
+            for (uint8_t i = 0; i < 4; i++)
+                if (!strcmp(d["orientation"].as<const char *>(), orientationKey((Orientation)i))) c.orientation = (Orientation)i;
+        }
         if (d["ledColor"].is<const char *>()) {
             const char *s = d["ledColor"].as<const char *>();
             for (uint8_t i = 0; i < kLedColorCount; i++)

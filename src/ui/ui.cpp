@@ -4,6 +4,7 @@
 #include "hal/board.h"
 #include "hal/keyboard.h"
 #include "hal/board_pins.h"
+#include "hal/display.h"
 #include "hal/keys.h"
 #include "hal/gps.h"
 #include "hal/sd_card.h"
@@ -2306,6 +2307,9 @@ void addBrightnessRow(lv_obj_t *list, lv_group_t *grp) {
 
 bool s_themeFromSettings = false;
 lv_obj_t *s_themeItem = nullptr;  // in the newest Settings screen
+lv_obj_t *s_orientItem = nullptr;
+lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
+Orientation s_appliedOrient = Orientation::Landscape;
 
 void openSettings() {
     lv_group_t *grp;
@@ -2408,12 +2412,41 @@ void openSettings() {
         g_config.theme = g_config.theme == UiTheme::Light ? UiTheme::Dark : UiTheme::Light;
         configSave();
         s_themeFromSettings = true;
+        s_refocusItem = &s_themeItem;
     });
     s_themeItem = th;
     lv_label_set_text(lv_obj_get_child(th, 1), g_config.theme == UiTheme::Light ? "Theme: Light" : "Theme: Dark");
+    s_orientItem = nullptr;
+    if (displayCanRotate()) {
+        lv_obj_t *ori = addItem(list, grp, LV_SYMBOL_REFRESH, "", [](lv_event_t *) {
+            // uiLoop() rotates the display and rebuilds the UI.
+            g_config.orientation = (Orientation)(((uint8_t)g_config.orientation + 1) % 4);
+            configSave();
+            s_themeFromSettings = true;
+            s_refocusItem = &s_orientItem;
+        });
+        s_orientItem = ori;
+        lv_label_set_text(lv_obj_get_child(ori, 1),
+                          (String("Orientation: ") + orientationLabel(g_config.orientation)).c_str());
+    }
     addItem(list, grp, LV_SYMBOL_DOWNLOAD, "Firmware update", [](lv_event_t *) { openOta(); });
     addItem(list, grp, LV_SYMBOL_LIST, "About", [](lv_event_t *) { openAbout(); });
     addItem(list, grp, LV_SYMBOL_REFRESH, "Reboot", [](lv_event_t *) { ESP.restart(); });
+#if HAS_TOUCH
+    // Wide touch screens (CrowPanel landscape): two columns of tiles with the
+    // full labels; the brightness slider keeps a whole row.
+    const int32_t hres = lv_display_get_horizontal_resolution(nullptr);
+    if (hres >= 400) {
+        lv_obj_set_flex_flow(list, LV_FLEX_FLOW_ROW_WRAP);
+        lv_obj_set_style_pad_column(list, 6, 0);
+        const int32_t colW = (hres - 8 - 6 - 6) / 2;   // screen pad, list pad, column gap
+        for (uint32_t i = 0; i < lv_obj_get_child_count(list); i++) {
+            lv_obj_t *item = lv_obj_get_child(list, i);
+            const bool slider = lv_obj_get_child_count(item) > 2;
+            lv_obj_set_width(item, slider ? lv_pct(100) : colW);
+        }
+    }
+#endif
     pushScreen(scr, grp);
 }
 
@@ -2621,9 +2654,10 @@ void holdScreenForSetupAp() {
     held = hold;
 }
 
-// Switches to g_config.theme (changed in Settings or the web config). Objects
-// carry colours from when they were built, so rebuild the status bar and home;
-// if this came from Settings, reopen it on the theme item.
+// Switches to g_config.theme or a new orientation (changed in Settings or the
+// web config). Objects carry colours and sizes from when they were built, so
+// rebuild the status bar and home; if this came from Settings, reopen it on
+// the item that changed.
 void rebuildForTheme() {
     const bool inSettings = s_themeFromSettings;
     s_themeFromSettings = false;
@@ -2654,9 +2688,9 @@ void rebuildForTheme() {
     if (inSettings) {
         openSettings();
         lv_group_t *g = s_stack[s_depth - 1].grp;
-        if (s_themeItem) {
-            lv_group_focus_obj(s_themeItem);
-            lv_obj_scroll_to_view(s_themeItem, LV_ANIM_OFF);
+        if (lv_obj_t *item = *s_refocusItem) {
+            lv_group_focus_obj(item);
+            lv_obj_scroll_to_view(item, LV_ANIM_OFF);
         }
     }
 }
@@ -2684,6 +2718,7 @@ void uiBegin() {
     while (s_splash && millis() - s_splashAtMs < 3500) delay(10);
     keyboardSetHotkeyHandler(hotkey);
     screenSetSaverHooks(saverShow, saverHide);
+    s_appliedOrient = g_config.orientation;   // displayBegin() already applied it
     themeInit();
     buildStatusBar();
     buildHome();
@@ -2752,6 +2787,14 @@ void uiLoop() {
         openTnc();
     }
     if (s_restore.rebootAtMs && (int32_t)(millis() - s_restore.rebootAtMs) >= 0) ESP.restart();
-    if (g_config.theme != s_appliedTheme) rebuildForTheme();
+    if (g_config.orientation != s_appliedOrient) {
+        s_appliedOrient = g_config.orientation;
+        if (displayCanRotate()) {
+            displaySetOrientation((uint8_t)s_appliedOrient);
+            rebuildForTheme();
+        }
+    } else if (g_config.theme != s_appliedTheme) {
+        rebuildForTheme();
+    }
     toastLoop();
 }

@@ -10,6 +10,10 @@ enum class AlertSound : uint8_t { Default, Chirpy, Bass, Off };
 constexpr uint8_t kAlertSoundCount = 4;
 const char *alertSoundKey(AlertSound s);   // JSON value: "default", "chirpy", ...
 enum class UiTheme : uint8_t { Dark, Light };
+// Screen orientation, on boards that can rotate (CrowPanel, Wio Tracker L2).
+enum class Orientation : uint8_t { Landscape, Landscape180, Portrait, Portrait180 };
+const char *orientationKey(Orientation o);     // "landscape", "landscape180", ...
+const char *orientationLabel(Orientation o);   // "Landscape", "Landscape 180", ...
 // New-message light colour, on boards with an RGB status LED (Mesh Deck).
 enum class LedColor : uint8_t { Off, Red, Green, Blue, Yellow, Cyan, Magenta, White };
 constexpr uint8_t kLedColorCount = 8;
@@ -90,6 +94,7 @@ struct AppConfig {
     uint8_t brightness = 160;
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
     UiTheme theme = UiTheme::Dark;
+    Orientation orientation = Orientation::Landscape;
     LedColor ledColor = LedColor::Blue;   // new-message blink; LED boards only
     uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never (LED and keyboard)
     bool kbBlink = true;                  // T-Deck keyboard backlight blink, screen off

@@ -9,6 +9,7 @@
 #define BOARD_NAME         "Wio Tracker L2"
 #define HAS_TOUCH          1
 #define HAS_KEYBOARD       0
+#define HAS_ROTATION       1
 #define HAS_BUZZER         0    // ES8311 codec + speaker instead (below)
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         1

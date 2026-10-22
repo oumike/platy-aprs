@@ -1,5 +1,6 @@
 #include "display.h"
 #include "board_pins.h"
+#include "config/config.h"
 #include "screen.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -343,6 +344,13 @@ public:
 #endif
 
 LGFX_Board lcd;
+lv_display_t *s_disp = nullptr;
+
+// Panel rotation for an Orientation; TFT_ROTATION is the board's landscape.
+uint8_t panelRotation(uint8_t o) {
+    static const uint8_t add[] = {0, 2, 1, 3};
+    return (TFT_ROTATION + (HAS_ROTATION ? add[o & 3] : 0)) & 3;
+}
 
 constexpr int kBufLines = 30;
 
@@ -458,7 +466,7 @@ void logCb(lv_log_level_t level, const char *buf) {
 
 void displayBegin() {
     lcd.init();
-    lcd.setRotation(TFT_ROTATION);
+    lcd.setRotation(panelRotation((uint8_t)g_config.orientation));
     lcd.setBrightness(160);
     lcd.fillScreen(TFT_BLACK);
 
@@ -468,11 +476,13 @@ void displayBegin() {
 
     const int w = lcd.width();
     const int h = lcd.height();
-    const size_t bytes = (size_t)w * kBufLines * sizeof(uint16_t);
+    // Sized for the longer side, so a later rotation still fits.
+    const size_t bytes = (size_t)(w > h ? w : h) * kBufLines * sizeof(uint16_t);
     void *buf1 = heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     void *buf2 = heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 
     lv_display_t *disp = lv_display_create(w, h);
+    s_disp = disp;
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(disp, flushCb);
     lv_display_set_buffers(disp, buf1, buf2, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -493,3 +503,12 @@ void displaySleep(bool sleep) {
 }
 
 void displayLoop() { lv_timer_handler(); }
+
+bool displayCanRotate() { return HAS_ROTATION; }
+
+void displaySetOrientation(uint8_t o) {
+    lcd.setRotation(panelRotation(o));
+    lcd.fillScreen(TFT_BLACK);
+    lv_display_set_resolution(s_disp, lcd.width(), lcd.height());
+    Serial.printf("[display] orientation %u: %dx%d\n", o, lcd.width(), lcd.height());
+}
