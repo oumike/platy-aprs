@@ -80,6 +80,7 @@ lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisab
 constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
 constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
 constexpr uint32_t kMsgTileUnread = 0xFFB347;
+constexpr int kModalRadius = 12;   // pop-ups and toasts
 UiTheme s_appliedTheme = UiTheme::Dark;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
@@ -596,7 +597,7 @@ void toast(const String &text, uint32_t ms = 3000) {
         lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(s_toast, kAmber, 0);
         lv_obj_set_style_border_width(s_toast, 1, 0);
-        lv_obj_set_style_radius(s_toast, 6, 0);
+        lv_obj_set_style_radius(s_toast, kModalRadius, 0);
         lv_obj_set_style_pad_all(s_toast, 6, 0);
         lv_obj_align(s_toast, LV_ALIGN_BOTTOM_MID, 0, -6);
     }
@@ -952,6 +953,7 @@ void openQuickPicker(lv_obj_t *target) {
     }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *box = lv_obj_create(s_qm.bg);
+    lv_obj_set_style_radius(box, kModalRadius, 0);
     lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(96), 0);
     lv_obj_center(box);
@@ -1257,6 +1259,7 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *box = lv_obj_create(s_choice.bg);
+    lv_obj_set_style_radius(box, kModalRadius, 0);
     lv_obj_set_size(box, lv_pct(80), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(96), 0);
     lv_obj_center(box);
@@ -1823,7 +1826,6 @@ void openTnc() {
         lv_obj_set_height(b, LV_SIZE_CONTENT);
         lv_obj_set_style_pad_hor(b, 4, 0);
         lv_obj_set_style_pad_ver(b, 4, 0);
-        lv_obj_set_style_radius(b, 4, 0);
         lv_obj_t *l = lv_label_create(b);
         lv_label_set_text(l, txt);
         lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
@@ -2371,6 +2373,7 @@ void openInfo() {
     lv_obj_clear_flag(s_info.bg, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *box = lv_obj_create(s_info.bg);
+    lv_obj_set_style_radius(box, kModalRadius, 0);
     lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(box, lv_pct(100), 0);
     lv_obj_center(box);
