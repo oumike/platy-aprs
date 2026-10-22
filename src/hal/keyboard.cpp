@@ -55,10 +55,37 @@ void probe() {
     Serial.printf("[kb] controller hw=0x%02X fw=0x%02X keyreg=0x%02X\n", hw, fw, s_keyReg);
 }
 #elif defined(DEVICE_TDECK)
+// The controller swallows Alt and sends the plain letter, so Alt chords need a
+// look at its raw matrix (camillia-mt): five column bytes, Alt is C0/R4.
+constexpr uint8_t kTdeckModeRaw = 0x03, kTdeckModeKey = 0x04;
+bool s_rawMatrix = false;
+
+bool readRawMatrix(uint8_t m[5]) {
+    Wire.beginTransmission((uint8_t)KB_I2C_ADDR);
+    Wire.write(kTdeckModeRaw);
+    if (Wire.endTransmission() != 0) return false;
+    const uint8_t n = Wire.requestFrom((uint8_t)KB_I2C_ADDR, (uint8_t)5);
+    for (uint8_t i = 0; i < 5 && Wire.available(); i++) m[i] = Wire.read();
+    while (Wire.available()) (void)Wire.read();
+    // Left in raw mode it stops reporting characters.
+    Wire.beginTransmission((uint8_t)KB_I2C_ADDR);
+    Wire.write(kTdeckModeKey);
+    Wire.endTransmission();
+    return n == 5;
+}
+
+bool altHeld() {
+    uint8_t m[5] = {};
+    return s_rawMatrix && readRawMatrix(m) && (m[0] & (1u << 4));
+}
+
 void probe() {
     Wire.beginTransmission((uint8_t)KB_I2C_ADDR);
     s_present = Wire.endTransmission() == 0;
-    if (s_present) Serial.println("[kb] T-Deck keyboard found");
+    if (!s_present) return;
+    uint8_t m[5];
+    s_rawMatrix = readRawMatrix(m);
+    Serial.printf("[kb] T-Deck keyboard found (raw matrix %s)\n", s_rawMatrix ? "available" : "unavailable");
 }
 #endif
 
@@ -409,8 +436,10 @@ void hwPoll(uint32_t now) {
         if (!s_present) return;
     }
     if (Wire.requestFrom((uint8_t)KB_I2C_ADDR, (uint8_t)1) != 1) return;
-    const uint8_t k = Wire.read();
+    uint8_t k = Wire.read();
     if (k == 0x00) return;
+    // Only the chord letters cost a matrix read, not every keystroke.
+    if ((k == 'f' || k == 'F') && altHeld()) k = RK_FAVORITE;
 #ifdef PLATY_SERIAL_KEYS
     Serial.printf("[kb] key 0x%02X\n", k);
 #endif

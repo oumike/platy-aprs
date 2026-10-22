@@ -93,7 +93,8 @@ the time, plus a back arrow on touch screens when you are deeper than the home s
 ### LilyGo T-Deck Plus
 
 The keyboard types; the trackball moves, and a click selects (sent when you let go). There is no Back key:
-**Backspace** outside a text field goes back. The touch screen works everywhere.
+**Backspace** outside a text field goes back. **Alt+F** stars or unstars the selected conversation. The
+touch screen works everywhere.
 
 ### Seeed Wio Tracker L2
 
@@ -116,6 +117,7 @@ everywhere. There is no on-screen keyboard on this board.
 | **Tab** | Next field |
 | **Alt** + H / M / P / S / L | Home / Messages / Map / Stations / Monitor |
 | **Alt** + Backspace | Back |
+| **Alt** + F | Star / unstar the selected conversation (or the open conversation or station) |
 
 ### Elecrow CrowPanel Advance 3.5
 
@@ -207,7 +209,7 @@ conversation or start a **New message** to a callsign.
 - The list button next to the message box opens your five **quick messages**; picking one fills it in. It
   sits left of the box on touch screens and right of it on the M9, where pressing **Right** with the cursor at
   the end of your text moves to it. Edit them under **Settings → Quick messages** or on the web **Station** tab.
-- Star a conversation to keep it at the top.
+- Star a conversation to keep it at the top (**Alt+F** on the T-Deck and Mesh Deck keyboards).
 - **Mark all as read** and **Delete all messages** sit above New message; deleting asks first and keeps starred
   conversations unless you turn on **Include starred conversations**.
 - Long-press a conversation for **Mark as read** or **Delete**. With keys, focus it and press **Right**

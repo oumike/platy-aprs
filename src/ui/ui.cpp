@@ -62,6 +62,7 @@ enum class Nav : uint8_t { None, Back, Home, Messages, Map, Monitor, Stations };
 volatile Nav s_pendingNav = Nav::None;
 
 volatile bool s_pendingCloseInfo = false;
+volatile bool s_pendingFav = false;   // Alt+F
 lv_obj_t *s_sbBack = nullptr;   // touch boards: Back (hold = Home) in the status bar
 lv_obj_t *s_sbCall, *s_sbMsg, *s_sbWifi, *s_sbBt, *s_sbGps, *s_sbBatt, *s_sbTime;
 lv_obj_t *s_sbTnc, *s_sbTncTx;         // connected-TNC radio icon + transmit arrow
@@ -682,6 +683,7 @@ lv_obj_t *makeFavButton(lv_obj_t *parent, lv_group_t *grp, char *call) {
         lv_label_set_text(lv_obj_get_child(btn, 1), now ? "Favorite" : "Add to favorites");
         toast(now ? "Added to favorites" : "Removed from favorites");
     }, LV_EVENT_CLICKED, call);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_USER_1);   // found by Alt+F
     lv_group_add_obj(grp, b);
     return b;
 }
@@ -1293,6 +1295,7 @@ struct {
     uint32_t lastBuildS;
     char peers[40][10];
     char picked[10];   // the conversation a long press opened the menu for
+    char refocus[10];  // after a star toggle moved it, focus this conversation
 } s_msgs;
 
 void openThreadMenu(size_t idx) {
@@ -1332,6 +1335,7 @@ void refreshMessages() {
     s_msgs.favGen = g_favGen;
     s_msgs.lastBuildS = uptimeS();
     const int fi = focusedIndex(s_msgs.list);
+    lv_obj_t *refocusObj = nullptr;
     lv_obj_clean(s_msgs.list);
     auto threads = messagesThreads();
     if (!threads.empty()) {
@@ -1365,13 +1369,43 @@ void refreshMessages() {
             const uint32_t k = lv_event_get_key(e);
             if (k == LV_KEY_RIGHT || k == ' ') openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
         }, LV_EVENT_KEY, (void *)(uintptr_t)n);
+        lv_obj_set_user_data(b, (void *)(uintptr_t)(n + 1));
         if (t.unread) lv_obj_set_style_text_color(b, kAmber, 0);
         if (favIs(t.peer.c_str())) markFavorite(b);
+        if (s_msgs.refocus[0] && t.peer.equalsIgnoreCase(s_msgs.refocus)) refocusObj = b;
         if (++n == 40) break;
     }
+    s_msgs.refocus[0] = 0;
     if (!n) makeNote(s_msgs.list, "No conversations yet.");
     const uint32_t cnt = lv_obj_get_child_count(s_msgs.list);
-    if (fi >= 0 && (uint32_t)fi < cnt) lv_group_focus_obj(lv_obj_get_child(s_msgs.list, fi));
+    if (refocusObj) lv_group_focus_obj(refocusObj);
+    else if (fi >= 0 && (uint32_t)fi < cnt) lv_group_focus_obj(lv_obj_get_child(s_msgs.list, fi));
+}
+
+lv_obj_t *findFavButton(lv_obj_t *o, int depth) {
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_1)) return o;
+    if (depth == 0) return nullptr;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(o); i++)
+        if (lv_obj_t *f = findFavButton(lv_obj_get_child(o, i), depth - 1)) return f;
+    return nullptr;
+}
+
+// Alt+F: stars or unstars the conversation focused in Messages, or whatever a
+// screen with a favorite button (a conversation, a station) is showing.
+void toggleFavoriteKey() {
+    const Screen &top = s_stack[s_depth - 1];
+    if (s_msgs.list && top.grp == s_msgs.grp) {
+        lv_obj_t *f = lv_group_get_focused(s_msgs.grp);
+        const uintptr_t idx = f && lv_obj_get_parent(f) == s_msgs.list ? (uintptr_t)lv_obj_get_user_data(f) : 0;
+        if (!idx) return;
+        const char *peer = s_msgs.peers[idx - 1];
+        const bool now = favToggle(peer);
+        strlcpy(s_msgs.refocus, peer, sizeof(s_msgs.refocus));
+        refreshMessages();
+        toast(String(now ? "Starred " : "Unstarred ") + peer);
+        return;
+    }
+    if (lv_obj_t *b = findFavButton(top.scr, 3)) lv_obj_send_event(b, LV_EVENT_CLICKED, nullptr);
 }
 
 void openMessages() {
@@ -2372,6 +2406,7 @@ bool hotkey(uint8_t key) {
         case RK_MAP: s_pendingNav = Nav::Map; return true;
         case RK_SUB_BACK: s_pendingNav = Nav::Stations; return true;
         case RK_MONITOR: s_pendingNav = Nav::Monitor; return true;
+        case RK_FAVORITE: s_pendingFav = true; return true;
         default: return false;
     }
 }
@@ -2487,6 +2522,10 @@ void uiLoop() {
         closeInfo();
         if (nav == Nav::Home) popToHome();
         return;
+    }
+    if (s_pendingFav) {
+        s_pendingFav = false;
+        if (!s_qm.bg && !s_info.bg && !s_choice.bg) toggleFavoriteKey();
     }
     if (nav == Nav::Back) popScreen();
     else if (nav == Nav::Home) popToHome();

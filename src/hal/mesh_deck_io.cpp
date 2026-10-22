@@ -264,6 +264,7 @@ uint8_t kbAltNav(char k) {
         case 'p': return RK_MAP;
         case 's': return RK_SUB_BACK;   // stations
         case 'l': return RK_MONITOR;
+        case 'f': return RK_FAVORITE;
         case (char)RK_BKSP: return RK_BACK;
         default: return 0;
     }
