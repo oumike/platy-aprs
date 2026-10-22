@@ -2367,21 +2367,79 @@ void refreshHome() {
     s_home.apWasActive = ap;
 }
 
+// Home tiles: dark orange with black text in both themes; focus lightens the
+// tile and outlines it instead of the usual amber glow, which wouldn't show.
+constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
+
 void buildHome() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(nullptr, &grp);
 
-    lv_obj_t *list = makeList(scr);
-    lv_obj_t *first = addItem(list, grp, LV_SYMBOL_LIST, "Stations", [](lv_event_t *) { openStations(); });
-    addItem(list, grp, LV_SYMBOL_ENVELOPE, "Messages", [](lv_event_t *) { openMessages(); });
-    addItem(list, grp, LV_SYMBOL_EYE_OPEN, "Monitor", [](lv_event_t *) { openMonitor(); });
-    addItem(list, grp, LV_SYMBOL_UPLOAD, "Send beacon now", [](lv_event_t *) { beaconNowUi(); });
-    addItem(list, grp, LV_SYMBOL_GPS, "Map", [](lv_event_t *) {
-        openMap();
-    });
-    addItem(list, grp, LV_SYMBOL_WIFI, "Status & connection info", [](lv_event_t *) { openInfo(); });
-    addItem(list, grp, LV_SYMBOL_SETTINGS, "Settings", [](lv_event_t *) { openSettings(); });
+    // 320-wide screens get the short labels.
+    const bool narrow = lv_display_get_horizontal_resolution(nullptr) < 400;
+    struct Tile {
+        const char *icon, *label, *shortLabel;
+        lv_event_cb_t cb;
+    };
+    static const Tile kTiles[] = {
+        {LV_SYMBOL_LIST, "Stations", nullptr, [](lv_event_t *) { openStations(); }},
+        {LV_SYMBOL_ENVELOPE, "Messages", nullptr, [](lv_event_t *) { openMessages(); }},
+        {LV_SYMBOL_EYE_OPEN, "Monitor", nullptr, [](lv_event_t *) { openMonitor(); }},
+        {LV_SYMBOL_UPLOAD, "Send beacon now", "Beacon", [](lv_event_t *) { beaconNowUi(); }},
+        {LV_SYMBOL_GPS, "Map", nullptr, [](lv_event_t *) { openMap(); }},
+        {LV_SYMBOL_WIFI, "Status & connection info", "Status", [](lv_event_t *) { openInfo(); }},
+        {LV_SYMBOL_SETTINGS, "Settings", nullptr, [](lv_event_t *) { openSettings(); }},
+    };
+    constexpr int kN = sizeof(kTiles) / sizeof(kTiles[0]);
+    constexpr int kRows = (kN + 1) / 2;
 
+    // Two columns, the rows sharing the height; an odd last tile spans both.
+    static const int32_t kCols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static int32_t kRowDsc[kRows + 1];
+    for (int r = 0; r < kRows; r++) kRowDsc[r] = LV_GRID_FR(1);
+    kRowDsc[kRows] = LV_GRID_TEMPLATE_LAST;
+
+    lv_obj_t *grid = lv_obj_create(scr);
+    lv_obj_remove_style_all(grid);
+    lv_obj_set_width(grid, lv_pct(100));
+    lv_obj_set_flex_grow(grid, 1);
+    lv_obj_set_style_pad_all(grid, 2, 0);
+    lv_obj_set_style_pad_gap(grid, 6, 0);
+    lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_dsc_array(grid, kCols, kRowDsc);
+
+    const lv_color_t outline = g_config.theme == UiTheme::Light ? lv_color_black() : lv_color_white();
+    lv_obj_t *first = nullptr;
+    for (int i = 0; i < kN; i++) {
+        const Tile &t = kTiles[i];
+        lv_obj_t *b = lv_button_create(grid);
+        const bool span = i == kN - 1 && kN % 2;
+        lv_obj_set_grid_cell(b, LV_GRID_ALIGN_STRETCH, i % 2, span ? 2 : 1, LV_GRID_ALIGN_STRETCH, i / 2, 1);
+        lv_obj_set_style_radius(b, 10, 0);
+        lv_obj_set_style_pad_all(b, 4, 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(kTileBg), 0);
+        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(b, lv_color_black(), 0);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(kTileFocusBg), LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_text_color(b, lv_color_black(), LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_shadow_width(b, 0, LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_outline_color(b, outline, LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_outline_pad(b, 1, LV_STATE_FOCUS_KEY);
+
+        lv_obj_t *l = lv_label_create(b);
+        lv_label_set_text_fmt(l, "%s  %s", t.icon, narrow && t.shortLabel ? t.shortLabel : t.label);
+        lv_obj_set_width(l, lv_pct(100));
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_16, 0);
+        lv_obj_center(l);
+
+        lv_obj_add_event_cb(b, t.cb, LV_EVENT_CLICKED, nullptr);
+        lv_group_add_obj(grp, b);
+        if (!first) first = b;
+    }
     lv_group_focus_obj(first);
 
     pushScreen(scr, grp, refreshHome);

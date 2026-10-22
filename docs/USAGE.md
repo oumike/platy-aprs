@@ -52,7 +52,8 @@ on a network.
 
 <p align="center"><img src="screenshots/home.png" width="480" alt="The home menu under the status bar"></p>
 
-The home screen is a menu. The **status bar** across the top of every screen shows your callsign, unread
+The home screen is a grid of buttons, two to a row (on 320-wide screens **Send beacon now** and **Status &
+connection info** read **Beacon** and **Status**). The **status bar** across the top of every screen shows your callsign, unread
 messages, the radio link (Bluetooth TNC or LoRa) and APRS-IS (each blinks on traffic), GPS, Wi-Fi, battery and
 the time.
 
