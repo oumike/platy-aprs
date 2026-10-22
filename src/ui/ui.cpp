@@ -54,19 +54,21 @@ const lv_font_t *uiFont(int px) {
 
 namespace {
 
+// Status-bar scale in half steps (2 = 1x): drawn icons, padding, back button.
 #ifdef DEVICE_CROWPANEL_50
-constexpr int kSb = 2;   // status-bar scale: drawn icons and the back button
+constexpr int kSbHalves = 4;
 constexpr int kStatusH = 66;
 #define SB_FONT lv_font_montserrat_28
 #elif defined(DEVICE_CROWPANEL_35)
-constexpr int kSb = 2;
-constexpr int kStatusH = 44;
-#define SB_FONT lv_font_montserrat_24
+constexpr int kSbHalves = 3;
+constexpr int kStatusH = 33;
+#define SB_FONT lv_font_montserrat_18
 #else
-constexpr int kSb = 1;
+constexpr int kSbHalves = 2;
 constexpr int kStatusH = 22;
 #define SB_FONT lv_font_montserrat_12
 #endif
+constexpr int sb(int v) { return v * kSbHalves / 2; }
 // E-paper: every animation frame is a panel refresh, so nothing animates.
 constexpr lv_anim_enable_t kAnim = HAS_EINK ? LV_ANIM_OFF : LV_ANIM_ON;
 // Palette for the current theme (themeColors() sets it; dark values here).
@@ -437,9 +439,9 @@ lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char 
 lv_obj_t *sbRect(lv_obj_t *parent, int x, int y, int w, int h, int r, lv_color_t c) {
     lv_obj_t *o = lv_obj_create(parent);
     lv_obj_remove_style_all(o);
-    lv_obj_set_pos(o, x * kSb, y * kSb);
-    lv_obj_set_size(o, w * kSb, h * kSb);
-    lv_obj_set_style_radius(o, r * kSb, 0);
+    lv_obj_set_pos(o, sb(x), sb(y));
+    lv_obj_set_size(o, sb(w), sb(h));
+    lv_obj_set_style_radius(o, sb(r), 0);
     lv_obj_set_style_bg_color(o, c, 0);
     lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
@@ -454,12 +456,12 @@ void buildTncIcon(lv_obj_t *bar) {
     lv_obj_set_size(s_sbTnc, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(s_sbTnc, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_sbTnc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(s_sbTnc, 2 * kSb, 0);
+    lv_obj_set_style_pad_column(s_sbTnc, sb(2), 0);
     lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *radio = lv_obj_create(s_sbTnc);
     lv_obj_remove_style_all(radio);
-    lv_obj_set_size(radio, 10 * kSb, 16 * kSb);
+    lv_obj_set_size(radio, sb(10), sb(16));
     lv_obj_remove_flag(radio, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(radio, LV_OBJ_FLAG_SCROLLABLE);
     sbRect(radio, 1, 0, 2, 5, 1, kGreen);
@@ -478,8 +480,8 @@ void buildTncIcon(lv_obj_t *bar) {
 lv_obj_t *sbArrow(lv_obj_t *parent, int x, bool up) {
     lv_obj_t *a = lv_obj_create(parent);
     lv_obj_remove_style_all(a);
-    lv_obj_set_pos(a, x * kSb, 0);
-    lv_obj_set_size(a, 6 * kSb, 14 * kSb);
+    lv_obj_set_pos(a, sb(x), 0);
+    lv_obj_set_size(a, sb(6), sb(14));
     lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(a, LV_OBJ_FLAG_SCROLLABLE);
     const int y0 = up ? 0 : 13, dy = up ? 1 : -1;
@@ -499,7 +501,7 @@ void sbArrowColor(lv_obj_t *arrow, lv_color_t c) {
 void buildIsIcon(lv_obj_t *bar) {
     s_sbIs = lv_obj_create(bar);
     lv_obj_remove_style_all(s_sbIs);
-    lv_obj_set_size(s_sbIs, 13 * kSb, 14 * kSb);
+    lv_obj_set_size(s_sbIs, sb(13), sb(14));
     lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_SCROLLABLE);
     s_sbIsUp = sbArrow(s_sbIs, 0, true);
@@ -527,17 +529,17 @@ void buildStatusBar() {
     lv_obj_set_style_border_color(bar, lv_color_black(), 0);
     lv_obj_set_style_border_width(bar, 1, 0);
 #endif
-    lv_obj_set_style_pad_hor(bar, 6 * kSb, 0);
+    lv_obj_set_style_pad_hor(bar, sb(6), 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
     lv_obj_set_style_text_font(bar, &SB_FONT, 0);   // fixed: the bar height is fixed
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(bar, 8 * kSb, 0);
+    lv_obj_set_style_pad_column(bar, sb(8), 0);
 
 #if HAS_TOUCH
     s_sbBack = lv_button_create(bar);
-    lv_obj_set_size(s_sbBack, 40 * kSb, kStatusH - 2 * kSb);
+    lv_obj_set_size(s_sbBack, sb(40), kStatusH - sb(2));
     lv_obj_set_style_pad_all(s_sbBack, 0, 0);
     lv_obj_set_ext_click_area(s_sbBack, 8);
     lv_obj_t *bl = lv_label_create(s_sbBack);
