@@ -14,6 +14,14 @@ aprs::SmartBeacon s_sb;   // tracks the last beacon for every mode
 String s_lastError;
 String s_waiting;
 uint32_t s_lastCheckMs;
+// No beacon of any kind (automatic, corner or "send now") within this of the last.
+constexpr uint32_t kMinBeaconGapS = 30;
+
+uint32_t holdoffS() {
+    if (!s_sb.hasSent()) return 0;
+    const uint32_t ago = uptimeS() - s_sb.lastS();
+    return ago >= kMinBeaconGapS ? 0 : kMinBeaconGapS - ago;
+}
 
 aprs::SmartBeaconParams params() {
     aprs::SmartBeaconParams p;
@@ -85,6 +93,10 @@ bool send(String &err) {
 }  // namespace
 
 bool beaconNow(String &err) {
+    if (const uint32_t wait = holdoffS()) {
+        err = "Wait " + String(wait) + " s: one beacon per " + String(kMinBeaconGapS) + " s at most";
+        return false;
+    }
     const bool ok = send(err);
     s_lastError = ok ? "" : err;
     return ok;
@@ -123,7 +135,7 @@ void beaconLoop() {
         if (g_config.beaconIntervalS == 0) return;
         due = !s_sb.hasSent() || now - s_sb.lastS() >= g_config.beaconIntervalS;
     }
-    if (!due) return;
+    if (!due || holdoffS()) return;
     String err;
     if (!send(err)) {
         s_lastError = err;
@@ -148,6 +160,7 @@ BeaconStatus beaconStatus() {
         if (useSmart()) rate = aprs::SmartBeacon::rateFor(gpsFix().speedKmh, params());
         if (!b.sentAny) b.nextInS = 0;
         else if (rate) b.nextInS = b.lastAgoS >= rate ? 0 : (int32_t)(rate - b.lastAgoS);
+        if (b.nextInS >= 0 && b.nextInS < (int32_t)holdoffS()) b.nextInS = (int32_t)holdoffS();
     }
     return b;
 }

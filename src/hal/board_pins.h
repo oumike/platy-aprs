@@ -3,7 +3,7 @@
 // capability flags: BOARD_NAME, HAS_TOUCH, HAS_KEYBOARD, HAS_BUZZER (piezo),
 // LORA_CHIP_LR1110 / LORA_CHIP_SX1262, SD_USE_MMC, and optionally
 // HAS_SD_CARD, HAS_BATTERY and HAS_WAKE_BUTTON (default 1), SD_USE_SOFT_SPI,
-// HAS_I2S_AUDIO, HAS_ES8311 and HAS_NOTIFY_LED (default 0).
+// HAS_I2S_AUDIO, HAS_ES8311, HAS_NOTIFY_LED and HAS_KB_BLINK (default 0).
 #if defined(DEVICE_M9)
 #include "pins_m9.h"
 #elif defined(DEVICE_WIO_TRACKER_L2)
@@ -28,6 +28,9 @@
 #endif
 #ifndef SD_USE_SOFT_SPI
 #define SD_USE_SOFT_SPI 0
+#endif
+#ifndef HAS_KB_BLINK
+#define HAS_KB_BLINK 0
 #endif
 #ifndef HAS_NOTIFY_LED
 #define HAS_NOTIFY_LED 0

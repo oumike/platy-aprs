@@ -84,6 +84,7 @@ void handleGetConfig() {
     caps["sound"] = audioPresent();
     caps["volume"] = audioHasVolume();
     caps["led"] = notifyLedPresent();
+    caps["kbBlink"] = notifyKbBlinkPresent();
     sendJson(200, doc);
 }
 

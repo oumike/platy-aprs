@@ -458,3 +458,16 @@ void keyboardPoll() {
 void keyboardSetHotkeyHandler(KeyboardHotkeyHandler h) { s_hotkey = h; }
 
 lv_indev_t *keyboardIndev() { return s_indev; }
+
+#if defined(DEVICE_TDECK)
+// The backlight belongs to the keyboard's own ESP32-C3: command 0x01 then a
+// duty (keyboard firmware from 2024-12-25 on; older ones ignore it). One
+// command per transmission, as the C3 misreads a second one batched behind it.
+void keyboardSetBacklight(uint8_t duty) {
+    if (!s_present) return;
+    Wire.beginTransmission((uint8_t)KB_I2C_ADDR);
+    Wire.write((uint8_t)0x01);
+    Wire.write(duty);
+    (void)Wire.endTransmission();
+}
+#endif

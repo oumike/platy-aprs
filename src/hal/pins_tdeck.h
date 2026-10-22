@@ -6,6 +6,7 @@
 #define BOARD_NAME         "T-Deck Plus"
 #define HAS_TOUCH          1
 #define HAS_KEYBOARD       1
+#define HAS_KB_BLINK       1    // keyboard backlight blinks for unread messages, screen off
 #define HAS_BUZZER         0    // I2S speaker instead (below)
 #define LORA_CHIP_SX1262   1
 #define SD_USE_MMC         0

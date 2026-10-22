@@ -1915,6 +1915,49 @@ void setVolumeLabel(lv_obj_t *item) {
     lv_label_set_text(lv_obj_get_child(item, 1), (String("Volume: ") + g_config.volumePct + "%").c_str());
 }
 
+// Brightness row: a list button (child 1 the label, child 2 a slider). Keys
+// keep the row focused and Left/Right step it, so up/down still move through
+// the list; on touch screens the slider drags.
+constexpr int kBrightnessMin = 10, kBrightnessStep = 25;
+
+void setBrightnessRow(lv_obj_t *row, int level, bool save) {
+    level = level < kBrightnessMin ? kBrightnessMin : level > 255 ? 255 : level;
+    g_config.brightness = (uint8_t)level;
+    screenApplyBrightness();
+    lv_label_set_text(lv_obj_get_child(row, 1),
+                      (String("Brightness: ") + (level * 100 + 127) / 255 + "%").c_str());
+    lv_obj_t *slider = lv_obj_get_child(row, 2);
+    if (lv_slider_get_value(slider) != level) lv_slider_set_value(slider, level, LV_ANIM_OFF);
+    if (save) configSave();
+}
+
+void addBrightnessRow(lv_obj_t *list, lv_group_t *grp) {
+    // Select steps up and wraps to the dimmest level after full.
+    lv_obj_t *row = addItem(list, grp, LV_SYMBOL_EYE_OPEN, "", [](lv_event_t *e) {
+        const int b = g_config.brightness;
+        setBrightnessRow((lv_obj_t *)lv_event_get_target(e), b >= 255 ? kBrightnessMin : b + kBrightnessStep, true);
+    });
+    lv_obj_add_event_cb(row, [](lv_event_t *e) {
+        const uint32_t k = lv_event_get_key(e);
+        if (k != LV_KEY_LEFT && k != LV_KEY_RIGHT) return;
+        const int step = k == LV_KEY_RIGHT ? kBrightnessStep : -kBrightnessStep;
+        setBrightnessRow((lv_obj_t *)lv_event_get_target(e), g_config.brightness + step, true);
+    }, LV_EVENT_KEY, nullptr);
+    lv_obj_t *slider = lv_slider_create(row);
+    lv_group_remove_obj(slider);
+    lv_slider_set_range(slider, kBrightnessMin, 255);
+    lv_obj_set_width(slider, lv_pct(40));
+    lv_obj_set_height(slider, 8);
+    lv_obj_set_style_margin_right(slider, 10, 0);
+    lv_obj_set_ext_click_area(slider, 12);
+    lv_obj_add_event_cb(slider, [](lv_event_t *e) {
+        lv_obj_t *s = (lv_obj_t *)lv_event_get_target(e);
+        setBrightnessRow(lv_obj_get_parent(s), lv_slider_get_value(s), false);
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(slider, [](lv_event_t *) { configSave(); }, LV_EVENT_RELEASED, nullptr);
+    setBrightnessRow(row, g_config.brightness, false);
+}
+
 bool s_themeFromSettings = false;
 lv_obj_t *s_themeItem = nullptr;  // in the newest Settings screen
 
@@ -1957,6 +2000,7 @@ void openSettings() {
         lv_label_set_text(lv_obj_get_child(b, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
     });
     lv_label_set_text(lv_obj_get_child(ss, 1), g_config.screenSaver ? "At timeout: Screensaver" : "At timeout: Screen off");
+    addBrightnessRow(list, grp);
     if (audioPresent()) {
         // Each press moves to the next style or volume and plays the new-message tone with it.
         lv_obj_t *snd = addItem(list, grp, LV_SYMBOL_BELL, "", [](lv_event_t *e) {
@@ -1987,6 +2031,20 @@ void openSettings() {
         });
         lv_label_set_text(lv_obj_get_child(led, 1),
                           (String("Message light: ") + ledColorLabel(g_config.ledColor)).c_str());
+    }
+    if (notifyKbBlinkPresent()) {
+        // Turning it on blinks the keyboard once to show it works.
+        lv_obj_t *kb = addItem(list, grp, LV_SYMBOL_KEYBOARD, "", [](lv_event_t *e) {
+            g_config.kbBlink = !g_config.kbBlink;
+            configSave();
+            notifyLedApplySetting();
+            if (g_config.kbBlink) notifyLedPreview(LedColor::White);
+            lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1),
+                              g_config.kbBlink ? "Keyboard blink: On" : "Keyboard blink: Off");
+        });
+        lv_label_set_text(lv_obj_get_child(kb, 1), g_config.kbBlink ? "Keyboard blink: On" : "Keyboard blink: Off");
+    }
+    if (notifyLightPresent()) {
         lv_obj_t *lto = addItem(list, grp, LV_SYMBOL_CHARGE, "", [](lv_event_t *e) {
             int i = 0;
             while (i < kLedTimeoutCount && kLedTimeoutSecs[i] != g_config.ledTimeoutSecs) i++;

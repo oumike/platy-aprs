@@ -122,6 +122,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["theme"] = c.theme == UiTheme::Light ? "light" : "dark";
     d["ledColor"] = ledColorKey(c.ledColor);
     d["ledTimeoutSecs"] = c.ledTimeoutSecs;
+    d["kbBlink"] = c.kbBlink;
     d["otaAutoInstall"] = c.otaAutoInstall;
     d["timezone"] = c.timezone;
     d["adminPasswordSet"] = c.adminPassword.length() > 0;
@@ -269,6 +270,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
             for (uint8_t i = 0; i < kLedColorCount; i++)
                 if (!strcmp(s, ledColorKey((LedColor)i))) c.ledColor = (LedColor)i;
         }
+        if (d["kbBlink"].is<bool>()) c.kbBlink = d["kbBlink"].as<bool>();
         if (d["ledTimeoutSecs"].is<long>()) {
             // Only the offered choices; anything else keeps the current one.
             const long v = d["ledTimeoutSecs"].as<long>();

@@ -91,7 +91,8 @@ struct AppConfig {
     uint32_t screenOnSecs = 30;   // screen timeout; 0 = never
     UiTheme theme = UiTheme::Dark;
     LedColor ledColor = LedColor::Blue;   // new-message blink; LED boards only
-    uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never
+    uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never (LED and keyboard)
+    bool kbBlink = true;                  // T-Deck keyboard backlight blink, screen off
     bool screenSaver = true;      // at the timeout: screensaver (true) or screen off
     bool otaAutoInstall = false;  // install a newer release without asking
     String timezone = "EST5EDT,M3.2.0,M11.1.0";

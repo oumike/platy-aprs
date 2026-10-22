@@ -19,7 +19,7 @@ section{display:none;padding:0 12px 12px}section.on{display:block}
 .card{background:var(--card);border-radius:8px;padding:12px;margin-bottom:12px}
 label{display:block;margin:8px 0 2px;color:var(--mut);font-size:13px}
 input,select{width:100%;padding:8px;border-radius:6px;border:1px solid #333;background:#0d1014;color:var(--fg);font-size:15px}
-input[type=checkbox]{width:auto;margin-right:8px}.chk{display:flex;align-items:center;color:var(--fg);margin-top:10px}
+input[type=checkbox]{width:auto;margin-right:8px}input[type=range]{padding:0;border:0;background:none;accent-color:var(--acc)}.chk{display:flex;align-items:center;color:var(--fg);margin-top:10px}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .btn{background:var(--acc);border:0;color:#000;padding:10px 14px;border-radius:6px;font-weight:600;margin-top:10px}
 .btn.sec{background:#2a313b;color:var(--fg)}.btn.bad{background:var(--bad)}
@@ -131,8 +131,9 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <div class="snd"><label>Alert sound</label><select data-k="device.sound"><option value="default">Default</option><option value="chirpy">Chirpy</option><option value="bass">Bass</option><option value="off">Off</option></select></div>
 <div class="vol"><label>Volume</label><select data-k="device.volume" data-t="num"><option>0</option><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>70</option><option>80</option><option>90</option><option>100</option></select></div>
 <div class="led"><label>New-message light</label><select data-k="device.ledColor"><option value="off">Off</option><option value="red">Red</option><option value="green">Green</option><option value="blue">Blue</option><option value="yellow">Yellow</option><option value="cyan">Cyan</option><option value="magenta">Magenta</option><option value="white">White</option></select></div>
-<div class="led"><label>Stop blinking after</label><select data-k="device.ledTimeoutSecs" data-t="num"><option value="5">5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="0">Never</option></select></div>
-<label>Brightness (0-255)</label><input data-k="device.brightness" data-t="num" type="number" min="10" max="255">
+<div class="kbb"><label>Keyboard blink on new messages (screen off)</label><select data-k="device.kbBlink" data-t="bool"><option value="true">On</option><option value="false">Off</option></select></div>
+<div class="lto"><label>Stop blinking after</label><select data-k="device.ledTimeoutSecs" data-t="num"><option value="5">5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="0">Never</option></select></div>
+<label>Brightness <span id="brv"></span></label><input data-k="device.brightness" data-t="num" type="range" min="10" max="255" id="bri">
 <label>Screen timeout</label><select data-k="device.screenOnSecs" data-t="num"><option value="15">15 sec</option><option value="30">30 sec</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="1800">30 min</option><option value="3600">60 min</option><option value="0">Never</option></select>
 <label>At the timeout</label><select data-k="device.screenSaver" data-t="bool"><option value="true">Screensaver</option><option value="false">Screen off</option></select>
 <label>Timezone (POSIX TZ)</label><input data-k="device.timezone">
@@ -194,10 +195,11 @@ function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'
 let dirty=false;
 function setDirty(d){dirty=d;$('#savebar').classList.toggle('dirty',d);$('#dirty').textContent=d?'Unsaved changes':'All changes saved';$('#savebtn').disabled=!d}
 $$('[data-k],#wpass,#apass,#aclr').forEach(e=>{e.addEventListener('input',()=>setDirty(true));e.addEventListener('change',()=>setDirty(true))});
+function brv(){$('#brv').textContent=Math.round($('#bri').value*100/255)+'%'}$('#bri').addEventListener('input',brv);
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
-$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');$$('.led').forEach(e=>e.style.display=cfg.caps.led?'':'none');
+brv();$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');$$('.led').forEach(e=>e.style.display=cfg.caps.led?'':'none');$$('.kbb').forEach(e=>e.style.display=cfg.caps.kbBlink?'':'none');$$('.lto').forEach(e=>e.style.display=cfg.caps.led||cfg.caps.kbBlink?'':'none');
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
 function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}

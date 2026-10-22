@@ -67,8 +67,8 @@ the time.
 | **Settings** | Everything else (below). |
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Sound and Volume
-(see [Sound](#sound)) · Message light and Light timeout (Mesh Deck, see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
+turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -168,7 +168,8 @@ comment, and the digipeater path (default `WIDE1-1,WIDE2-1`).
 - **Off**.
 
 Beacons go out once a callsign is set and the radio link (or APRS-IS) is up. **Send beacon now** is on the home
-screen, under **Settings → GPS & beacon**, and on the Beacon tab. The GPS can be switched off entirely under
+screen, under **Settings → GPS & beacon**, and on the Beacon tab. To avoid flooding the channel, no beacon
+(automatic, SmartBeaconing corner or sent by hand) goes out within 30 seconds of the last one. The GPS can be switched off entirely under
 **Settings → GPS & beacon** to save power. With no network time, the GPS sets the clock.
 
 ## Messages
@@ -247,7 +248,12 @@ when a message arrives, even with the sound off. **Settings → Message light** 
 **Blue** (the default), **Yellow**, **Cyan**, **Magenta**, **White** and **Off**, blinking each.
 **Settings → Light timeout** sets how long the blinking lasts after the newest message: 5, 10, 15 (the default) or
 30 seconds, 1, 2 or 5 minutes, or **Never** (until the messages are read). Reading the messages stops it
-sooner. Both are also on the web **Device** tab. The other boards have no such light.
+sooner. Both are also on the web **Device** tab.
+
+On the T-Deck Plus the keyboard backlight blinks the same way, but only while the screen is off or showing the
+screensaver; turning the screen on stops it. **Settings → Keyboard blink** turns it on (the default) or off, and
+**Light timeout** works as above. The keyboard needs its 2024-12-25 or later firmware; older keyboards ignore it.
+The other boards have no such light.
 
 ## Screen timeout
 
@@ -321,7 +327,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, message light and its timeout (Mesh Deck), brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus) and its timeout, brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |
