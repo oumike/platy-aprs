@@ -26,6 +26,10 @@
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_22 1
 #define LV_FONT_MONTSERRAT_24 1
+#ifdef DEVICE_CROWPANEL_50   // big panel: +4 px fonts and a tall status bar
+#define LV_FONT_MONTSERRAT_26 1
+#define LV_FONT_MONTSERRAT_28 1
+#endif
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
 #define LV_USE_THEME_DEFAULT 1

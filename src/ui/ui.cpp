@@ -39,14 +39,30 @@ const lv_font_t *uiFont(int px) {
     static const lv_font_t *const kFonts[] = {&lv_font_montserrat_10, &lv_font_montserrat_12,
                                               &lv_font_montserrat_14, &lv_font_montserrat_16,
                                               &lv_font_montserrat_18, &lv_font_montserrat_20,
-                                              &lv_font_montserrat_22, &lv_font_montserrat_24};
+                                              &lv_font_montserrat_22, &lv_font_montserrat_24
+#ifdef DEVICE_CROWPANEL_50
+                                              , &lv_font_montserrat_26, &lv_font_montserrat_28
+#endif
+    };
+#ifdef DEVICE_CROWPANEL_50
+    px += 4;   // 800x480 at 5": everything one step bigger
+#endif
+    constexpr int kLast = sizeof(kFonts) / sizeof(kFonts[0]) - 1;
     int i = (px - 10) / 2 + ((int)g_config.textSize - (int)TextSize::Medium);
-    return kFonts[std::max(0, std::min(i, 7))];
+    return kFonts[std::max(0, std::min(i, kLast))];
 }
 
 namespace {
 
+#ifdef DEVICE_CROWPANEL_50
+constexpr int kSb = 2;   // status-bar scale: drawn icons and the back button
+constexpr int kStatusH = 66;
+#define SB_FONT lv_font_montserrat_28
+#else
+constexpr int kSb = 1;
 constexpr int kStatusH = 22;
+#define SB_FONT lv_font_montserrat_12
+#endif
 // E-paper: every animation frame is a panel refresh, so nothing animates.
 constexpr lv_anim_enable_t kAnim = HAS_EINK ? LV_ANIM_OFF : LV_ANIM_ON;
 // Palette for the current theme (themeColors() sets it; dark values here).
@@ -417,9 +433,9 @@ lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char 
 lv_obj_t *sbRect(lv_obj_t *parent, int x, int y, int w, int h, int r, lv_color_t c) {
     lv_obj_t *o = lv_obj_create(parent);
     lv_obj_remove_style_all(o);
-    lv_obj_set_pos(o, x, y);
-    lv_obj_set_size(o, w, h);
-    lv_obj_set_style_radius(o, r, 0);
+    lv_obj_set_pos(o, x * kSb, y * kSb);
+    lv_obj_set_size(o, w * kSb, h * kSb);
+    lv_obj_set_style_radius(o, r * kSb, 0);
     lv_obj_set_style_bg_color(o, c, 0);
     lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
@@ -434,12 +450,12 @@ void buildTncIcon(lv_obj_t *bar) {
     lv_obj_set_size(s_sbTnc, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(s_sbTnc, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_sbTnc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(s_sbTnc, 2, 0);
+    lv_obj_set_style_pad_column(s_sbTnc, 2 * kSb, 0);
     lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *radio = lv_obj_create(s_sbTnc);
     lv_obj_remove_style_all(radio);
-    lv_obj_set_size(radio, 10, 16);
+    lv_obj_set_size(radio, 10 * kSb, 16 * kSb);
     lv_obj_remove_flag(radio, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(radio, LV_OBJ_FLAG_SCROLLABLE);
     sbRect(radio, 1, 0, 2, 5, 1, kGreen);
@@ -458,8 +474,8 @@ void buildTncIcon(lv_obj_t *bar) {
 lv_obj_t *sbArrow(lv_obj_t *parent, int x, bool up) {
     lv_obj_t *a = lv_obj_create(parent);
     lv_obj_remove_style_all(a);
-    lv_obj_set_pos(a, x, 0);
-    lv_obj_set_size(a, 6, 14);
+    lv_obj_set_pos(a, x * kSb, 0);
+    lv_obj_set_size(a, 6 * kSb, 14 * kSb);
     lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(a, LV_OBJ_FLAG_SCROLLABLE);
     const int y0 = up ? 0 : 13, dy = up ? 1 : -1;
@@ -479,7 +495,7 @@ void sbArrowColor(lv_obj_t *arrow, lv_color_t c) {
 void buildIsIcon(lv_obj_t *bar) {
     s_sbIs = lv_obj_create(bar);
     lv_obj_remove_style_all(s_sbIs);
-    lv_obj_set_size(s_sbIs, 13, 14);
+    lv_obj_set_size(s_sbIs, 13 * kSb, 14 * kSb);
     lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_SCROLLABLE);
     s_sbIsUp = sbArrow(s_sbIs, 0, true);
@@ -507,17 +523,17 @@ void buildStatusBar() {
     lv_obj_set_style_border_color(bar, lv_color_black(), 0);
     lv_obj_set_style_border_width(bar, 1, 0);
 #endif
-    lv_obj_set_style_pad_hor(bar, 6, 0);
+    lv_obj_set_style_pad_hor(bar, 6 * kSb, 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
-    lv_obj_set_style_text_font(bar, &lv_font_montserrat_12, 0);   // fixed: the bar height is fixed
+    lv_obj_set_style_text_font(bar, &SB_FONT, 0);   // fixed: the bar height is fixed
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(bar, 8, 0);
+    lv_obj_set_style_pad_column(bar, 8 * kSb, 0);
 
 #if HAS_TOUCH
     s_sbBack = lv_button_create(bar);
-    lv_obj_set_size(s_sbBack, 40, kStatusH - 2);
+    lv_obj_set_size(s_sbBack, 40 * kSb, kStatusH - 2 * kSb);
     lv_obj_set_style_pad_all(s_sbBack, 0, 0);
     lv_obj_set_ext_click_area(s_sbBack, 8);
     lv_obj_t *bl = lv_label_create(s_sbBack);
@@ -2177,7 +2193,14 @@ void openRestorePrompt(const std::vector<SdBackupInfo> &files) {
 
 extern "C" const lv_image_dsc_t splash_img, splash_img_mono, splash_img_mono_small;   // tools/gen_splash.py
 // E-paper gets line art drawn for 1 bit rather than the colour image cut down.
+#ifdef DEVICE_CROWPANEL_50
+extern "C" const lv_image_dsc_t splash_img_large;
+const lv_image_dsc_t *const kSplashImg = &splash_img_large;   // 480x264
+constexpr int kSp = 2;   // splash layout scale
+#else
 const lv_image_dsc_t *const kSplashImg = HAS_EINK ? &splash_img_mono : &splash_img;
+constexpr int kSp = 1;
+#endif
 
 // The mascot over a deep-teal gradient, the name, a tagline and, unless null, a
 // footer line.
@@ -2217,33 +2240,34 @@ lv_obj_t *buildSplash(const char *footer) {
     // About), make one block centred in the free area. The image is 240x132;
     // its speech bubble spans (0..88, 2..34) within it, top left, coming out
     // of the bill.
-    const int blockH = footer ? 162 : 180;
+    // CrowPanel 5.0: everything at kSp times.
+    const int blockH = (footer ? 162 : 180) * kSp;
     const int top = areaTop + (areaBottom - areaTop - blockH) / 2;
-    const int left = (lv_display_get_horizontal_resolution(nullptr) - 240) / 2;
+    const int left = (lv_display_get_horizontal_resolution(nullptr) - 240 * kSp) / 2;
     lv_obj_t *img = lv_image_create(scr);
     lv_image_set_src(img, kSplashImg);
     lv_obj_set_pos(img, left, top);
 
     lv_obj_t *cq = lv_label_create(scr);
     lv_label_set_text(cq, "CQ CQ");
-    lv_obj_set_style_text_font(cq, uiFont(16), 0);
+    lv_obj_set_style_text_font(cq, uiFont(kSp > 1 ? 24 : 16), 0);
     lv_obj_set_style_text_color(cq, mono ? lv_color_black() : lv_color_hex(0x15506A), 0);
     lv_obj_set_style_text_align(cq, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(cq, 88);
-    lv_obj_set_pos(cq, left, top + 2 + 8);
+    lv_obj_set_width(cq, 88 * kSp);
+    lv_obj_set_pos(cq, left, top + (2 + 8) * kSp + (kSp > 1 ? 2 : 0));
 
     lv_obj_t *title = lv_label_create(scr);
     lv_label_set_text(title, APP_NAME);
     lv_obj_set_style_text_font(title, uiFont(20), 0);
     lv_obj_set_style_text_color(title, mono ? lv_color_black() : lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, top + 138);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, top + 138 * kSp);
 
     if (footer) return scr;
     lv_obj_t *tag = lv_label_create(scr);
     lv_label_set_text(tag, "APRS in your pocket");
     lv_obj_set_style_text_font(tag, uiFont(14), 0);
     lv_obj_set_style_text_color(tag, mono ? lv_color_black() : lv_color_hex(0xFFC440), 0);
-    lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, top + 164);
+    lv_obj_align(tag, LV_ALIGN_TOP_MID, 0, top + 164 * kSp);
     return scr;
 }
 
@@ -2252,7 +2276,11 @@ uint32_t s_splashAtMs = 0;
 
 // ── Screensaver: the platy drifting over black, bouncing off the edges ───────
 
+#ifdef DEVICE_CROWPANEL_50
+constexpr int kSaverW = 360, kSaverH = 198;  // the large splash image at 3/4
+#else
 constexpr int kSaverW = 120, kSaverH = 66;   // splash image at half size
+#endif
 struct {
     lv_obj_t *bg, *img;
     lv_timer_t *timer;
@@ -2300,7 +2328,7 @@ void saverShow() {
     lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
     lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
     s_saver.img = lv_image_create(s_saver.bg);
-    lv_image_set_src(s_saver.img, &splash_img);
+    lv_image_set_src(s_saver.img, kSplashImg);
     lv_obj_set_size(s_saver.img, kSaverW, kSaverH);
     lv_image_set_inner_align(s_saver.img, LV_IMAGE_ALIGN_STRETCH);
     lv_obj_update_layout(s_saver.bg);
@@ -2704,8 +2732,8 @@ struct {
     String key;
 } s_info;
 
-void refreshInfo() {
-    if (!s_info.bg) return;
+// The status summary: shown in the info modal, or on CrowPanel 5.0's home.
+String infoText() {
     const WifiStatus w = wifiStatus();
     const BleStatus b = g_ble.status();
     String t = g_config.fullCallsign() + "\n";
@@ -2729,17 +2757,40 @@ void refreshInfo() {
     t += String("\nGPS: ") + (!g.enabled ? "off" : g.valid ? "fix, " + String(g.sats) + " sats" : g.alive ? "searching" : "no data");
     const BeaconStatus bs = beaconStatus();
     t += String("\nBeacon: ") + bs.mode + (bs.waitingFor.length() ? " (waiting for " + bs.waitingFor + ")" : String());
+    return t;
+}
+
+// The setup AP's QR code (join with no password), hidden while the AP is off.
+void updateApQr(lv_obj_t *qr, const WifiStatus &w) {
+    if (w.apActive) {
+        const String q = "WIFI:T:nopass;S:" + w.apSsid + ";;";
+        lv_qrcode_update(qr, q.c_str(), q.length());
+        lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+lv_obj_t *makeApQr(lv_obj_t *parent, int size) {
+    lv_obj_t *qr = lv_qrcode_create(parent);
+    lv_qrcode_set_size(qr, size);
+    lv_qrcode_set_dark_color(qr, lv_color_black());
+    lv_qrcode_set_light_color(qr, lv_color_white());
+    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(qr, 3, 0);
+    lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    return qr;
+}
+
+void refreshInfo() {
+    if (!s_info.bg) return;
+    const WifiStatus w = wifiStatus();
+    const String t = infoText();
     const String key = t + String(w.apActive);
     if (key == s_info.key) return;
     s_info.key = key;
     lv_label_set_text(s_info.text, t.c_str());
-    if (w.apActive) {
-        const String qr = "WIFI:T:nopass;S:" + w.apSsid + ";;";
-        lv_qrcode_update(s_info.qr, qr.c_str(), qr.length());
-        lv_obj_remove_flag(s_info.qr, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(s_info.qr, LV_OBJ_FLAG_HIDDEN);
-    }
+    updateApQr(s_info.qr, w);
 }
 
 void closeInfo() {
@@ -2774,12 +2825,7 @@ void openInfo() {
     lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(box, 6, 0);
 
-    s_info.qr = lv_qrcode_create(box);
-    lv_qrcode_set_size(s_info.qr, 96);
-    lv_qrcode_set_dark_color(s_info.qr, lv_color_black());
-    lv_qrcode_set_light_color(s_info.qr, lv_color_white());
-    lv_obj_set_style_border_color(s_info.qr, lv_color_white(), 0);
-    lv_obj_set_style_border_width(s_info.qr, 3, 0);
+    s_info.qr = makeApQr(box, 96);
 
     s_info.text = lv_label_create(box);
     lv_obj_set_width(s_info.text, lv_pct(100));
@@ -2799,11 +2845,33 @@ void openInfo() {
 
 // ── Home ─────────────────────────────────────────────────────────────────────
 
+// CrowPanels: the home screen shows the status beside the tiles, in place of
+// the Status tile and its modal.
+#if defined(DEVICE_CROWPANEL_50) || defined(DEVICE_CROWPANEL_35)
+#define HOME_STATUS_PANEL 1
+#else
+#define HOME_STATUS_PANEL 0
+#endif
+
 struct {
     bool apWasActive;
+    lv_obj_t *info, *qr;   // HOME_STATUS_PANEL: the status panel beside the tiles
+    String key;
 } s_home;
 
 void refreshHome() {
+#if HOME_STATUS_PANEL
+    // The status is always on screen here, QR code included, so nothing pops up.
+    if (!s_home.info) return;
+    const WifiStatus w = wifiStatus();
+    const String t = infoText();
+    const String key = t + String(w.apActive);
+    if (key == s_home.key) return;
+    s_home.key = key;
+    lv_label_set_text(s_home.info, t.c_str());
+    updateApQr(s_home.qr, w);
+    return;
+#endif
     // Pop the info up by itself whenever the setup AP comes on, so the QR code
     // is there for first-time setup.
     const bool ap = wifiStatus().apActive;
@@ -2827,7 +2895,9 @@ void buildHome() {
         {LV_SYMBOL_EYE_OPEN, "Monitor", nullptr, [](lv_event_t *) { openMonitor(); }},
         {LV_SYMBOL_UPLOAD, "Send beacon now", "Beacon", [](lv_event_t *) { beaconNowUi(); }},
         {LV_SYMBOL_GPS, "Map", nullptr, [](lv_event_t *) { openMap(); }},
+#if !HOME_STATUS_PANEL   // otherwise home shows the status itself
         {LV_SYMBOL_WIFI, "Status & connection info", "Status", [](lv_event_t *) { openInfo(); }},
+#endif
         {LV_SYMBOL_SETTINGS, "Settings", nullptr, [](lv_event_t *) { openSettings(); }},
     };
     constexpr int kN = sizeof(kTiles) / sizeof(kTiles[0]);
@@ -2839,10 +2909,40 @@ void buildHome() {
     for (int r = 0; r < kRows; r++) kRowDsc[r] = LV_GRID_FR(1);
     kRowDsc[kRows] = LV_GRID_TEMPLATE_LAST;
 
-    lv_obj_t *grid = lv_obj_create(scr);
+    lv_obj_t *parent = scr;
+#if HOME_STATUS_PANEL
+    // Status on the left, tiles on the right; stacked in portrait.
+    const bool portrait = lv_display_get_vertical_resolution(nullptr) > lv_display_get_horizontal_resolution(nullptr);
+    parent = lv_obj_create(scr);
+    lv_obj_remove_style_all(parent);
+    lv_obj_set_width(parent, lv_pct(100));
+    lv_obj_set_flex_grow(parent, 1);
+    lv_obj_set_flex_flow(parent, portrait ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(parent, 2, 0);
+    lv_obj_set_style_pad_gap(parent, 6, 0);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *panel = lv_obj_create(parent);
+    lv_obj_set_size(panel, portrait ? lv_pct(100) : lv_pct(40), portrait ? LV_SIZE_CONTENT : lv_pct(100));
+    lv_obj_set_style_pad_all(panel, 8, 0);
+    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(panel, 6, 0);
+    s_home.qr = makeApQr(panel, lv_display_get_vertical_resolution(nullptr) >= 400 ? 120 : 96);
+    s_home.info = lv_label_create(panel);
+    lv_obj_set_width(s_home.info, lv_pct(100));
+    lv_label_set_long_mode(s_home.info, LV_LABEL_LONG_WRAP);
+    if (lv_display_get_vertical_resolution(nullptr) < 400) lv_obj_set_style_text_font(s_home.info, uiFont(12), 0);
+    s_home.key = "";
+#endif
+
+    lv_obj_t *grid = lv_obj_create(parent);
     lv_obj_remove_style_all(grid);
     lv_obj_set_width(grid, lv_pct(100));
     lv_obj_set_flex_grow(grid, 1);
+#if HOME_STATUS_PANEL
+    if (!portrait) lv_obj_set_height(grid, lv_pct(100));
+#endif
     lv_obj_set_style_pad_all(grid, 2, 0);
     lv_obj_set_style_pad_gap(grid, 6, 0);
     lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
@@ -2871,6 +2971,9 @@ void buildHome() {
     lv_group_focus_obj(first);
 
     pushScreen(scr, grp, refreshHome);
+#if HOME_STATUS_PANEL
+    refreshHome();
+#endif
 }
 
 // Runs inside LVGL's indev read; navigation is deferred to uiLoop() so no
