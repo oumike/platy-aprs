@@ -69,7 +69,7 @@ the time.
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
-(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanel and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanels and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -127,6 +127,15 @@ status bar goes back (hold it for the home screen). The board has no free button
 screen from the screensaver and from off (see [Screen timeout](#screen-timeout)). The screen is 480×320, and
 the LoRa module goes in the J8/J9 expansion slot. It has no battery, so the status bar shows no battery
 indicator. GPS is optional: a module on the UART1 connector is picked up when present.
+
+### Elecrow CrowPanel Advance 5.0
+
+Used like the 3.5: touch only, with an on-screen keyboard, the status-bar back arrow, and a **double tap** to
+wake. The screen is 800×480. The LoRa module goes in the J8/J9 wireless slot, and the **function DIP switch on
+the back must select the wireless module** (S1 off, S0 on); otherwise the radio isn't found. That switch gives
+the SD card's pins to the radio, so there is no SD card, and the board has no GPS (set a fixed position for
+beacons) and no battery. The build is for V1.2 and later boards; a V1.0 board needs a build with
+`-DCROWPANEL_50_HW_V10=1`, as its radio select is on another pin.
 
 ### LilyGo T-LoRa Pager
 
@@ -293,7 +302,7 @@ APRS-IS can be switched on and off under **Settings → APRS-IS** on the device.
 Alerts sound for new messages, acks, failed sends and beacons, and once at boot. **Settings → Sound** steps
 through the new-message tone styles **Default**, **Chirpy** and **Bass**, playing each, and **Off**, which
 silences every alert. On the T-Deck Plus, Wio Tracker L2 and T-LoRa Pager (speakers), **Settings → Volume** steps from 0 to
-100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck, CrowPanel and T-Deck Pro have no sound.
+100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck, CrowPanels and T-Deck Pro have no sound.
 Both are also on the web **Device** tab.
 
 ## Message light
@@ -327,7 +336,7 @@ A **screen button** works the same way on every board: **tap** to turn the scree
 off after the screen timeout (30 s if the timeout is Never); a press in a pocket can't get past it.
 
 On a touch screen, a **double tap** on the screensaver also unlocks it: two quick taps in the same spot. A dark
-screen ignores touch, except on the CrowPanel, which has no screen button and takes the double tap there too.
+screen ignores touch, except on the CrowPanels, which have no screen button and takes the double tap there too.
 
 | Board | Screen off | Unlock | Doesn't unlock it |
 |---|---|---|---|
@@ -335,7 +344,7 @@ screen ignores touch, except on the CrowPanel, which has no screen button and ta
 | Wio Tracker L2 | Tap the top Wake button | Hold Wake, press BOOT, or double-tap the screensaver | Other touches |
 | T-Deck Plus | Hold the trackball click for 2 s | Click the trackball, or double-tap the screensaver | Keyboard, other touches, rolling the ball |
 | Mesh Deck | Tap the top-right (R) shoulder button, or BOOT | Hold R or BOOT, or double-tap the screensaver | Keyboard, d-pad, other touches |
-| CrowPanel 3.5 | Only at the timeout | Double-tap the screen | Other touches |
+| CrowPanel 3.5 / 5.0 | Only at the timeout | Double-tap the screen | Other touches |
 | T-LoRa Pager | Tap BOOT, or hold the wheel click for 2 s | Hold BOOT, or click the wheel | Keyboard, turning the wheel |
 | T-Deck Pro | Tap the side button | Hold the side button, or double-tap the screensaver | Keyboard, other touches |
 
@@ -373,7 +382,8 @@ sent is appended to `/platy/logs/YYYY-MM-DD.log` (UTC dates; `nodate.log` until 
 `RF<` heard, `RF>` sent, `IS<`/`IS>` APRS-IS (only logged with **Also log packets received from APRS-IS** on).
 Logs can be downloaded or deleted on the Device tab.
 
-The Mesh Deck has no SD card slot, so it keeps no packet log, map tiles or SD backups. On the CrowPanel the
+The Mesh Deck has no SD card slot, and the CrowPanel 5.0 gives the card's pins to the radio, so neither keeps a
+packet log, map tiles or SD backups. On the CrowPanel 3.5 the
 card is read over a slower software SPI link; it still does all of the above.
 
 ## The web interface

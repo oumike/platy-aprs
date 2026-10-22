@@ -86,6 +86,9 @@ void boardBegin() {
     pinMode(PIN_SD_CS, OUTPUT);
     digitalWrite(PIN_SD_CS, HIGH);
     delay(10);
+#elif defined(DEVICE_CROWPANEL_50)
+    pinMode(PIN_LORA_CS, OUTPUT);
+    digitalWrite(PIN_LORA_CS, HIGH);
 #elif defined(DEVICE_TLORA_PAGER)
     // Everything on the shared SPI bus deselected, then the expander powers the
     // radio, GPS, keyboard and SD rails.

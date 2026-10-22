@@ -14,6 +14,7 @@ RELEASE_ENVS=(
     tdeck-plus
     mesh-deck
     crowpanel-35
+    crowpanel-50
     tlora-pager
     tdeck-pro
 )
@@ -40,6 +41,7 @@ env_label() {
         tdeck-plus)     echo "LilyGo T-Deck Plus" ;;
         mesh-deck)      echo "Attaky Mesh Deck" ;;
         crowpanel-35)   echo "Elecrow CrowPanel Advance 3.5" ;;
+        crowpanel-50)   echo "Elecrow CrowPanel Advance 5.0" ;;
         tlora-pager)    echo "LilyGo T-LoRa Pager" ;;
         tdeck-pro)      echo "LilyGo T-Deck Pro" ;;
         *)              echo "$1" ;;

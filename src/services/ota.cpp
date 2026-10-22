@@ -345,6 +345,8 @@ const char *otaAssetSlug() {
     return "mesh-deck";
 #elif defined(DEVICE_CROWPANEL_35)
     return "crowpanel-35";
+#elif defined(DEVICE_CROWPANEL_50)
+    return "crowpanel-50";
 #elif defined(DEVICE_TLORA_PAGER)
     return "tlora-pager";
 #elif defined(DEVICE_TDECK_PRO)

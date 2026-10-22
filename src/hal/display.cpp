@@ -12,6 +12,9 @@
 #include <lgfx/v1/panel/Panel_NV3031B.hpp>
 #elif defined(DEVICE_MESH_DECK)
 #include "mesh_deck_io.h"
+#elif defined(DEVICE_CROWPANEL_50)
+#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
 #endif
 #include <lvgl.h>
 
@@ -242,6 +245,212 @@ public:
             cfg.pin_int = PIN_TOUCH_INT;
             cfg.pin_rst = PIN_TOUCH_RST;
             cfg.bus_shared = false;
+            cfg.offset_rotation = 0;
+            cfg.i2c_port = 0;
+            cfg.i2c_addr = TOUCH_ADDR;
+            cfg.pin_sda = PIN_I2C_SDA;
+            cfg.pin_scl = PIN_I2C_SCL;
+            cfg.freq = I2C_FREQ;
+            _touch.config(cfg);
+            _panel.setTouch(&_touch);
+        }
+        setPanel(&_panel);
+    }
+};
+
+#elif defined(DEVICE_CROWPANEL_50)
+
+// The backlight and the GT911 reset belong to a PCA9557 (V1.0) or a board MCU
+// (V1.1+); begin() works out which by who answers (camillia-mt
+// crowpanel_50_display.h).
+class CrowPanelCtl {
+public:
+    enum Kind : uint8_t { NONE, PCA9557, MCU };
+
+    void begin() {
+        Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_FREQ);
+        if (probe(CROWPANEL_IOEX_ADDR)) {
+            _kind = PCA9557;
+            // Levels first, then direction: backlight on, touch out of reset,
+            // amplifier held off, as Elecrow starts it.
+            _out = pinMask(CROWPANEL_IOEX_BL) | pinMask(CROWPANEL_IOEX_TP_RST) | pinMask(CROWPANEL_IOEX_AMP_SHUT);
+            pcaWrite(0x01, _out);
+            pcaWrite(0x03, (uint8_t)~(pinMask(CROWPANEL_IOEX_BL) | pinMask(CROWPANEL_IOEX_TP_RST) |
+                                      pinMask(CROWPANEL_IOEX_AMP_MUTE) | pinMask(CROWPANEL_IOEX_AMP_SHUT)));
+            Serial.println("[display] CrowPanel V1.0 (PCA9557)");
+#if !CROWPANEL_50_HW_V10
+            Serial.println("[display] V1.0 board: the radio needs a -DCROWPANEL_50_HW_V10=1 build");
+#endif
+        } else if (probe(CROWPANEL_MCU_ADDR)) {
+            _kind = MCU;
+            Serial.println("[display] CrowPanel V1.1+ (board MCU)");
+        } else {
+            Serial.println("[display] CrowPanel: no backlight controller at 0x18 or 0x30");
+        }
+    }
+
+    // GT911 address strap: INT held low through the reset gives 0x5D. The MCU's
+    // wake command is repeated until the GT911 answers, as Elecrow does.
+    // Returns the address it answered at, 0 if none.
+    uint8_t resetTouch() {
+        if (_kind == NONE) return 0;
+        for (int attempt = 0; attempt < 5; attempt++) {
+            pinMode(PIN_TOUCH_INT, OUTPUT);
+            digitalWrite(PIN_TOUCH_INT, LOW);
+            if (_kind == PCA9557) {
+                pcaSet(CROWPANEL_IOEX_TP_RST, false);
+                delay(20);
+                pcaSet(CROWPANEL_IOEX_TP_RST, true);
+                delay(100);
+            } else {
+                mcuSend(CROWPANEL_MCU_TOUCH_ON);
+                delay(120);
+            }
+            pinMode(PIN_TOUCH_INT, INPUT);
+            delay(100);
+            if (probe(0x5D)) return 0x5D;
+            if (probe(0x14)) return 0x14;
+        }
+        Serial.println("[display] GT911 not answering: no touch");
+        return 0;
+    }
+
+    // 0 is off. V1.0's backlight only switches; the MCU dims.
+    void setBacklight(uint8_t level) {
+        if (_kind == PCA9557) {
+            pcaSet(CROWPANEL_IOEX_BL, level > 0);
+        } else if (_kind == MCU) {
+            const uint8_t span = CROWPANEL_MCU_BL_MIN - CROWPANEL_MCU_BL_MAX;
+            const uint8_t cmd = level == 0 ? CROWPANEL_MCU_BL_OFF
+                                           : (uint8_t)(CROWPANEL_MCU_BL_MIN - (uint32_t)(level - 1) * span / 254);
+            if (cmd != _lastMcu && mcuSend(cmd)) _lastMcu = cmd;
+        }
+    }
+
+private:
+    static uint8_t pinMask(uint8_t pin) { return (uint8_t)(1u << pin); }
+    static bool probe(uint8_t addr) {
+        Wire.beginTransmission(addr);
+        return Wire.endTransmission() == 0;
+    }
+    void pcaSet(uint8_t pin, bool high) {
+        const uint8_t next = high ? (uint8_t)(_out | pinMask(pin)) : (uint8_t)(_out & ~pinMask(pin));
+        if (next == _out) return;
+        _out = next;
+        pcaWrite(0x01, _out);
+    }
+    static void pcaWrite(uint8_t reg, uint8_t v) {
+        Wire.beginTransmission(CROWPANEL_IOEX_ADDR);
+        Wire.write(reg);
+        Wire.write(v);
+        Wire.endTransmission();
+    }
+    static bool mcuSend(uint8_t cmd) {
+        Wire.beginTransmission(CROWPANEL_MCU_ADDR);
+        Wire.write(cmd);
+        return Wire.endTransmission() == 0;
+    }
+    Kind _kind = NONE;
+    uint8_t _out = 0;
+    int16_t _lastMcu = -1;
+};
+
+class Light_CrowPanel : public lgfx::ILight {
+public:
+    explicit Light_CrowPanel(CrowPanelCtl &ctl) : _ctl(ctl) {}
+    bool init(uint8_t b) override {
+        setBrightness(b);
+        return true;
+    }
+    void setBrightness(uint8_t b) override { _ctl.setBacklight(b); }
+
+private:
+    CrowPanelCtl &_ctl;
+};
+
+// 800x480 RGB565 scanned out of a PSRAM framebuffer by the S3's LCD_CAM.
+// Bus pins and timings are Elecrow's factory code, as camillia-mt and
+// wadamesh run them.
+class LGFX_Board : public lgfx::LGFX_Device {
+    lgfx::Bus_RGB _bus;
+    lgfx::Panel_RGB _panel;
+    CrowPanelCtl _ctl;
+    Light_CrowPanel _light{_ctl};
+    lgfx::Touch_GT911 _touch;
+
+public:
+    bool init_impl(bool use_reset, bool use_clear) override {
+        _ctl.begin();
+        const uint8_t addr = _ctl.resetTouch();
+        if (addr) {
+            auto cfg = _touch.config();
+            cfg.i2c_addr = addr;
+            _touch.config(cfg);
+        }
+        return LGFX_Device::init_impl(use_reset, use_clear);
+    }
+
+    LGFX_Board() {
+        {
+            auto cfg = _panel.config();
+            cfg.memory_width = cfg.panel_width = TFT_PANEL_W;
+            cfg.memory_height = cfg.panel_height = TFT_PANEL_H;
+            cfg.offset_x = cfg.offset_y = 0;
+            cfg.offset_rotation = 0;
+            cfg.readable = true;
+            _panel.config(cfg);
+        }
+        {
+            auto cfg = _panel.config_detail();
+            cfg.use_psram = 1;   // 750 KB
+            _panel.config_detail(cfg);
+        }
+        {
+            auto cfg = _bus.config();
+            cfg.panel = &_panel;
+            cfg.pin_d0 = GPIO_NUM_21;    // B0
+            cfg.pin_d1 = GPIO_NUM_47;
+            cfg.pin_d2 = GPIO_NUM_48;
+            cfg.pin_d3 = GPIO_NUM_45;
+            cfg.pin_d4 = GPIO_NUM_38;
+            cfg.pin_d5 = GPIO_NUM_9;     // G0
+            cfg.pin_d6 = GPIO_NUM_10;
+            cfg.pin_d7 = GPIO_NUM_11;
+            cfg.pin_d8 = GPIO_NUM_12;
+            cfg.pin_d9 = GPIO_NUM_13;
+            cfg.pin_d10 = GPIO_NUM_14;
+            cfg.pin_d11 = GPIO_NUM_7;    // R0
+            cfg.pin_d12 = GPIO_NUM_17;
+            cfg.pin_d13 = GPIO_NUM_18;
+            cfg.pin_d14 = GPIO_NUM_3;
+            cfg.pin_d15 = GPIO_NUM_46;
+            cfg.pin_henable = GPIO_NUM_42;
+            cfg.pin_vsync = GPIO_NUM_41;
+            cfg.pin_hsync = GPIO_NUM_40;
+            cfg.pin_pclk = GPIO_NUM_39;
+            cfg.freq_write = CROWPANEL_PCLK_HZ;
+            cfg.hsync_polarity = 0;
+            cfg.hsync_front_porch = 8;
+            cfg.hsync_pulse_width = 4;
+            cfg.hsync_back_porch = 8;
+            cfg.vsync_polarity = 0;
+            cfg.vsync_front_porch = 8;
+            cfg.vsync_pulse_width = 4;
+            cfg.vsync_back_porch = 8;
+            cfg.pclk_idle_high = 1;   // 0 darkens single-pixel detail
+            _bus.config(cfg);
+        }
+        _panel.setBus(&_bus);
+        _panel.setLight(&_light);
+        {
+            auto cfg = _touch.config();
+            cfg.x_min = 0;
+            cfg.x_max = TFT_PANEL_W - 1;
+            cfg.y_min = 0;
+            cfg.y_max = TFT_PANEL_H - 1;
+            cfg.pin_int = -1;   // polled; INT is only the address strap
+            cfg.pin_rst = -1;   // on the board controller
+            cfg.bus_shared = true;
             cfg.offset_rotation = 0;
             cfg.i2c_port = 0;
             cfg.i2c_addr = TOUCH_ADDR;

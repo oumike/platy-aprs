@@ -11,6 +11,7 @@
 #   -t, --tdeck-plus       LilyGo T-Deck Plus
 #   -m, --mesh-deck        Attaky Mesh Deck (left halted after upload: power-cycle it)
 #   -3, --crowpanel-35     Elecrow CrowPanel Advance 3.5
+#   -5, --crowpanel-50     Elecrow CrowPanel Advance 5.0
 #   -l, --tlora-pager      LilyGo T-LoRa Pager
 #   -P, --tdeck-pro        LilyGo T-Deck Pro
 #   -p, --port PORT        upload/monitor port (default: PlatformIO auto-detect)
@@ -42,6 +43,7 @@ env_label() {
 		tdeck-plus)     echo "LilyGo T-Deck Plus" ;;
 		mesh-deck)      echo "Attaky Mesh Deck" ;;
 		crowpanel-35)   echo "Elecrow CrowPanel Advance 3.5" ;;
+		crowpanel-50)   echo "Elecrow CrowPanel Advance 5.0" ;;
 		tlora-pager)    echo "LilyGo T-LoRa Pager" ;;
 		tdeck-pro)      echo "LilyGo T-Deck Pro" ;;
 		*)              echo "$1" ;;
@@ -54,7 +56,7 @@ format_duration() {
 	else printf '%dm %02ds' $((t / 60)) $((t % 60)); fi
 }
 
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -63,6 +65,7 @@ while [[ $# -gt 0 ]]; do
 		-t|--tdeck-plus)     ENV_NAME="tdeck-plus" ;;
 		-m|--mesh-deck)      ENV_NAME="mesh-deck" ;;
 		-3|--crowpanel-35)   ENV_NAME="crowpanel-35" ;;
+		-5|--crowpanel-50)   ENV_NAME="crowpanel-50" ;;
 		-l|--tlora-pager)    ENV_NAME="tlora-pager" ;;
 		-P|--tdeck-pro)      ENV_NAME="tdeck-pro" ;;
 		-p|--port)           PORT="${2:?--port needs a value}"; shift ;;

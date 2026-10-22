@@ -38,6 +38,9 @@ static void gpsPower(bool on) {
 }
 
 void gpsSetEnabled(bool on) {
+#if PIN_GPS_RX < 0
+    on = false;   // no GPS on this board
+#endif
     if (on == s_on) return;
     s_on = on;
     if (on) {

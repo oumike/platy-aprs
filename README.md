@@ -28,13 +28,14 @@ configured from the device or a built-in web page.
 | LilyGo T-Deck Plus | SX1262 | Keyboard, trackball, touch | `tdeck-plus` |
 | Attaky Mesh Deck | SX1262 | Keyboard module, d-pad, touch | `mesh-deck` |
 | Elecrow CrowPanel Advance 3.5 | SX1262 (expansion module) | Touch | `crowpanel-35` |
+| Elecrow CrowPanel Advance 5.0 | SX1262 (wireless module) | Touch | `crowpanel-50` |
 | LilyGo T-LoRa Pager | SX1262 | Keyboard, scroll wheel | `tlora-pager` |
 | LilyGo T-Deck Pro (e-paper) | SX1262 | Keyboard, touch | `tdeck-pro` |
 
-The CrowPanel aside, all have GPS; on the CrowPanel it is an optional module on its UART connector, and it has no
-battery. The Mesh Deck has no SD card slot, so it keeps no map tile cache, packet log or SD backups. The
-T-Deck Plus and Mesh Deck builds are newer and less tested than the others, and the CrowPanel, T-LoRa Pager and T-Deck Pro
-builds have not been tested on hardware yet.
+The CrowPanels aside, all have GPS; on the 3.5 it is an optional module on its UART connector, and the 5.0 has
+none. Neither CrowPanel has a battery. The Mesh Deck and CrowPanel 5.0 have no usable SD card, so they keep no map
+tile cache, packet log or SD backups. The T-Deck Plus and Mesh Deck builds are newer and less tested than the
+others, and the CrowPanel, T-LoRa Pager and T-Deck Pro builds have not been tested on hardware yet.
 
 ## Install
 
@@ -68,7 +69,7 @@ You need [PlatformIO](https://platformio.org/install/cli).
 
 ```sh
 scripts/build-upload-monitor.sh            # pick a board, build, flash, open the serial monitor
-scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck, -3 CrowPanel, -l Pager, -P T-Deck Pro)
+scripts/build-upload-monitor.sh -m -p /dev/cu.wchusbserial10   # a given board and port (-9 M9, -w Wio, -t T-Deck Plus, -m Mesh Deck, -3 CrowPanel 3.5, -5 CrowPanel 5.0, -l Pager, -P T-Deck Pro)
 scripts/build-upload-monitor.sh -B         # build every board and print a summary
 pio test -e native                         # unit tests on the host
 ```
