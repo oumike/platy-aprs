@@ -42,7 +42,7 @@ lv_color_t kGrey = LV_COLOR_MAKE(0x60, 0x66, 0x70);
 lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
 lv_color_t kAmber = LV_COLOR_MAKE(0xff, 0xb3, 0x47);
 lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
-lv_color_t kBarBg = LV_COLOR_MAKE(0x1b, 0x20, 0x27);        // status bar
+lv_color_t kBarBg = LV_COLOR_MAKE(0x4a, 0x3f, 0x35);        // status bar, toasts, surfaces
 lv_color_t kItemFocusBg = LV_COLOR_MAKE(0x4a, 0x34, 0x10);  // keypad-focused list item
 lv_color_t kItemFocusText = LV_COLOR_MAKE(0xff, 0xff, 0xff);
 lv_color_t kDimText = LV_COLOR_MAKE(0x9a, 0xa4, 0xb2);      // secondary text
@@ -75,7 +75,7 @@ constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, h
 // ── Theme: high-contrast keypad focus + glowing buttons ──────────────────────
 
 lv_theme_t s_theme;
-lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor, s_stScreen;
+lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor, s_stScreen, s_stSurface;
 UiTheme s_appliedTheme = UiTheme::Dark;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
@@ -90,8 +90,17 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
         lv_obj_add_style(obj, &s_stCursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     }
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
-    // Light theme: grey screens rather than LVGL's white.
-    if (!lv_obj_get_parent(obj) && s_appliedTheme == UiTheme::Light) lv_obj_add_style(obj, &s_stScreen, 0);
+    // Our screen colour rather than LVGL's (grey in light, dark brown in dark).
+    if (!lv_obj_get_parent(obj)) {
+        lv_obj_add_style(obj, &s_stScreen, 0);
+    } else if (s_appliedTheme == UiTheme::Dark &&
+               (lv_obj_check_type(obj, &lv_obj_class) || lv_obj_check_type(obj, &lv_list_class) ||
+                isItem || lv_obj_check_type(obj, &lv_textarea_class) ||
+                lv_obj_check_type(obj, &lv_dropdown_class) || lv_obj_check_type(obj, &lv_dropdownlist_class) ||
+                lv_obj_check_type(obj, &lv_roller_class))) {
+        // LVGL's dark card grey becomes the brown accent.
+        lv_obj_add_style(obj, &s_stSurface, 0);
+    }
 }
 
 bool s_stylesInited = false;
@@ -112,7 +121,7 @@ void themeColors(bool light) {
         kGreen = lv_color_hex(0x4cd07d);
         kAmber = lv_color_hex(0xffb347);
         kRed = lv_color_hex(0xff5c5c);
-        kBarBg = lv_color_hex(0x1b2027);
+        kBarBg = lv_color_hex(0x4a3f35);
         kItemFocusBg = lv_color_hex(0x4a3410);
         kItemFocusText = lv_color_hex(0xffffff);
         kDimText = lv_color_hex(0x9aa4b2);
@@ -126,7 +135,7 @@ void themeInit() {
     const bool light = g_config.theme == UiTheme::Light;
     s_appliedTheme = g_config.theme;
     themeColors(light);
-    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor, &s_stScreen};
+    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor, &s_stScreen, &s_stSurface};
     for (lv_style_t *st : styles) {
         if (s_stylesInited) lv_style_reset(st);
         lv_style_init(st);
@@ -155,7 +164,8 @@ void themeInit() {
     lv_style_set_shadow_opa(&s_stBtnGlowFocus, LV_OPA_80);
     lv_style_set_text_color(&s_stBtnGlowFocus, lv_color_white());
 
-    lv_style_set_bg_color(&s_stScreen, lv_color_hex(0xdde0e4));
+    lv_style_set_bg_color(&s_stScreen, lv_color_hex(light ? 0xdde0e4 : 0x2f2519));
+    lv_style_set_bg_color(&s_stSurface, kBarBg);
 
     lv_style_set_border_color(&s_stCursor, kAmber);
     lv_style_set_border_width(&s_stCursor, 3);
@@ -595,7 +605,7 @@ void toast(const String &text, uint32_t ms = 3000) {
         lv_obj_set_width(s_toast, lv_pct(94));
         lv_label_set_long_mode(s_toast, LV_LABEL_LONG_DOT);
         lv_obj_set_style_max_height(s_toast, 60, 0);
-        lv_obj_set_style_bg_color(s_toast, lv_color_hex(0x2a313b), 0);
+        lv_obj_set_style_bg_color(s_toast, g_config.theme == UiTheme::Light ? lv_color_hex(0x2a313b) : kBarBg, 0);
         lv_obj_set_style_text_color(s_toast, lv_color_white(), 0);
         lv_obj_set_style_bg_opa(s_toast, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(s_toast, kAmber, 0);
