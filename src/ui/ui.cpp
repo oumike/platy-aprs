@@ -43,8 +43,6 @@ lv_color_t kGreen = LV_COLOR_MAKE(0x4c, 0xd0, 0x7d);
 lv_color_t kAmber = LV_COLOR_MAKE(0xff, 0xb3, 0x47);
 lv_color_t kRed = LV_COLOR_MAKE(0xff, 0x5c, 0x5c);
 lv_color_t kBarBg = LV_COLOR_MAKE(0x4a, 0x3f, 0x35);        // status bar, toasts, surfaces
-lv_color_t kItemFocusBg = LV_COLOR_MAKE(0x4a, 0x34, 0x10);  // keypad-focused list item
-lv_color_t kItemFocusText = LV_COLOR_MAKE(0xff, 0xff, 0xff);
 lv_color_t kDimText = LV_COLOR_MAKE(0x9a, 0xa4, 0xb2);      // secondary text
 lv_color_t kOutText = LV_COLOR_MAKE(0x3f, 0xa7, 0xff);      // our own messages and packets
 
@@ -75,21 +73,30 @@ constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, h
 // ── Theme: high-contrast keypad focus + glowing buttons ──────────────────────
 
 lv_theme_t s_theme;
-lv_style_t s_stFocus, s_stItemFocus, s_stBtnGlow, s_stBtnGlowFocus, s_stCursor, s_stScreen, s_stSurface;
+lv_style_t s_stFocus, s_stCursor, s_stScreen, s_stSurface;
+// Tiles: buttons are orange, list rows brown, lists a padded column of them.
+lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisabled, s_stTileList;
+
+constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
+constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
+constexpr uint32_t kMsgTileUnread = 0xFFB347;
 UiTheme s_appliedTheme = UiTheme::Dark;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
     const bool isBtn = lv_obj_check_type(obj, &lv_button_class);
     const bool isItem = lv_obj_check_type(obj, &lv_list_button_class);
-    if (isBtn) {
-        lv_obj_add_style(obj, &s_stBtnGlow, 0);
-        lv_obj_add_style(obj, &s_stBtnGlowFocus, LV_STATE_FOCUS_KEY);
-    }
-    if (isItem) lv_obj_add_style(obj, &s_stItemFocus, LV_STATE_FOCUS_KEY);
     if (lv_obj_check_type(obj, &lv_textarea_class)) {
         lv_obj_add_style(obj, &s_stCursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     }
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
+    // After s_stFocus so the tile outline wins.
+    if (isBtn || isItem) {
+        lv_obj_add_style(obj, isBtn ? &s_stTile : &s_stRow, 0);
+        lv_obj_add_style(obj, isBtn ? &s_stTileFocus : &s_stRowFocus, LV_STATE_FOCUS_KEY);
+        lv_obj_add_style(obj, &s_stNoGrow, LV_STATE_PRESSED);
+        lv_obj_add_style(obj, &s_stDisabled, LV_STATE_DISABLED);
+    }
+    if (lv_obj_check_type(obj, &lv_list_class)) lv_obj_add_style(obj, &s_stTileList, 0);
     // Our screen colour rather than LVGL's (grey in light, dark brown in dark).
     if (!lv_obj_get_parent(obj)) {
         lv_obj_add_style(obj, &s_stScreen, 0);
@@ -112,8 +119,6 @@ void themeColors(bool light) {
         kAmber = lv_color_hex(0xc77700);
         kRed = lv_color_hex(0xd32f2f);
         kBarBg = lv_color_hex(0xc6ccd3);
-        kItemFocusBg = lv_color_hex(0xffe0a8);
-        kItemFocusText = lv_color_hex(0x000000);
         kDimText = lv_color_hex(0x5f6b7a);
         kOutText = lv_color_hex(0x1565c0);
     } else {
@@ -122,8 +127,6 @@ void themeColors(bool light) {
         kAmber = lv_color_hex(0xffb347);
         kRed = lv_color_hex(0xff5c5c);
         kBarBg = lv_color_hex(0x4a3f35);
-        kItemFocusBg = lv_color_hex(0x4a3410);
-        kItemFocusText = lv_color_hex(0xffffff);
         kDimText = lv_color_hex(0x9aa4b2);
         kOutText = lv_color_hex(0x3fa7ff);
     }
@@ -135,7 +138,8 @@ void themeInit() {
     const bool light = g_config.theme == UiTheme::Light;
     s_appliedTheme = g_config.theme;
     themeColors(light);
-    lv_style_t *styles[] = {&s_stFocus, &s_stItemFocus, &s_stBtnGlow, &s_stBtnGlowFocus, &s_stCursor, &s_stScreen, &s_stSurface};
+    lv_style_t *styles[] = {&s_stFocus, &s_stCursor, &s_stScreen, &s_stSurface, &s_stTile,
+                            &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList};
     for (lv_style_t *st : styles) {
         if (s_stylesInited) lv_style_reset(st);
         lv_style_init(st);
@@ -147,22 +151,33 @@ void themeInit() {
     lv_style_set_outline_width(&s_stFocus, 2);
     lv_style_set_outline_pad(&s_stFocus, 0);
 
-    lv_style_set_bg_color(&s_stItemFocus, kItemFocusBg);
-    lv_style_set_bg_opa(&s_stItemFocus, LV_OPA_COVER);
-    lv_style_set_text_color(&s_stItemFocus, kItemFocusText);
-
-    lv_style_set_shadow_color(&s_stBtnGlow, lv_palette_main(LV_PALETTE_BLUE));
-    lv_style_set_shadow_width(&s_stBtnGlow, 10);
-    lv_style_set_shadow_spread(&s_stBtnGlow, 0);
-    lv_style_set_shadow_offset_x(&s_stBtnGlow, 0);
-    lv_style_set_shadow_offset_y(&s_stBtnGlow, 0);
-    lv_style_set_shadow_opa(&s_stBtnGlow, light ? LV_OPA_30 : LV_OPA_50);
-
-    lv_style_set_shadow_color(&s_stBtnGlowFocus, kAmber);
-    lv_style_set_shadow_width(&s_stBtnGlowFocus, 16);
-    lv_style_set_shadow_spread(&s_stBtnGlowFocus, 2);
-    lv_style_set_shadow_opa(&s_stBtnGlowFocus, LV_OPA_80);
-    lv_style_set_text_color(&s_stBtnGlowFocus, lv_color_white());
+    const lv_color_t outline = light ? lv_color_black() : lv_color_white();
+    struct { lv_style_t *base, *focus; uint32_t bg, focusBg, text; } tiles[] = {
+        {&s_stTile, &s_stTileFocus, kTileBg, kTileFocusBg, 0x000000},
+        {&s_stRow, &s_stRowFocus, kMsgTileBg, kMsgTileFocusBg, kMsgTileText},
+    };
+    for (auto &t : tiles) {
+        lv_style_set_radius(t.base, 10);
+        lv_style_set_bg_color(t.base, lv_color_hex(t.bg));
+        lv_style_set_bg_opa(t.base, LV_OPA_COVER);
+        lv_style_set_text_color(t.base, lv_color_hex(t.text));
+        lv_style_set_border_width(t.base, 0);
+        lv_style_set_shadow_width(t.base, 0);
+        lv_style_set_bg_color(t.focus, lv_color_hex(t.focusBg));
+        lv_style_set_text_color(t.focus, lv_color_hex(t.text));
+        lv_style_set_shadow_width(t.focus, 0);
+        lv_style_set_outline_color(t.focus, outline);
+        lv_style_set_outline_width(t.focus, 2);
+        lv_style_set_outline_pad(t.focus, 1);
+        // LVGL widens focused/pressed list rows, which clips the rounded ends.
+        lv_style_set_transform_width(t.focus, 0);
+    }
+    lv_style_set_transform_width(&s_stNoGrow, 0);
+    lv_style_set_bg_opa(&s_stDisabled, LV_OPA_50);
+    lv_style_set_bg_opa(&s_stTileList, LV_OPA_TRANSP);
+    lv_style_set_border_width(&s_stTileList, 0);
+    lv_style_set_pad_all(&s_stTileList, 3);
+    lv_style_set_pad_row(&s_stTileList, 6);
 
     lv_style_set_bg_color(&s_stScreen, lv_color_hex(light ? 0xdde0e4 : 0x2f2519));
     lv_style_set_bg_color(&s_stSurface, kBarBg);
@@ -278,40 +293,10 @@ void popToHome() {
     while (s_depth > 1) popScreen();
 }
 
-// Tiles (home, Messages): dark orange with black text in both themes; focus
-// lightens the tile and outlines it instead of the usual amber glow, which
-// wouldn't show on orange.
-constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
-// Conversation tiles in Messages: dark brown with light text.
-constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
-constexpr uint32_t kMsgTileUnread = 0xFFB347;
-
-void styleTile(lv_obj_t *b, uint32_t bg = kTileBg, uint32_t focusBg = kTileFocusBg, uint32_t text = 0x000000) {
-    const lv_color_t outline = g_config.theme == UiTheme::Light ? lv_color_black() : lv_color_white();
-    lv_obj_set_style_radius(b, 10, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(b, lv_color_hex(text), 0);
-    lv_obj_set_style_border_width(b, 0, 0);
-    lv_obj_set_style_shadow_width(b, 0, 0);
-    // LVGL widens a focused or pressed list row, which clips the rounded ends.
-    lv_obj_set_style_transform_width(b, 0, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_transform_width(b, 0, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(b, lv_color_hex(focusBg), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_text_color(b, lv_color_hex(text), LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_shadow_width(b, 0, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_color(b, outline, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_width(b, 2, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_outline_pad(b, 1, LV_STATE_FOCUS_KEY);
-    lv_obj_set_style_bg_opa(b, LV_OPA_50, LV_STATE_DISABLED);
-}
-
-// A list laid out as a column of full-width tiles.
-void styleTileList(lv_obj_t *list) {
-    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(list, 0, 0);
-    lv_obj_set_style_pad_all(list, 3, 0);
-    lv_obj_set_style_pad_row(list, 6, 0);
+// List rows are brown by default; menu and action items use the orange tile.
+void styleTile(lv_obj_t *b) {
+    lv_obj_add_style(b, &s_stTile, 0);
+    lv_obj_add_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
 }
 
 lv_obj_t *makeList(lv_obj_t *parent) {
@@ -324,6 +309,7 @@ lv_obj_t *makeList(lv_obj_t *parent) {
 lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char *text,
                   lv_event_cb_t cb) {
     lv_obj_t *b = lv_list_add_button(list, icon, text);
+    styleTile(b);   // menu/action items are orange; content rows stay brown
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(grp, b);
     return b;
@@ -720,6 +706,8 @@ lv_obj_t *makeFavButton(lv_obj_t *parent, lv_group_t *grp, char *call) {
     lv_obj_set_style_pad_ver(b, 4, 0);
     lv_obj_set_height(b, LV_SIZE_CONTENT);
     lv_obj_set_width(b, LV_SIZE_CONTENT);
+    lv_obj_add_style(b, &s_stRow, 0);   // brown, so the amber star shows
+    lv_obj_add_style(b, &s_stRowFocus, LV_STATE_FOCUS_KEY);
     const bool on = favIs(call);
     makeStar(b, on);
     lv_obj_t *l = lv_label_create(b);
@@ -1383,12 +1371,10 @@ void refreshMessages() {
             messagesMarkAllRead();
             updateMsgIcon();
         });
-        styleTile(b);
         if (!messagesUnread()) lv_obj_add_state(b, LV_STATE_DISABLED);
-        styleTile(addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_TRASH, "Delete all messages",
-                          [](lv_event_t *) { confirmDeleteAll(); }));
+        addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_TRASH, "Delete all messages", [](lv_event_t *) { confirmDeleteAll(); });
     }
-    styleTile(addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); }));
+    addItem(s_msgs.list, s_msgs.grp, LV_SYMBOL_EDIT, "New message", [](lv_event_t *) { openNewMessage(); });
     std::stable_partition(threads.begin(), threads.end(),
                           [](const ChatThread &t) { return favIs(t.peer.c_str()); });
     size_t n = 0;
@@ -1412,7 +1398,6 @@ void refreshMessages() {
             if (k == LV_KEY_RIGHT || k == ' ') openThreadMenu((size_t)(uintptr_t)lv_event_get_user_data(e));
         }, LV_EVENT_KEY, (void *)(uintptr_t)n);
         lv_obj_set_user_data(b, (void *)(uintptr_t)(n + 1));
-        styleTile(b, kMsgTileBg, kMsgTileFocusBg, kMsgTileText);
         if (t.unread) {
             lv_obj_set_style_text_color(b, lv_color_hex(kMsgTileUnread), 0);
             lv_obj_set_style_text_color(b, lv_color_hex(kMsgTileUnread), LV_STATE_FOCUS_KEY);
@@ -1463,7 +1448,6 @@ void openMessages() {
     s_msgs.grp = grp;
     s_msgs.gen = 0;
     s_msgs.list = makeList(scr);
-    styleTileList(s_msgs.list);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_msgs.list = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshMessages);
 }
@@ -2470,7 +2454,6 @@ void buildHome() {
         lv_obj_t *b = lv_button_create(grid);
         const bool span = i == kN - 1 && kN % 2;
         lv_obj_set_grid_cell(b, LV_GRID_ALIGN_STRETCH, i % 2, span ? 2 : 1, LV_GRID_ALIGN_STRETCH, i / 2, 1);
-        styleTile(b);
         lv_obj_set_style_pad_all(b, 4, 0);
 
         lv_obj_t *l = lv_label_create(b);
