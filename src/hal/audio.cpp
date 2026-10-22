@@ -11,7 +11,13 @@
 #if HAS_ES8311
 #include <AudioBoard.h>
 #include <Wire.h>
+#if defined(DEVICE_TLORA_PAGER)
+#include "tlora_pager_io.h"
+#define AMP_POWER(on) pagerIoSet(XL_AMP_EN, on)
+#else
 #include "wio_l2_io.h"
+#define AMP_POWER(on) wioIoSet(EXP_AUDIO_PA, on)
+#endif
 #endif
 
 bool audioPresent() { return HAS_BUZZER || HAS_I2S_AUDIO; }
@@ -95,7 +101,7 @@ bool codecBegin() {
     s_codec.setVolume(kCodecVolIdle);
     // Muted and unpowered between sounds: an idle DAC and amp click.
     s_codec.setMute(true);
-    wioIoSet(EXP_AUDIO_PA, false);
+    AMP_POWER(false);
     return true;
 }
 #endif
@@ -197,7 +203,7 @@ void playTone(uint16_t hz, uint16_t ms, float gain) {
 
 void startPlayback() {
 #if HAS_ES8311
-    wioIoSet(EXP_AUDIO_PA, true);
+    AMP_POWER(true);
     delay(AUDIO_AMP_SETTLE_MS);
     s_codec.setVolume(kCodecVolActive);   // raised while still muted: inaudible
 #endif
@@ -214,7 +220,7 @@ void stopPlayback() {
     s_codec.setMute(true);
     i2s_zero_dma_buffer(kPort);
     s_codec.setVolume(kCodecVolIdle);
-    wioIoSet(EXP_AUDIO_PA, false);
+    AMP_POWER(false);
 #else
     i2s_zero_dma_buffer(kPort);
 #endif

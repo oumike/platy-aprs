@@ -68,7 +68,7 @@ the time.
 
 **Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Radio link (TNC / LoRa) · Paired radios · APRS-IS on/off · Screen timeout · At timeout · Brightness (Left/Right or drag the slider) · Sound and Volume
-(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once) · Backup settings to SD card ·
 Firmware update · About · Reboot.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -124,6 +124,25 @@ status bar goes back (hold it for the home screen). The board has no free button
 screen from the screensaver and from off (see [Screen timeout](#screen-timeout)). The screen is 480×320, and
 the LoRa module goes in the J8/J9 expansion slot. It has no battery, so the status bar shows no battery
 indicator. GPS is optional: a module on the UART1 connector is picked up when present.
+
+### LilyGo T-LoRa Pager
+
+There is no touch screen: the scroll wheel steps through the controls in order (and changes the value of a
+slider or list being edited), and a click selects (sent when you let go). **Backspace** outside a text field
+goes back. The screen is 480×222.
+
+| Keys | Gives |
+|---|---|
+| Letters, Space, Enter | As labelled |
+| **Shift**, then a letter | Capital |
+| **Sym**, then `q`…`p` | `1`…`0` |
+| **Sym**, then `a s d f g h j k l` | `* / + - = : ' " @` |
+| **Sym**, then `z x c v b n m` | `_ $ ; ? ! , .` |
+| **Sym** + Enter | Next field |
+| **Sym** + Backspace | Back |
+| **Sym** + Space | Home screen |
+
+Shift and Sym apply to the next key only, and lapse after 1.5 seconds.
 
 ## Connecting a radio
 
@@ -237,7 +256,7 @@ APRS-IS can be switched on and off under **Settings → APRS-IS** on the device.
 
 Alerts sound for new messages, acks, failed sends and beacons, and once at boot. **Settings → Sound** steps
 through the new-message tone styles **Default**, **Chirpy** and **Bass**, playing each, and **Off**, which
-silences every alert. On the T-Deck Plus and Wio Tracker L2 (speakers), **Settings → Volume** steps from 0 to
+silences every alert. On the T-Deck Plus, Wio Tracker L2 and T-LoRa Pager (speakers), **Settings → Volume** steps from 0 to
 100% in tens; 50% is the normal level. The M9's buzzer has no volume control, and the Mesh Deck and CrowPanel have no sound.
 Both are also on the web **Device** tab.
 
@@ -250,9 +269,9 @@ when a message arrives, even with the sound off. **Settings → Message light** 
 30 seconds, 1, 2 or 5 minutes, or **Never** (until the messages are read). Reading the messages stops it
 sooner. Both are also on the web **Device** tab.
 
-On the T-Deck Plus the keyboard backlight blinks the same way, but only while the screen is off or showing the
+On the T-Deck Plus and T-LoRa Pager the keyboard backlight blinks the same way, but only while the screen is off or showing the
 screensaver; turning the screen on stops it. **Settings → Keyboard blink** turns it on (the default) or off, and
-**Light timeout** works as above. The keyboard needs its 2024-12-25 or later firmware; older keyboards ignore it.
+**Light timeout** works as above. The T-Deck keyboard needs its 2024-12-25 or later firmware; older keyboards ignore it.
 The other boards have no such light.
 
 ## Screen timeout
@@ -281,6 +300,7 @@ screen ignores touch, except on the CrowPanel, which has no screen button and ta
 | T-Deck Plus | Hold the trackball click for 2 s | Click the trackball, or double-tap the screensaver | Keyboard, other touches, rolling the ball |
 | Mesh Deck | Tap the top-right (R) shoulder button, or BOOT | Hold R or BOOT, or double-tap the screensaver | Keyboard, d-pad, other touches |
 | CrowPanel 3.5 | Only at the timeout | Double-tap the screen | Other touches |
+| T-LoRa Pager | Tap BOOT, or hold the wheel click for 2 s | Hold BOOT, or click the wheel | Keyboard, turning the wheel |
 
 ## Firmware updates
 
@@ -327,7 +347,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus) and its timeout, brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager) and its timeout, brightness, screen timeout and screensaver, theme (dark/light), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |

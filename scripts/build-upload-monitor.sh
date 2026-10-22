@@ -11,6 +11,7 @@
 #   -t, --tdeck-plus       LilyGo T-Deck Plus
 #   -m, --mesh-deck        Attaky Mesh Deck (left halted after upload: power-cycle it)
 #   -3, --crowpanel-35     Elecrow CrowPanel Advance 3.5
+#   -l, --tlora-pager      LilyGo T-LoRa Pager
 #   -p, --port PORT        upload/monitor port (default: PlatformIO auto-detect)
 #   -e, --erase            erase flash before uploading (wipes config; M9: one esptool session)
 #   -c, --fullclean        full clean before building
@@ -40,6 +41,7 @@ env_label() {
 		tdeck-plus)     echo "LilyGo T-Deck Plus" ;;
 		mesh-deck)      echo "Attaky Mesh Deck" ;;
 		crowpanel-35)   echo "Elecrow CrowPanel Advance 3.5" ;;
+		tlora-pager)    echo "LilyGo T-LoRa Pager" ;;
 		*)              echo "$1" ;;
 	esac
 }
@@ -50,7 +52,7 @@ format_duration() {
 	else printf '%dm %02ds' $((t / 60)) $((t % 60)); fi
 }
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
 		-t|--tdeck-plus)     ENV_NAME="tdeck-plus" ;;
 		-m|--mesh-deck)      ENV_NAME="mesh-deck" ;;
 		-3|--crowpanel-35)   ENV_NAME="crowpanel-35" ;;
+		-l|--tlora-pager)    ENV_NAME="tlora-pager" ;;
 		-p|--port)           PORT="${2:?--port needs a value}"; shift ;;
 		-e|--erase)          ERASE=true ;;
 		-c|--fullclean)      FULLCLEAN=true ;;

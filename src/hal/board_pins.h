@@ -14,8 +14,10 @@
 #include "pins_mesh_deck.h"
 #elif defined(DEVICE_CROWPANEL_35)
 #include "pins_crowpanel_35.h"
+#elif defined(DEVICE_TLORA_PAGER)
+#include "pins_tlora_pager.h"
 #else
-#error "No board selected: define DEVICE_M9, DEVICE_WIO_TRACKER_L2, DEVICE_TDECK, DEVICE_MESH_DECK or DEVICE_CROWPANEL_35"
+#error "No board selected: define DEVICE_M9, DEVICE_WIO_TRACKER_L2, DEVICE_TDECK, DEVICE_MESH_DECK, DEVICE_CROWPANEL_35 or DEVICE_TLORA_PAGER"
 #endif
 #ifndef HAS_SD_CARD
 #define HAS_SD_CARD 1

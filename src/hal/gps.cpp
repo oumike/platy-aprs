@@ -2,6 +2,8 @@
 #include "board_pins.h"
 #if defined(DEVICE_WIO_TRACKER_L2)
 #include "wio_l2_io.h"
+#elif defined(DEVICE_TLORA_PAGER)
+#include "tlora_pager_io.h"
 #endif
 #include <TinyGPSPlus.h>
 #include <sys/time.h>
@@ -26,6 +28,8 @@ static void gpsPower(bool on) {
         delay(10);
         wioIoSet(EXP_GNSS_RST, false);
     }
+#elif defined(DEVICE_TLORA_PAGER)
+    pagerIoSet(XL_GPS_EN, on);
 #else
     (void)on;   // T-Deck: the GPS is on the main peripheral rail
 #endif

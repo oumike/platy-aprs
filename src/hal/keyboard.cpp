@@ -11,6 +11,8 @@
 #include "wio_l2_io.h"
 #elif defined(DEVICE_MESH_DECK)
 #include "mesh_deck_io.h"
+#elif defined(DEVICE_TLORA_PAGER)
+#include "tlora_pager_io.h"
 #endif
 
 namespace {
@@ -157,6 +159,13 @@ uint32_t mapKey(uint8_t k) {
     switch (k) {
         case RK_UP:
         case RK_DOWN:
+#if defined(DEVICE_TLORA_PAGER)
+            // The wheel is the only way to move: it steps through the controls
+            // in order (text fields included), and only a control being edited
+            // takes it as arrows.
+            if (focusedWantsArrows() && !focusedIsTextarea()) return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
+            return k == RK_UP ? LV_KEY_PREV : LV_KEY_NEXT;
+#endif
             if (focusedWantsArrows()) return k == RK_UP ? LV_KEY_UP : LV_KEY_DOWN;
             if (spatialMove(k)) return 0;
             return k == RK_UP ? LV_KEY_PREV : LV_KEY_NEXT;   // wrap around at the ends
@@ -194,7 +203,7 @@ void readCb(lv_indev_t *indev, lv_indev_data_t *data) {
     }
     uint8_t raw;
     while (pop(raw)) {
-#if defined(DEVICE_TDECK)
+#if defined(DEVICE_TDECK) || defined(DEVICE_TLORA_PAGER)
         // No Back key: Backspace outside a text field navigates back.
         if (raw == RK_BKSP && !focusedIsTextarea()) raw = RK_BACK;
 #endif
@@ -226,7 +235,41 @@ uint32_t s_tbLastMoveMs = 0, s_tbClickSinceMs = 0;
 constexpr uint32_t kTbSleepHoldMs = 2000;
 #endif
 
-#if defined(DEVICE_M9) || defined(DEVICE_MESH_DECK)
+#if defined(DEVICE_TLORA_PAGER)
+// Wheel: every A/B edge goes through the quadrature table in an ISR; four
+// valid transitions are one detent (camillia-mt). Clockwise counts up.
+constexpr int8_t kQuad[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
+volatile uint8_t s_rotPrev = 0;
+volatile int8_t s_rotAccum = 0;
+volatile int16_t s_rotSteps = 0;
+uint8_t rotAB() {
+    return (uint8_t)(((digitalRead(PIN_ROT_B) == LOW) << 1) | (digitalRead(PIN_ROT_A) == LOW));
+}
+void rotIsr() {   // digitalRead lives in flash, so not IRAM_ATTR
+    const uint8_t cur = rotAB();
+    const uint8_t prev = s_rotPrev;
+    if (cur == prev) return;
+    s_rotPrev = cur;
+    const int8_t d = kQuad[(prev << 2) | cur];
+    if (!d) {   // skipped a state: noise, start the detent over
+        s_rotAccum = 0;
+        return;
+    }
+    const int8_t acc = (int8_t)(s_rotAccum + d);
+    if (acc >= 4 || acc <= -4) {
+        s_rotAccum = 0;
+        if (acc > 0 && s_rotSteps < 24) s_rotSteps++;
+        else if (acc < 0 && s_rotSteps > -24) s_rotSteps--;
+    } else {
+        s_rotAccum = acc;
+    }
+}
+bool s_clickDown = false, s_clickClaimed = false;
+uint32_t s_lastRotMs = 0, s_clickSinceMs = 0, s_nextKbPollMs = 0;
+constexpr uint32_t kClickSleepHoldMs = 2000;
+#endif
+
+#if defined(DEVICE_M9) || defined(DEVICE_MESH_DECK) || defined(DEVICE_TLORA_PAGER)
 WakeButton s_bootBtn;   // BOOT: tap = screen off, hold = wake
 #endif
 
@@ -278,6 +321,20 @@ void hwBegin() {
     s_present = meshDeckKeyboardBegin();
     Serial.printf("[kb] Mesh Deck keyboard %s\n", s_present ? "found" : "not found; will retry");
     pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
+#elif defined(DEVICE_TLORA_PAGER)
+    // Wire and the keyboard rail came up in boardBegin().
+    s_present = pagerKeyboardBegin();
+    Serial.printf("[kb] Pager keyboard %s\n", s_present ? "found" : "not found; will retry");
+    pinMode(PIN_KB_INT, INPUT_PULLUP);
+    pinMode(PIN_KB_BL, OUTPUT);
+    digitalWrite(PIN_KB_BL, LOW);
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
+    pinMode(PIN_ROT_A, INPUT_PULLUP);
+    pinMode(PIN_ROT_B, INPUT_PULLUP);
+    pinMode(PIN_ROT_CLICK, INPUT_PULLUP);
+    s_rotPrev = rotAB();
+    attachInterrupt(digitalPinToInterrupt(PIN_ROT_A), rotIsr, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(PIN_ROT_B), rotIsr, CHANGE);
 #endif
 }
 
@@ -430,6 +487,52 @@ void hwPoll(uint32_t now) {
         s_mdSelSinceMs = 0;
     }
     if (!(down & sel)) s_mdSelSinceMs = 0;
+#elif defined(DEVICE_TLORA_PAGER)
+    screenServiceWakeButton(s_bootBtn, digitalRead(PIN_BOOT_BTN) == LOW, now, "BOOT button");
+    noInterrupts();
+    const int16_t steps = s_rotSteps;
+    s_rotSteps = 0;
+    interrupts();
+    if (steps) s_lastRotMs = now;
+    for (int16_t i = 0; i < abs(steps); i++) input(steps > 0 ? RK_UP : RK_DOWN);
+    // The click works as the T-Deck's trackball click: it wakes the screen,
+    // holding it 2 s puts the screen to sleep, so Enter goes out on release.
+    // Clicks right after turning the wheel are its detents chattering.
+    const bool click = digitalRead(PIN_ROT_CLICK) == LOW;
+    if (click && !s_clickDown) {
+        s_clickSinceMs = now;
+        s_clickClaimed = now - s_lastRotMs <= 90;
+    }
+    if (click && !s_clickClaimed) {
+        if (screenAsleep()) s_clickClaimed = screenTryWake("wheel click");
+        else if (now - s_clickSinceMs >= kClickSleepHoldMs) {
+            s_clickClaimed = true;
+            screenSleep("wheel hold");
+        }
+    } else if (!click && s_clickDown && !s_clickClaimed) {
+        input(RK_ENTER);
+    }
+    s_clickDown = click;
+
+    if (!s_present) {
+        if ((int32_t)(now - s_nextProbeMs) < 0) return;
+        s_nextProbeMs = now + 2000;
+        s_present = pagerKeyboardBegin();
+        if (!s_present) return;
+        Serial.println("[kb] Pager keyboard found");
+    }
+    // INT (active low) says the FIFO holds something; a slow timed poll
+    // backs it up for an event that lands between a drain and its ack.
+    if (digitalRead(PIN_KB_INT) != LOW && (int32_t)(now - s_nextKbPollMs) < 0) return;
+    s_nextKbPollMs = now + 120;
+    uint8_t keys[10];
+    const int n = pagerKeyboardScan(keys, (int)sizeof(keys));
+    for (int i = 0; i < n; i++) {
+#ifdef PLATY_SERIAL_KEYS
+        Serial.printf("[kb] key 0x%02X\n", keys[i]);
+#endif
+        input(keys[i]);
+    }
 #else
     (void)now;
 #endif
@@ -470,4 +573,7 @@ void keyboardSetBacklight(uint8_t duty) {
     Wire.write(duty);
     (void)Wire.endTransmission();
 }
+#elif defined(DEVICE_TLORA_PAGER)
+// A plain enable line: any duty lights it fully.
+void keyboardSetBacklight(uint8_t duty) { digitalWrite(PIN_KB_BL, duty ? HIGH : LOW); }
 #endif

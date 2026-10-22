@@ -6,6 +6,8 @@
 #include "wio_l2_io.h"
 #elif defined(DEVICE_MESH_DECK)
 #include "mesh_deck_io.h"
+#elif defined(DEVICE_TLORA_PAGER)
+#include "tlora_pager_io.h"
 #endif
 
 static uint16_t s_battMv = 0;
@@ -82,6 +84,16 @@ void boardBegin() {
     pinMode(PIN_SD_CS, OUTPUT);
     digitalWrite(PIN_SD_CS, HIGH);
     delay(10);
+#elif defined(DEVICE_TLORA_PAGER)
+    // Everything on the shared SPI bus deselected, then the expander powers the
+    // radio, GPS, keyboard and SD rails.
+    pinMode(PIN_LORA_CS, OUTPUT);
+    digitalWrite(PIN_LORA_CS, HIGH);
+    pinMode(PIN_SD_CS, OUTPUT);
+    digitalWrite(PIN_SD_CS, HIGH);
+    pinMode(PIN_TFT_CS, OUTPUT);
+    digitalWrite(PIN_TFT_CS, HIGH);
+    pagerIoBegin();
 #endif
 }
 
@@ -94,6 +106,12 @@ uint16_t boardBatteryMilliVolts() {
     if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
     s_battLastMs = now;
     if (const uint16_t mv = meshDeckBatteryMv()) s_battMv = mv;
+    return s_battMv;
+#elif defined(DEVICE_TLORA_PAGER)
+    if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;
+    s_battLastMs = now;
+    // The charger's ADC; the first reading lands one call after the first.
+    if (const uint16_t mv = pagerBatteryMv()) s_battMv = mv;
     return s_battMv;
 #else
     if (s_battMv != 0 && now - s_battLastMs < 5000) return s_battMv;

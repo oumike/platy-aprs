@@ -13,6 +13,10 @@
 #endif
 #include <lvgl.h>
 
+#ifndef TFT_OFFSET_X
+#define TFT_OFFSET_X 0
+#endif
+
 namespace {
 
 #if defined(DEVICE_WIO_TRACKER_L2)
@@ -249,10 +253,14 @@ public:
     }
 };
 
-#else  // ST7789 on a shared SPI bus with PWM backlight (M9, T-Deck)
+#else  // ST7789 (ST7796 on the Pager) on a shared SPI bus with PWM backlight (M9, T-Deck, Pager)
 
 class LGFX_Board : public lgfx::LGFX_Device {
+#if defined(DEVICE_TLORA_PAGER)
+    lgfx::Panel_ST7796 _panel;
+#else
     lgfx::Panel_ST7789 _panel;
+#endif
     lgfx::Bus_SPI _bus;
     lgfx::Light_PWM _light;
 #if HAS_TOUCH
@@ -284,7 +292,7 @@ public:
             cfg.pin_busy = -1;
             cfg.panel_width = TFT_PANEL_W;
             cfg.panel_height = TFT_PANEL_H;
-            cfg.offset_x = 0;
+            cfg.offset_x = TFT_OFFSET_X;
             cfg.offset_y = 0;
             cfg.invert = true;
             cfg.rgb_order = false;

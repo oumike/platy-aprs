@@ -15,5 +15,5 @@ void keyboardSetHotkeyHandler(KeyboardHotkeyHandler h);
 // The LVGL keypad device; attach a group to it with lv_indev_set_group().
 lv_indev_t *keyboardIndev();
 
-// T-Deck keyboard backlight, 0 = off .. 255 = full.
+// Keyboard backlight (T-Deck, T-LoRa Pager), 0 = off .. 255 = full (the Pager is on/off).
 void keyboardSetBacklight(uint8_t duty);

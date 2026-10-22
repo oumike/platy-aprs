@@ -14,6 +14,7 @@ RELEASE_ENVS=(
     tdeck-plus
     mesh-deck
     crowpanel-35
+    tlora-pager
 )
 
 # Every release image is merged with this esptool. esptool 5 renamed merge_bin
@@ -38,6 +39,7 @@ env_label() {
         tdeck-plus)     echo "LilyGo T-Deck Plus" ;;
         mesh-deck)      echo "Attaky Mesh Deck" ;;
         crowpanel-35)   echo "Elecrow CrowPanel Advance 3.5" ;;
+        tlora-pager)    echo "LilyGo T-LoRa Pager" ;;
         *)              echo "$1" ;;
     esac
 }
