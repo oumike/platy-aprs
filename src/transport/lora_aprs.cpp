@@ -1,6 +1,12 @@
 #include "lora_aprs.h"
 
+#include <Arduino.h>   // first, so Serial is set up with the real ARDUINO_USB_CDC_ON_BOOT
+// RadioLib #warns about USB CDC debug output whenever CDC is on, even with its
+// debug off; GCC 8 can't silence #warning by pragma, so hide the macro instead.
+#pragma push_macro("ARDUINO_USB_CDC_ON_BOOT")
+#undef ARDUINO_USB_CDC_ON_BOOT
 #include <RadioLib.h>
+#pragma pop_macro("ARDUINO_USB_CDC_ON_BOOT")
 #include <SPI.h>
 
 #include "aprs/lora_frame.h"

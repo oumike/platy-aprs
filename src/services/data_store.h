@@ -20,6 +20,10 @@ void packetLogBegin();
 void packetLogAdd(const char *tnc2, bool tx, bool viaIs);
 uint32_t packetLogLastSeq();
 size_t packetLogCount();
+// Empties the log (not the SD card's). Sequence numbers keep counting; the
+// clear count tells viewers to drop what they show.
+void packetLogClear();
+uint32_t packetLogClears();
 // i = 0 is the newest entry.
 const LogEntry *packetLogAt(size_t i);
 

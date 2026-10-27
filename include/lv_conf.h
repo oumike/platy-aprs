@@ -1,8 +1,8 @@
 #ifndef LV_CONF_H
 #define LV_CONF_H
-// LVGL 9.2 configuration for platy-aprs. Unlisted options take LVGL defaults.
+// LVGL 9.6 configuration for platy-aprs. Unlisted options take LVGL defaults.
 
-#define LV_COLOR_DEPTH 16
+#define LV_COLOR_FORMAT_DEFAULT LV_COLOR_FORMAT_RGB565
 
 #define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB

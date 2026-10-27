@@ -122,7 +122,7 @@ bool focusedWantsArrows() {
     if (lv_group_get_editing(g)) return true;
     lv_obj_t *f = lv_group_get_focused(g);
     if (!f) return false;
-    if (lv_obj_has_flag(f, LV_OBJ_FLAG_USER_1)) return true;   // e.g. the map
+    if (lv_obj_get_user_flag(f, kUserFlagWantsArrows)) return true;   // e.g. the map
     // One-line text fields keep up/down for moving between fields.
     if (lv_obj_check_type(f, &lv_textarea_class)) return !lv_textarea_get_one_line(f);
     return lv_obj_check_type(f, &lv_dropdown_class) ||
@@ -138,7 +138,7 @@ bool focusedIsTextarea() {
 
 bool hiddenInTree(lv_obj_t *o) {
     for (; o; o = lv_obj_get_parent(o)) {
-        if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+        if (lv_obj_is_hidden(o)) return true;
     }
     return false;
 }
@@ -190,7 +190,7 @@ bool spatialMove(uint8_t dir) {
 constexpr int32_t kWheelScrollPx = 40;
 
 bool canScroll(lv_obj_t *o, bool down) {
-    return lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) &&
+    return lv_obj_is_scrollable(o) &&
            (down ? lv_obj_get_scroll_bottom(o) : lv_obj_get_scroll_top(o)) > 0;
 }
 

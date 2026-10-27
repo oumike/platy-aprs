@@ -110,7 +110,7 @@ constexpr uint32_t kRxBlinkGapMs = 5000;   // at most one radio blink per gap, h
 lv_theme_t s_theme;
 lv_style_t s_stFocus, s_stCursor, s_stScreen, s_stSurface;
 // Tiles: buttons are orange, list rows brown, lists a padded column of them.
-lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisabled, s_stTileList;
+lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisabled, s_stTileList, s_stListItem;
 #if HAS_EINK
 lv_style_t s_stEinkBox, s_stEinkBar;   // black outline for fields; black scrollbars
 #endif
@@ -119,25 +119,29 @@ constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
 constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
 constexpr uint32_t kMsgTileUnread = HAS_EINK ? 0x000000 : 0xFFB347;
 constexpr int kModalRadius = 12;   // pop-ups and toasts
+// E-paper Settings screens swap in short labels to keep their lists short.
+#define EL(full, brief) (HAS_EINK ? (brief) : (full))
+// LVGL user-flag bits; bit 0 is kUserFlagWantsArrows (keyboard.h).
+constexpr uint32_t kUserFlagFav = 1;     // the favorite button Alt+F looks for
+constexpr uint32_t kUserFlagTx = 2;      // monitor row: our own packet
+constexpr uint32_t kUserFlagViaIs = 3;   // monitor row: heard via APRS-IS
 UiTheme s_appliedTheme = UiTheme::Dark;
 bool s_dark = true;   // the theme in use (e-paper is always light)
 TextSize s_appliedTextSize = TextSize::Medium;
 
 void themeApply(lv_theme_t *, lv_obj_t *obj) {
     const bool isBtn = lv_obj_check_type(obj, &lv_button_class);
-    const bool isItem = lv_obj_check_type(obj, &lv_list_button_class);
     if (lv_obj_check_type(obj, &lv_textarea_class)) {
         lv_obj_add_style(obj, &s_stCursor, LV_PART_CURSOR | LV_STATE_FOCUSED);
     }
-    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
+    if (lv_obj_is_clickable(obj)) lv_obj_add_style(obj, &s_stFocus, LV_STATE_FOCUS_KEY);
     // After s_stFocus so the tile outline wins.
-    if (isBtn || isItem) {
-        lv_obj_add_style(obj, isBtn ? &s_stTile : &s_stRow, 0);
-        lv_obj_add_style(obj, isBtn ? &s_stTileFocus : &s_stRowFocus, LV_STATE_FOCUS_KEY);
+    if (isBtn) {   // list rows swap these for s_stRow in listButton()
+        lv_obj_add_style(obj, &s_stTile, 0);
+        lv_obj_add_style(obj, &s_stTileFocus, LV_STATE_FOCUS_KEY);
         lv_obj_add_style(obj, &s_stNoGrow, LV_STATE_PRESSED);
         lv_obj_add_style(obj, &s_stDisabled, LV_STATE_DISABLED);
     }
-    if (lv_obj_check_type(obj, &lv_list_class)) lv_obj_add_style(obj, &s_stTileList, 0);
 #if HAS_EINK
     // LVGL's light greys fall to white at 1 bit: outline what must be seen.
     if (lv_obj_check_type(obj, &lv_textarea_class) || lv_obj_check_type(obj, &lv_dropdown_class) ||
@@ -154,8 +158,7 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
     if (!lv_obj_get_parent(obj)) {
         lv_obj_add_style(obj, &s_stScreen, 0);
     } else if (s_dark &&
-               (lv_obj_check_type(obj, &lv_obj_class) || lv_obj_check_type(obj, &lv_list_class) ||
-                isItem || lv_obj_check_type(obj, &lv_textarea_class) ||
+               (lv_obj_check_type(obj, &lv_obj_class) || lv_obj_check_type(obj, &lv_textarea_class) ||
                 lv_obj_check_type(obj, &lv_dropdown_class) || lv_obj_check_type(obj, &lv_dropdownlist_class) ||
                 lv_obj_check_type(obj, &lv_roller_class))) {
         // LVGL's dark card grey becomes the brown accent.
@@ -205,6 +208,7 @@ void themeInit() {
     themeColors(light);
     lv_style_t *styles[] = {&s_stFocus, &s_stCursor, &s_stScreen, &s_stSurface, &s_stTile,
                             &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList,
+                            &s_stListItem,
 #if HAS_EINK
                             &s_stEinkBox, &s_stEinkBar
 #endif
@@ -247,6 +251,15 @@ void themeInit() {
     lv_style_set_border_width(&s_stTileList, 0);
     lv_style_set_pad_all(&s_stTileList, 3);
     lv_style_set_pad_row(&s_stTileList, 6);
+    lv_style_set_clip_corner(&s_stTileList, true);
+    // List buttons keep the padding LVGL's retired lv_list gave them (its PAD_SMALL).
+    {
+        const int32_t res = LV_MAX(lv_display_get_horizontal_resolution(lv_display_get_default()),
+                                   lv_display_get_vertical_resolution(lv_display_get_default()));
+        const int32_t pad = LV_DPX_CALC(lv_display_get_dpi(lv_display_get_default()), res <= 320 ? 10 : res < 720 ? 12 : 14);
+        lv_style_set_pad_all(&s_stListItem, pad);
+        lv_style_set_pad_column(&s_stListItem, pad);
+    }
 
     lv_style_set_bg_color(&s_stScreen, lv_color_hex(light ? 0xdde0e4 : 0x2f2519));
     lv_style_set_bg_color(&s_stSurface, kBarBg);
@@ -294,11 +307,11 @@ void themeInit() {
     const lv_color_t primary = base ? base->color_primary : lv_palette_main(LV_PALETTE_BLUE);
     const lv_color_t secondary = base ? base->color_secondary : lv_palette_main(LV_PALETTE_RED);
 #endif
-    base = lv_theme_default_init(nullptr, primary, secondary, !light, uiFont(14));
+    base = lv_theme_default_init(lv_display_get_default(), primary, secondary, !light, uiFont(14));
     s_theme = *base;
     lv_theme_set_parent(&s_theme, base);
     lv_theme_set_apply_cb(&s_theme, themeApply);
-    lv_display_set_theme(nullptr, &s_theme);
+    lv_display_set_theme(lv_display_get_default(), &s_theme);
 }
 
 // ── Screen stack ─────────────────────────────────────────────────────────────
@@ -325,14 +338,14 @@ lv_obj_t *newScreen(const char *title, lv_group_t **grpOut) {
 lv_obj_t *s_osk = nullptr;
 
 void oskHide() {
-    if (!s_osk || lv_obj_has_flag(s_osk, LV_OBJ_FLAG_HIDDEN)) return;
+    if (!s_osk || lv_obj_is_hidden(s_osk)) return;
     lv_keyboard_set_textarea(s_osk, nullptr);
-    lv_obj_add_flag(s_osk, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_osk, true);
     lv_obj_set_style_pad_bottom(lv_screen_active(), 4, 0);
 }
 
 void oskShow(lv_obj_t *ta) {
-    const int h = lv_display_get_vertical_resolution(nullptr) / 2;
+    const int h = lv_display_get_vertical_resolution(lv_display_get_default()) / 2;
     if (!s_osk) {
         s_osk = lv_keyboard_create(lv_layer_top());
         lv_obj_set_size(s_osk, lv_pct(100), h);
@@ -341,7 +354,7 @@ void oskShow(lv_obj_t *ta) {
         lv_obj_add_event_cb(s_osk, [](lv_event_t *) { oskHide(); }, LV_EVENT_CANCEL, nullptr);
     }
     lv_keyboard_set_textarea(s_osk, ta);
-    lv_obj_remove_flag(s_osk, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_osk, false);
     // Shrink the screen's content area so the field stays above the keyboard.
     lv_obj_t *scr = lv_obj_get_screen(ta);
     lv_obj_set_style_pad_bottom(scr, h + 4, 0);
@@ -376,8 +389,8 @@ void fitCallsign() {
 
 void updateBackButton() {
     if (!s_sbBack) return;
-    if (s_depth > 1) lv_obj_remove_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+    if (s_depth > 1) lv_obj_set_hidden(s_sbBack, false);
+    else lv_obj_set_hidden(s_sbBack, true);
     fitCallsign();
 }
 
@@ -412,23 +425,46 @@ void popToHome() {
     while (s_depth > 1) popScreen();
 }
 
-// List rows are brown by default; menu and action items use the orange tile.
-void styleTile(lv_obj_t *b) {
-    lv_obj_add_style(b, &s_stTile, 0);
-    lv_obj_add_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+// A scrolling column of list buttons (what LVGL's deprecated lv_list was).
+lv_obj_t *makeListBox(lv_obj_t *parent) {
+    lv_obj_t *list = lv_obj_create(parent);
+    lv_obj_add_style(list, &s_stTileList, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    return list;
 }
 
 lv_obj_t *makeList(lv_obj_t *parent) {
-    lv_obj_t *list = lv_list_create(parent);
+    lv_obj_t *list = makeListBox(parent);
     lv_obj_set_width(list, lv_pct(100));
     lv_obj_set_flex_grow(list, 1);
     return list;
 }
 
+// Full-width button in a list: [icon] text, as a row (brown) or a tile (orange).
+lv_obj_t *listButton(lv_obj_t *list, const char *icon, const char *text, bool tile) {
+    lv_obj_t *b = lv_button_create(list);
+    lv_obj_set_width(b, lv_pct(100));
+    lv_obj_add_style(b, &s_stListItem, 0);
+    if (!tile) {
+        lv_obj_remove_style(b, &s_stTile, 0);
+        lv_obj_remove_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
+        lv_obj_add_style(b, &s_stRow, 0);
+        lv_obj_add_style(b, &s_stRowFocus, LV_STATE_FOCUS_KEY);
+    }
+    lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
+    if (icon) lv_label_set_text(lv_label_create(b), icon);
+    if (text) {
+        lv_obj_t *l = lv_label_create(b);
+        lv_label_set_text(l, text);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+        lv_obj_set_flex_grow(l, 1);
+    }
+    return b;
+}
+
 lv_obj_t *addItem(lv_obj_t *list, lv_group_t *grp, const char *icon, const char *text,
                   lv_event_cb_t cb) {
-    lv_obj_t *b = lv_list_add_button(list, icon, text);
-    styleTile(b);   // menu/action items are orange; content rows stay brown
+    lv_obj_t *b = listButton(list, icon, text, true);   // menu/action items are orange; content rows stay brown
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(grp, b);
     return b;
@@ -444,7 +480,7 @@ lv_obj_t *sbRect(lv_obj_t *parent, int x, int y, int w, int h, int r, lv_color_t
     lv_obj_set_style_radius(o, sb(r), 0);
     lv_obj_set_style_bg_color(o, c, 0);
     lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(o, false);
     return o;
 }
 
@@ -457,13 +493,13 @@ void buildTncIcon(lv_obj_t *bar) {
     lv_obj_set_flex_flow(s_sbTnc, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_sbTnc, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(s_sbTnc, sb(2), 0);
-    lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(s_sbTnc, false);
+    lv_obj_set_scrollable(s_sbTnc, false);
     lv_obj_t *radio = lv_obj_create(s_sbTnc);
     lv_obj_remove_style_all(radio);
     lv_obj_set_size(radio, sb(10), sb(16));
-    lv_obj_remove_flag(radio, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(radio, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(radio, false);
+    lv_obj_set_scrollable(radio, false);
     sbRect(radio, 1, 0, 2, 5, 1, kGreen);
     sbRect(radio, 0, 4, 10, 12, 2, kGreen);
     sbRect(radio, 2, 6, 6, 3, 0, bg);
@@ -472,8 +508,8 @@ void buildTncIcon(lv_obj_t *bar) {
     s_sbTncTx = lv_label_create(s_sbTnc);
     lv_label_set_text(s_sbTncTx, LV_SYMBOL_UPLOAD);
     lv_obj_set_style_text_color(s_sbTncTx, kAmber, 0);
-    lv_obj_add_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_sbTncTx, true);
+    lv_obj_set_hidden(s_sbTnc, true);
 }
 
 // A 6x14 arrow from rectangles: three-step head plus a 2 px shaft.
@@ -482,8 +518,8 @@ lv_obj_t *sbArrow(lv_obj_t *parent, int x, bool up) {
     lv_obj_remove_style_all(a);
     lv_obj_set_pos(a, sb(x), 0);
     lv_obj_set_size(a, sb(6), sb(14));
-    lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(a, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(a, false);
+    lv_obj_set_scrollable(a, false);
     const int y0 = up ? 0 : 13, dy = up ? 1 : -1;
     sbRect(a, 2, y0, 2, 1, 0, kGreen);
     sbRect(a, 1, y0 + dy, 4, 1, 0, kGreen);
@@ -502,11 +538,11 @@ void buildIsIcon(lv_obj_t *bar) {
     s_sbIs = lv_obj_create(bar);
     lv_obj_remove_style_all(s_sbIs);
     lv_obj_set_size(s_sbIs, sb(13), sb(14));
-    lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(s_sbIs, false);
+    lv_obj_set_scrollable(s_sbIs, false);
     s_sbIsUp = sbArrow(s_sbIs, 0, true);
     sbArrow(s_sbIs, 7, false);
-    lv_obj_add_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_sbIs, true);
 }
 
 lv_obj_t *sbLabel(lv_obj_t *bar, const char *txt) {
@@ -532,7 +568,7 @@ void buildStatusBar() {
     lv_obj_set_style_pad_hor(bar, sb(6), 0);
     lv_obj_set_style_pad_ver(bar, 0, 0);
     lv_obj_set_style_text_font(bar, &SB_FONT, 0);   // fixed: the bar height is fixed
-    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(bar, false);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(bar, sb(8), 0);
@@ -547,7 +583,7 @@ void buildStatusBar() {
     lv_obj_center(bl);
     lv_obj_add_event_cb(s_sbBack, [](lv_event_t *) { s_pendingNav = Nav::Back; }, LV_EVENT_SHORT_CLICKED, nullptr);
     lv_obj_add_event_cb(s_sbBack, [](lv_event_t *) { s_pendingNav = Nav::Home; }, LV_EVENT_LONG_PRESSED, nullptr);
-    lv_obj_add_flag(s_sbBack, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_sbBack, true);
 #endif
     s_sbCall = sbLabel(bar, "");
     lv_obj_set_flex_grow(s_sbCall, 1);
@@ -561,7 +597,7 @@ void buildStatusBar() {
     s_sbWifi = sbLabel(bar, LV_SYMBOL_WIFI);
     s_sbBatt = sbLabel(bar, "");
 #if !HAS_BATTERY
-    lv_obj_add_flag(s_sbBatt, LV_OBJ_FLAG_HIDDEN);   // mains/USB powered
+    lv_obj_set_hidden(s_sbBatt, true);   // mains/USB powered
 #endif
     s_sbTime = sbLabel(bar, "--:--");
     lv_obj_set_style_text_color(s_sbBt, kSbOff, 0);
@@ -615,7 +651,7 @@ void isRxBlink() {
     s_isRxSeen = rx;
     const uint32_t now = lv_tick_get();
     if (s_isRxBlinkMs && now - s_isRxBlinkMs < kRxBlinkGapMs) return;
-    if (lv_obj_has_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN) || lv_anim_get(s_sbIs, setOpa)) return;
+    if (lv_obj_is_hidden(s_sbIs) || lv_anim_get(s_sbIs, setOpa)) return;
     s_isRxBlinkMs = now;
     blink(s_sbIs, 150, 0);
 }
@@ -630,7 +666,7 @@ void rxBlinkTimer(lv_timer_t *) {
     const uint32_t now = lv_tick_get();
     if (s_rxBlinkMs && now - s_rxBlinkMs < kRxBlinkGapMs) return;
     lv_obj_t *icon = lora ? s_sbBt : s_sbTnc;
-    if (lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN) || lv_anim_get(icon, setOpa)) return;
+    if (lv_obj_is_hidden(icon) || lv_anim_get(icon, setOpa)) return;
     s_rxBlinkMs = now;
     blink(icon, 150, 0);
 }
@@ -647,24 +683,24 @@ void updateStatusBar() {
     const BleStatus tnc = g_ble.status();
     const bool tncUp = g_config.rfLink == RfLink::Ble && tnc.state == BleState::Connected;
     if (tncUp) {
-        lv_obj_remove_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_sbBt, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_sbTnc, false);
+        lv_obj_set_hidden(s_sbBt, true);
         // Flash the arrow for one status tick after each frame sent to the radio.
-        if (tnc.txFrames != s_sbTncLastTx) lv_obj_remove_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(s_sbTncTx, LV_OBJ_FLAG_HIDDEN);
+        if (tnc.txFrames != s_sbTncLastTx) lv_obj_set_hidden(s_sbTncTx, false);
+        else lv_obj_set_hidden(s_sbTncTx, true);
     } else {
-        lv_obj_add_flag(s_sbTnc, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_sbBt, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_sbTnc, true);
+        lv_obj_set_hidden(s_sbBt, false);
     }
     s_sbTncLastTx = tnc.txFrames;
 
     const AprsIsStatus is = aprsIsStatus();
     if (is.connected) {
-        lv_obj_remove_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_sbIs, false);
         // Up arrow goes amber for one status tick after each line sent.
         sbArrowColor(s_sbIsUp, is.txLines != s_sbIsLastTx ? kAmber : kGreen);
     } else {
-        lv_obj_add_flag(s_sbIs, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_sbIs, true);
     }
     s_sbIsLastTx = is.txLines;
 
@@ -743,13 +779,13 @@ void toast(const String &text, uint32_t ms = 3000) {
     }
     lv_label_set_text(s_toast, text.c_str());
     lv_obj_move_foreground(s_toast);
-    lv_obj_remove_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_toast, false);
     s_toastUntilMs = millis() + ms;
 }
 
 void toastLoop() {
     if (s_toast && s_toastUntilMs && (int32_t)(millis() - s_toastUntilMs) >= 0) {
-        lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_toast, true);
         s_toastUntilMs = 0;
     }
 }
@@ -783,7 +819,7 @@ int focusedIndex(lv_obj_t *list) {
 
 lv_obj_t *addWrapItem(lv_obj_t *list, lv_group_t *grp, const char *text, lv_event_cb_t cb, void *ud,
                       const lv_font_t *font = uiFont(12)) {
-    lv_obj_t *b = lv_list_add_button(list, nullptr, text);
+    lv_obj_t *b = listButton(list, nullptr, text, false);
     lv_obj_t *l = lv_obj_get_child(b, 0);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
     lv_obj_set_flex_grow(l, 1);
@@ -821,7 +857,7 @@ void markFavorite(lv_obj_t *item) { lv_obj_move_to_index(makeStar(item, true), 0
 // One-line list item: [star] text ........ right (grey).
 lv_obj_t *addRow(lv_obj_t *list, lv_group_t *grp, bool fav, const char *text, const char *right,
                  lv_event_cb_t cb, void *ud) {
-    lv_obj_t *b = lv_list_add_button(list, nullptr, nullptr);
+    lv_obj_t *b = listButton(list, nullptr, nullptr, false);
     lv_obj_set_style_pad_ver(b, 6, 0);
     lv_obj_set_style_pad_column(b, 6, 0);
     if (fav) makeStar(b, true);
@@ -862,7 +898,7 @@ lv_obj_t *makeFavButton(lv_obj_t *parent, lv_group_t *grp, char *call) {
         lv_label_set_text(lv_obj_get_child(btn, 1), now ? "Favorite" : "Add to favorites");
         toast(now ? "Added to favorites" : "Removed from favorites");
     }, LV_EVENT_CLICKED, call);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_USER_2);   // found by Alt+F (USER_1 means "wants arrows")
+    lv_obj_set_user_flag(b, kUserFlagFav, true);   // found by Alt+F
     lv_group_add_obj(grp, b);
     return b;
 }
@@ -875,9 +911,9 @@ constexpr uint32_t kMonAccentMs = HAS_EINK ? 0 : 3000;   // packets that arrive 
 constexpr int kMonAccentMax = 16;
 
 struct {
-    lv_obj_t *list, *note;
+    lv_obj_t *list, *note, *empty;
     lv_group_t *grp;
-    uint32_t shownSeq;
+    uint32_t shownSeq, shownClears;
     uint32_t accSeq[kMonAccentMax], accMs[kMonAccentMax];
     uint8_t accNext;
     bool anyAccent;
@@ -889,10 +925,10 @@ bool monAccented(uint32_t seq) {
     return false;
 }
 
-// Normal row colours: our own packets blue, APRS-IS dim. Row flags USER_3/USER_4 mark tx/viaIs.
+// Normal row colours: our own packets blue, APRS-IS dim.
 void monRowColor(lv_obj_t *b) {
-    if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_3)) lv_obj_set_style_text_color(b, kOutText, 0);
-    else if (lv_obj_has_flag(b, LV_OBJ_FLAG_USER_4)) lv_obj_set_style_text_color(b, kDimText, 0);
+    if (lv_obj_get_user_flag(b, kUserFlagTx)) lv_obj_set_style_text_color(b, kOutText, 0);
+    else if (lv_obj_get_user_flag(b, kUserFlagViaIs)) lv_obj_set_style_text_color(b, kDimText, 0);
 }
 
 void monExpireAccents() {
@@ -914,14 +950,23 @@ void refreshMonitor() {
     if (!s_mon.list) return;
     if (s_mon.anyAccent) monExpireAccents();
     const uint32_t last = packetLogLastSeq();
+    if (packetLogClears() != s_mon.shownClears) {   // cleared here or from the web
+        s_mon.shownClears = packetLogClears();
+        lv_obj_clean(s_mon.list);
+        lv_obj_set_hidden(s_mon.note, true);
+        lv_obj_set_hidden(s_mon.empty, false);
+        s_mon.shownSeq = last;
+        return;
+    }
     if (last == s_mon.shownSeq) return;
     // While the user is reading further down, don't move the list under them.
     if (focusedIndex(s_mon.list) > 0) {
         lv_label_set_text_fmt(s_mon.note, "%lu new - scroll to top to update", (unsigned long)(last - s_mon.shownSeq));
-        lv_obj_remove_flag(s_mon.note, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_mon.note, false);
         return;
     }
-    lv_obj_add_flag(s_mon.note, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_mon.note, true);
+    lv_obj_set_hidden(s_mon.empty, true);
     const uint32_t prev = s_mon.shownSeq;
     s_mon.shownSeq = last;
     lv_obj_clean(s_mon.list);
@@ -931,8 +976,8 @@ void refreshMonitor() {
         snprintf(buf, sizeof(buf), "%s%s%s  %s", e->tx ? "TX " : "", e->viaIs ? "IS " : "", ageStr(e->uptimeS).c_str(), e->raw);
         lv_obj_t *b = addWrapItem(s_mon.list, s_mon.grp, buf, nullptr, nullptr);
         lv_obj_set_user_data(b, (void *)(uintptr_t)e->seq);
-        if (e->tx) lv_obj_add_flag(b, LV_OBJ_FLAG_USER_3);
-        else if (e->viaIs) lv_obj_add_flag(b, LV_OBJ_FLAG_USER_4);
+        if (e->tx) lv_obj_set_user_flag(b, kUserFlagTx, true);
+        else if (e->viaIs) lv_obj_set_user_flag(b, kUserFlagViaIs, true);
         // Not on first open: only packets that arrive while watching.
         if (prev && e->seq > prev) {
             s_mon.accSeq[s_mon.accNext] = e->seq;
@@ -952,13 +997,36 @@ void refreshMonitor() {
 
 void openMonitor() {
     lv_group_t *grp;
-    lv_obj_t *scr = newScreen(LV_SYMBOL_EYE_OPEN " Monitor", &grp);
+    lv_obj_t *scr = newScreen(nullptr, &grp);
     s_mon = {};
     s_mon.grp = grp;
+    s_mon.shownClears = packetLogClears();
+    // Title with a Clear button at its right, so the button costs no extra row.
+    lv_obj_t *head = lv_obj_create(scr);
+    lv_obj_remove_style_all(head);
+    lv_obj_set_size(head, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(head, 2, 0);   // room for the focus outline
+    lv_obj_set_flex_flow(head, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *t = lv_label_create(head);
+    lv_label_set_text(t, LV_SYMBOL_EYE_OPEN " Monitor");
+    lv_obj_set_style_text_font(t, uiFont(16), 0);
+    lv_obj_t *clr = lv_button_create(head);
+    lv_obj_set_style_pad_hor(clr, 8, 0);
+    lv_obj_set_style_pad_ver(clr, 4, 0);
+    lv_obj_t *cl = lv_label_create(clr);
+    lv_label_set_text(cl, LV_SYMBOL_TRASH " Clear");
+    lv_obj_set_style_text_font(cl, uiFont(12), 0);
+    lv_obj_add_event_cb(clr, [](lv_event_t *) {
+        packetLogClear();
+        refreshMonitor();   // the button is outside the list, so cleaning it here is safe
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, clr);
     s_mon.note = makeNote(scr, "");
-    lv_obj_add_flag(s_mon.note, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_mon.note, true);
     s_mon.list = makeList(scr);
-    if (!packetLogCount()) makeNote(scr, "No packets yet. Set up the radio link under Settings.");
+    s_mon.empty = makeNote(scr, "No packets yet. Set up a connection under Settings > Connections.");
+    lv_obj_set_hidden(s_mon.empty, packetLogCount() > 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_mon.list = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshMonitor);
 }
@@ -1040,7 +1108,7 @@ void openMap() {
     lv_obj_set_style_pad_hor(scr, 0, 0);
     lv_obj_set_style_pad_bottom(scr, 0, 0);
     lv_obj_set_style_pad_top(scr, kStatusH, 0);
-    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(scr, false);
     mapViewCreate(scr, grp, openStationDetail);
     pushScreen(scr, grp);
 }
@@ -1150,8 +1218,8 @@ void refreshStations() {
     s_sta.shown = n;
     s_sta.built = true;
     if (refocus) lv_group_focus_obj(refocus);
-    if (n) lv_obj_add_flag(s_sta.empty, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(s_sta.empty, LV_OBJ_FLAG_HIDDEN);
+    if (n) lv_obj_set_hidden(s_sta.empty, true);
+    else lv_obj_set_hidden(s_sta.empty, false);
 }
 
 void openStations() {
@@ -1193,13 +1261,13 @@ void openQuickPicker(lv_obj_t *target) {
     oskHide();
     s_qm.target = target;
     s_qm.bg = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(s_qm.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_set_size(s_qm.bg, lv_pct(100), lv_display_get_vertical_resolution(lv_display_get_default()) - kStatusH);
     lv_obj_align(s_qm.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_radius(s_qm.bg, 0, 0);
     lv_obj_set_style_border_width(s_qm.bg, 0, 0);
     lv_obj_set_style_bg_color(s_qm.bg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_qm.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
-    lv_obj_clear_flag(s_qm.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_qm.bg, false);
     // Tapping the backdrop cancels.
     lv_obj_add_event_cb(s_qm.bg, [](lv_event_t *e) {
         if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingQuick = -1;
@@ -1217,7 +1285,7 @@ void openQuickPicker(lv_obj_t *target) {
     lv_label_set_text(title, LV_SYMBOL_LIST " Quick messages");
 
     s_qm.grp = lv_group_create();
-    lv_obj_t *list = lv_list_create(box);
+    lv_obj_t *list = makeListBox(box);
     lv_obj_set_size(list, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_style_max_height(list, 170, 0);
     lv_obj_set_style_pad_all(list, 0, 0);
@@ -1253,6 +1321,8 @@ void closeQuickPicker(int pick) {
 
 // Text input with a quick-message button: on its left on touch boards, on its
 // right on keypad-only ones, where Right at the end of the text moves to it.
+// Touch boards also get a send button on the right; it fires the input's
+// LV_EVENT_READY, as Enter does, so callers send from that one event.
 lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeholder) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
@@ -1262,7 +1332,7 @@ lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeh
     lv_obj_set_style_pad_column(row, 4, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(row, false);
     auto makeBtn = [&]() {
         lv_obj_t *b = lv_button_create(row);
         lv_obj_set_style_pad_hor(b, 8, 0);
@@ -1276,7 +1346,15 @@ lv_obj_t *makeMessageInput(lv_obj_t *parent, lv_group_t *grp, const char *placeh
     lv_obj_t *ta = makeInput(row, grp, placeholder, 67);
     lv_obj_set_width(ta, LV_SIZE_CONTENT);
     lv_obj_set_flex_grow(ta, 1);
-#if !HAS_TOUCH
+#if HAS_TOUCH
+    // For tapping only: kept out of the focus group so keyboard navigation is unchanged.
+    lv_obj_t *send = lv_button_create(row);
+    lv_obj_set_style_pad_hor(send, 8, 0);
+    lv_label_set_text(lv_label_create(send), LV_SYMBOL_RIGHT);
+    lv_obj_add_event_cb(send, [](lv_event_t *e) {
+        lv_obj_send_event((lv_obj_t *)lv_event_get_user_data(e), LV_EVENT_READY, nullptr);
+    }, LV_EVENT_CLICKED, ta);
+#else
     lv_obj_t *btn = makeBtn();
     // Preprocess: decide before the textarea moves its cursor.
     lv_obj_add_event_cb(ta, [](lv_event_t *e) {
@@ -1502,13 +1580,13 @@ void openChoice(const char *title, const char *note, const ChoiceOpt *opts, int 
     s_choice.fn = fn;
     s_choiceToggle = false;
     s_choice.bg = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(s_choice.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_set_size(s_choice.bg, lv_pct(100), lv_display_get_vertical_resolution(lv_display_get_default()) - kStatusH);
     lv_obj_align(s_choice.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_radius(s_choice.bg, 0, 0);
     lv_obj_set_style_border_width(s_choice.bg, 0, 0);
     lv_obj_set_style_bg_color(s_choice.bg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_choice.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
-    lv_obj_clear_flag(s_choice.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_choice.bg, false);
     // Tapping the backdrop cancels.
     lv_obj_add_event_cb(s_choice.bg, [](lv_event_t *e) {
         if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingChoice = -1;
@@ -1686,7 +1764,7 @@ void refreshMessages() {
 }
 
 lv_obj_t *findFavButton(lv_obj_t *o, int depth) {
-    if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_2)) return o;
+    if (lv_obj_get_user_flag(o, kUserFlagFav)) return o;
     if (depth == 0) return nullptr;
     for (uint32_t i = 0; i < lv_obj_get_child_count(o); i++)
         if (lv_obj_t *f = findFavButton(lv_obj_get_child(o, i), depth - 1)) return f;
@@ -1778,7 +1856,7 @@ void openGps() {
 // ── Wi-Fi ────────────────────────────────────────────────────────────────────
 
 struct {
-    lv_obj_t *info, *list;
+    lv_obj_t *info, *list, *ap, *scan;
     lv_group_t *grp;
     std::vector<WifiNetwork> shown;
     bool wasScanning;
@@ -1870,6 +1948,10 @@ void rebuildWifiList(bool scanning) {
 void refreshWifi() {
     if (!s_wifi.info) return;
     const WifiStatus w = wifiStatus();
+    if (!w.enabled) {
+        lv_label_set_text(s_wifi.info, "Wi-Fi is off: no network, no setup AP and no web config.");
+        return;
+    }
     String t;
     t += "Network: " + (w.staConfigured ? w.staSsid : String("(not set)")) + "\n";
     t += w.staConnected   ? "Connected  IP " + w.staIp + "  " + String(w.rssi) + " dBm\n"
@@ -1903,8 +1985,21 @@ void wifiScanUi() {
     rebuildWifiList(true);
 }
 
-// scan: start a network scan right away (not when opened for the setup AP,
-// since scanning briefly disturbs clients on it).
+// Shows the on/off state on the toggle and hides what needs the radio on.
+void wifiShowEnabled(lv_obj_t *onOff) {
+    const bool on = g_config.wifiEnabled;
+    lv_label_set_text(lv_obj_get_child(onOff, 1), on ? "Wi-Fi: On" : "Wi-Fi: Off");
+    lv_obj_set_hidden(s_wifi.ap, !on);
+    lv_obj_set_hidden(s_wifi.scan, !on);
+    lv_obj_set_hidden(s_wifi.list, !on);
+    if (!on) {
+        s_wifi.shown.clear();
+        lv_obj_clean(s_wifi.list);
+    }
+    refreshWifi();
+}
+
+// scan: start a network scan right away (scanning briefly disturbs clients on the setup AP).
 void openWifi(bool scan) {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_WIFI " Wi-Fi", &grp);
@@ -1915,14 +2010,30 @@ void openWifi(bool scan) {
     lv_label_set_long_mode(s_wifi.info, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_wifi.info, lv_pct(100));
     lv_obj_set_style_text_font(s_wifi.info, uiFont(12), 0);
-    lv_obj_t *b = lv_button_create(scr);
-    lv_label_set_text(lv_label_create(b), LV_SYMBOL_REFRESH " Scan for networks");
-    lv_obj_add_event_cb(b, [](lv_event_t *) { wifiScanUi(); }, LV_EVENT_CLICKED, nullptr);
-    lv_group_add_obj(grp, b);
+    lv_obj_t *ctl = makeListBox(scr);
+    lv_obj_set_size(ctl, lv_pct(100), LV_SIZE_CONTENT);
+    // Toggles the radio; the label shows the current state.
+    lv_obj_t *onOff = addItem(ctl, grp, LV_SYMBOL_POWER, "", [](lv_event_t *e) {
+        wifiSetEnabled(!g_config.wifiEnabled);
+        wifiShowEnabled((lv_obj_t *)lv_event_get_target(e));
+        // A scan would cancel the connection to the saved network, so only scan when there is none.
+        if (!g_config.wifiEnabled) return;
+        if (g_config.wifiSsid.length()) rebuildWifiList(false);
+        else wifiScanUi();
+    });
+    s_wifi.ap = addItem(ctl, grp, LV_SYMBOL_WIFI, EL("Open setup access point", "Setup AP"), [](lv_event_t *) {
+        if (!wifiOpenSetupAp()) toast("Connected to Wi-Fi; setup AP stays off");
+        refreshWifi();
+    });
+    s_wifi.scan = addItem(ctl, grp, LV_SYMBOL_REFRESH, EL("Scan for networks", "Scan"), [](lv_event_t *) { wifiScanUi(); });
+    // Natural height, so the screen scrolls past the controls to the networks.
     s_wifi.list = makeList(scr);
+    lv_obj_set_height(s_wifi.list, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(s_wifi.list, 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_wifi.info = nullptr; }, LV_EVENT_DELETE, nullptr);
-    if (scan) wifiScanUi();
-    else rebuildWifiList(false);
+    wifiShowEnabled(onOff);
+    if (g_config.wifiEnabled && scan) wifiScanUi();
+    else if (g_config.wifiEnabled) rebuildWifiList(false);
     pushScreen(scr, grp, refreshWifi);
 }
 
@@ -1935,7 +2046,7 @@ struct {
     bool wasScanning;
 } s_tnc;
 
-bool s_reopenTnc;  // rebuild the radio screen after an RF-link switch or a deleted pairing
+bool s_reopenTnc;  // rebuild the TNC screen after a deleted pairing
 
 // Paired radios (BLE bonds), shown on the radio screen.
 struct {
@@ -1953,7 +2064,7 @@ void addBondRow(lv_obj_t *parent, lv_group_t *grp, const String &info, const cha
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 6, 0);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(row, false);
     lv_obj_t *l = lv_label_create(row);
     lv_obj_add_style(l, &s_stRow, 0);
     lv_obj_set_style_pad_all(l, 6, 0);
@@ -2020,20 +2131,9 @@ String loraSummary() {
 void refreshTnc() {
     if (!s_tnc.info) return;
     if (s_bonds.reopenIn && --s_bonds.reopenIn == 0) s_reopenTnc = true;
-    if (g_config.rfLink == RfLink::Lora) {
-        const LoraStatus l = g_lora.status();
-        String t = loraSummary() + "\nSF" + String(g_config.loraSf) + "  BW" + String(g_config.loraBwKhz, 1) +
-                   "  CR4/" + String(g_config.loraCr) + "  " + String(g_config.loraPowerDbm) + " dBm" +
-                   "\nRX " + String(l.rxFrames) + "  TX " + String(l.txFrames) + "  bad " + String(l.rxBad);
-        if (l.lastRxS)
-            t += "\nLast heard " + String(uptimeS() - l.lastRxS) + "s ago, " + String(l.lastRssi, 0) + " dBm, SNR " +
-                 String(l.lastSnr, 1);
-        t += "\nRadio settings are in the web config.";
-        lv_label_set_text(s_tnc.info, t.c_str());
-        return;
-    }
     const BleStatus b = g_ble.status();
-    String t = String("State: ") + bleStateName(b.state);
+    String t = g_config.rfLink == RfLink::Ble ? String("State: ") + bleStateName(b.state)
+                                              : String("Off. Turn it on in Settings > Connections.");
     if (b.peerAddress.length()) t += "\n" + (b.peerName.length() ? b.peerName + "  " : String()) + b.peerAddress;
     if (b.state == BleState::Connected)
         t += "\nMTU " + String(b.mtu) + "  RX " + String(b.rxFrames) + "  TX " + String(b.txFrames);
@@ -2068,8 +2168,7 @@ void refreshTnc() {
 
 void openTnc() {
     lv_group_t *grp;
-    const bool lora = g_config.rfLink == RfLink::Lora;
-    lv_obj_t *scr = newScreen(lora ? "Radio (LoRa)" : LV_SYMBOL_BLUETOOTH " Radio (TNC)", &grp);
+    lv_obj_t *scr = newScreen("TNC " LV_SYMBOL_BLUETOOTH, &grp);
     s_tnc.grp = grp;
     s_tnc.shown.clear();
     s_tnc.wasScanning = false;
@@ -2083,7 +2182,7 @@ void openTnc() {
     lv_obj_set_style_pad_all(row, 5, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(row, false);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(row, 6, 0);
     auto btn = [&](const char *txt, lv_event_cb_t cb) {
@@ -2101,25 +2200,23 @@ void openTnc() {
         lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
         lv_group_add_obj(grp, b);
     };
-    btn(lora ? "Use BLE TNC" : "Use LoRa", [](lv_event_t *) {
-        g_config.rfLink = g_config.rfLink == RfLink::Lora ? RfLink::Ble : RfLink::Lora;
-        configSave();
-        g_ble.reconfigure();
-        g_lora.reconfigure();
-        s_reopenTnc = true;
-    });
-    if (lora) {
-        s_tnc.list = nullptr;
-        lv_obj_add_event_cb(scr, [](lv_event_t *) { s_tnc.info = nullptr; }, LV_EVENT_DELETE, nullptr);
-        pushScreen(scr, grp, refreshTnc);
-        return;
-    }
     btn(LV_SYMBOL_REFRESH " Scan", [](lv_event_t *) {
         lv_obj_clean(s_tnc.list);
         g_ble.startScan(8);
     });
     btn("Connect", [](lv_event_t *) { g_ble.connectNow(); });
     btn("Disconnect", [](lv_event_t *) { g_ble.disconnect(); });
+
+    lv_obj_t *rc = lv_checkbox_create(scr);
+    lv_checkbox_set_text(rc, "Reconnect automatically");
+    lv_obj_set_style_pad_ver(rc, 4, 0);
+    lv_obj_set_state(rc, LV_STATE_CHECKED, g_config.tncAutoConnect);
+    lv_obj_add_event_cb(rc, [](lv_event_t *e) {
+        g_config.tncAutoConnect = lv_obj_has_state((lv_obj_t *)lv_event_get_target(e), LV_STATE_CHECKED);
+        configSave();
+        g_ble.reconfigure();
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_group_add_obj(grp, rc);
 
     buildBonds(scr, grp);
     // Scan results go last, matching their place in the focus order.
@@ -2128,6 +2225,299 @@ void openTnc() {
     lv_obj_set_flex_grow(s_tnc.list, 0);
     lv_obj_add_event_cb(scr, [](lv_event_t *) { s_tnc.info = nullptr; }, LV_EVENT_DELETE, nullptr);
     pushScreen(scr, grp, refreshTnc);
+}
+
+// ── LoRa ─────────────────────────────────────────────────────────────────────
+
+// The LoRa APRS standard (OE5BPA): 433.775 MHz, SF12, BW125, CR4/5.
+constexpr float kLoraStdFreqMhz = 433.775f, kLoraStdBwKhz = 125.0f;
+constexpr uint8_t kLoraStdSf = 12, kLoraStdCr = 5;
+constexpr int8_t kLoraPowers[] = {10, 14, 17, 20, 22};
+constexpr size_t kLoraPowerCount = sizeof kLoraPowers / sizeof kLoraPowers[0];
+
+bool loraIsStandard() {
+    return fabsf(g_config.loraFreqMhz - kLoraStdFreqMhz) < 0.0005f && g_config.loraSf == kLoraStdSf &&
+           fabsf(g_config.loraBwKhz - kLoraStdBwKhz) < 0.05f && g_config.loraCr == kLoraStdCr;
+}
+
+struct {
+    lv_obj_t *info;
+} s_lora;
+
+void refreshLora() {
+    if (!s_lora.info) return;
+    String t;
+    if (g_config.rfLink == RfLink::Lora) {
+        const LoraStatus l = g_lora.status();
+        t = loraSummary() + "\nRX " + String(l.rxFrames) + "  TX " + String(l.txFrames) + "  bad " + String(l.rxBad);
+        if (l.lastRxS)
+            t += "\nLast heard " + String(uptimeS() - l.lastRxS) + "s ago, " + String(l.lastRssi, 0) + " dBm, SNR " +
+                 String(l.lastSnr, 1);
+    } else {
+        t = "Off. Turn it on in Settings > Connections.";
+    }
+    t += "\n" + String(g_config.loraFreqMhz, 3) + " MHz  SF" + String(g_config.loraSf) + "  BW" +
+         String(g_config.loraBwKhz, 0) + "  CR4/" + String(g_config.loraCr);
+    lv_label_set_text(s_lora.info, t.c_str());
+}
+
+const char *loraPowerLabel() {
+    static char buf[24];
+    snprintf(buf, sizeof buf, "TX power: %d dBm", g_config.loraPowerDbm);
+    return buf;
+}
+
+void openLora() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_AUDIO " LoRa", &grp);
+    s_lora.info = lv_label_create(scr);
+    lv_obj_set_width(s_lora.info, lv_pct(100));
+    lv_label_set_long_mode(s_lora.info, LV_LABEL_LONG_WRAP);
+    lv_obj_t *list = makeList(scr);
+    lv_obj_set_height(list, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(list, 0);
+    // Steps through the power choices; the label shows the current one.
+    lv_obj_t *pw = addItem(list, grp, LV_SYMBOL_UPLOAD, "", [](lv_event_t *e) {
+        size_t i = 0;
+        while (i < kLoraPowerCount && kLoraPowers[i] <= g_config.loraPowerDbm) i++;
+        g_config.loraPowerDbm = kLoraPowers[i < kLoraPowerCount ? i : 0];
+        configSave();
+        g_lora.reconfigure();
+        lv_label_set_text(lv_obj_get_child((lv_obj_t *)lv_event_get_target(e), 1), loraPowerLabel());
+    });
+    lv_label_set_text(lv_obj_get_child(pw, 1), loraPowerLabel());
+    if (!loraIsStandard()) {
+        addItem(list, grp, LV_SYMBOL_REFRESH, "Use the LoRa APRS standard", [](lv_event_t *e) {
+            g_config.loraFreqMhz = kLoraStdFreqMhz;
+            g_config.loraSf = kLoraStdSf;
+            g_config.loraBwKhz = kLoraStdBwKhz;
+            g_config.loraCr = kLoraStdCr;
+            configSave();
+            g_lora.reconfigure();
+            lv_obj_set_disabled((lv_obj_t *)lv_event_get_target(e), true);
+            toast("LoRa set to 433.775 MHz");
+        });
+    }
+    makeNote(scr, "LoRa uses the LoRa APRS standard: 433.775 MHz, SF12, BW125, CR4/5. Another frequency can be set "
+                  "in the web config (Radio tab).");
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_lora.info = nullptr; }, LV_EVENT_DELETE, nullptr);
+    refreshLora();
+    pushScreen(scr, grp, refreshLora);
+}
+
+// ── APRS-IS ──────────────────────────────────────────────────────────────────
+
+struct {
+    lv_obj_t *info, *server, *port, *filter, *passcode;
+} s_aprsIs;
+
+void refreshAprsIs() {
+    if (!s_aprsIs.info) return;
+    const AprsIsStatus st = aprsIsStatus();
+    String t = String("State: ") + st.state;
+    if (st.connected) {
+        t += st.verified ? "  (verified)" : "  (login not verified)";
+        if (st.server.length()) t += "\n" + st.server;
+        t += "\nRX " + String(st.rxLines) + "  TX " + String(st.txLines);
+    } else if (st.lastError.length()) {
+        t += "\n" + st.lastError;
+    }
+    if (!g_config.aprsIsEnabled) t += "\nOff. Turn it on in Settings > Connections.";
+    lv_label_set_text(s_aprsIs.info, t.c_str());
+}
+
+lv_obj_t *aprsIsField(lv_obj_t *scr, lv_group_t *grp, const char *label, const char *placeholder, uint32_t maxLen,
+                      const String &value) {
+    lv_obj_t *l = lv_label_create(scr);
+    lv_obj_set_style_text_font(l, uiFont(12), 0);
+    lv_label_set_text(l, label);
+    lv_obj_t *ta = makeInput(scr, grp, placeholder, maxLen);
+    lv_textarea_set_text(ta, value.c_str());
+    return ta;
+}
+
+void aprsIsSave() {
+    AppConfig next = g_config;
+    next.aprsIsServer = lv_textarea_get_text(s_aprsIs.server);
+    next.aprsIsServer.trim();
+    next.aprsIsPort = (uint16_t)atoi(lv_textarea_get_text(s_aprsIs.port));
+    next.aprsIsFilter = lv_textarea_get_text(s_aprsIs.filter);
+    next.aprsIsFilter.trim();
+    const char *pc = lv_textarea_get_text(s_aprsIs.passcode);
+    next.aprsIsPasscode = *pc ? atoi(pc) : -1;
+    const String err = configValidate(next);
+    if (err.length()) {
+        toast(err);
+        return;
+    }
+    g_config = next;
+    configSave();   // the APRS-IS client picks up the change within a second
+    toast("APRS-IS settings saved");
+}
+
+void openAprsIs() {
+    lv_group_t *grp;
+    lv_obj_t *scr = newScreen(LV_SYMBOL_UPLOAD " APRS-IS", &grp);
+    s_aprsIs.info = lv_label_create(scr);
+    lv_obj_set_width(s_aprsIs.info, lv_pct(100));
+    lv_label_set_long_mode(s_aprsIs.info, LV_LABEL_LONG_WRAP);
+    s_aprsIs.server = aprsIsField(scr, grp, "Server", "rotate.aprs2.net", 64, g_config.aprsIsServer);
+    s_aprsIs.port = aprsIsField(scr, grp, "Port", "14580", 5, String(g_config.aprsIsPort));
+    lv_textarea_set_accepted_chars(s_aprsIs.port, "0123456789");
+    s_aprsIs.filter = aprsIsField(scr, grp, "Filter", "m/50", 96, g_config.aprsIsFilter);
+    s_aprsIs.passcode = aprsIsField(scr, grp, "Passcode (blank: from callsign)", "from callsign", 5,
+                                    g_config.aprsIsPasscode >= 0 ? String(g_config.aprsIsPasscode) : String());
+    lv_textarea_set_accepted_chars(s_aprsIs.passcode, "0123456789");
+    lv_obj_t *b = lv_button_create(scr);
+    lv_label_set_text(lv_label_create(b), LV_SYMBOL_SAVE " Save");
+    lv_obj_add_event_cb(b, [](lv_event_t *) { aprsIsSave(); }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(grp, b);
+    lv_obj_add_event_cb(scr, [](lv_event_t *) { s_aprsIs = {}; }, LV_EVENT_DELETE, nullptr);
+    refreshAprsIs();
+    pushScreen(scr, grp, refreshAprsIs);
+}
+
+// ── Connections (APRS-IS, TNC, LoRa) ───────────────────────────────
+
+enum ConnKind { kConnAprsIs, kConnTnc, kConnLora, kConnCount };
+
+struct {
+    lv_obj_t *bg;
+    lv_group_t *grp;
+    lv_obj_t *sw[kConnCount], *state[kConnCount];
+} s_conn;
+volatile int s_pendingConn = -2;   // -2 none, -1 close, else the ConnKind whose screen to open
+
+bool connOn(int k) {
+    switch (k) {
+        case kConnAprsIs: return g_config.aprsIsEnabled;
+        case kConnTnc: return g_config.rfLink == RfLink::Ble;
+        default: return g_config.rfLink == RfLink::Lora;
+    }
+}
+
+String connState(int k) {
+    if (!connOn(k)) return "Off";
+    switch (k) {
+        case kConnAprsIs: return aprsIsStatus().state;
+        case kConnTnc: return bleStateName(g_ble.status().state);
+        default: return loraStateName(g_lora.status().state);
+    }
+}
+
+void refreshConnections() {
+    if (!s_conn.bg) return;
+    for (int k = 0; k < kConnCount; k++) {
+        lv_obj_set_state(s_conn.sw[k], LV_STATE_CHECKED, connOn(k));
+        lv_label_set_text(s_conn.state[k], connState(k).c_str());
+    }
+}
+
+// The TNC and LoRa are one RF link at a time: turning one on turns the other off.
+void connSet(int k, bool on) {
+    if (k == kConnAprsIs) {
+        g_config.aprsIsEnabled = on;
+        configSave();
+    } else {
+        const RfLink mine = k == kConnTnc ? RfLink::Ble : RfLink::Lora;
+        if (on) g_config.rfLink = mine;
+        else if (g_config.rfLink == mine) g_config.rfLink = RfLink::Off;
+        configSave();
+        g_lora.reconfigure();
+        if (on && k == kConnTnc && g_config.tncAddress.length()) g_ble.connectNow();
+        else g_ble.reconfigure();
+    }
+    refreshConnections();
+}
+
+void openConnections() {
+    if (s_conn.bg) return;
+    oskHide();
+    s_conn.bg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_conn.bg, lv_pct(100), lv_display_get_vertical_resolution(lv_display_get_default()) - kStatusH);
+    lv_obj_align(s_conn.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_radius(s_conn.bg, 0, 0);
+    lv_obj_set_style_border_width(s_conn.bg, 0, 0);
+    lv_obj_set_style_bg_color(s_conn.bg, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_conn.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
+    lv_obj_set_scrollable(s_conn.bg, false);
+    // Tapping the backdrop closes.
+    lv_obj_add_event_cb(s_conn.bg, [](lv_event_t *e) {
+        if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingConn = -1;
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *box = lv_obj_create(s_conn.bg);
+    modalBoxStyle(box);
+    lv_obj_set_size(box, lv_pct(94), LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(box, lv_pct(96), 0);
+    lv_obj_center(box);
+    lv_obj_set_style_pad_all(box, 6, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(box, 6, 0);
+    lv_label_set_text(lv_label_create(box), "Connections");
+
+    s_conn.grp = lv_group_create();
+    static const char *const kNames[kConnCount] = {"APRS-IS", "TNC " LV_SYMBOL_BLUETOOTH, "LoRa"};
+    for (int k = 0; k < kConnCount; k++) {
+        // [switch] [Name ........ state >]: the switch turns it on/off, the button opens its settings.
+        lv_obj_t *row = lv_obj_create(box);
+        lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_set_style_pad_all(row, 3, 0);   // room for the focus outline
+        lv_obj_set_style_pad_column(row, 6, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+        lv_obj_set_scrollable(row, false);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        lv_obj_t *sw = lv_switch_create(row);
+        lv_obj_add_event_cb(sw, [](lv_event_t *e) {
+            connSet((int)(intptr_t)lv_event_get_user_data(e),
+                    lv_obj_has_state((lv_obj_t *)lv_event_get_target(e), LV_STATE_CHECKED));
+        }, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)k);
+        lv_group_add_obj(s_conn.grp, sw);
+        s_conn.sw[k] = sw;
+
+        lv_obj_t *b = lv_button_create(row);
+        lv_obj_set_flex_grow(b, 1);
+        lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_hor(b, 8, 0);
+        lv_obj_set_style_pad_ver(b, 6, 0);
+        lv_obj_t *name = lv_label_create(b);
+        lv_label_set_text(name, kNames[k]);
+        lv_obj_set_flex_grow(name, 1);
+        s_conn.state[k] = lv_label_create(b);
+        lv_obj_set_style_text_font(s_conn.state[k], uiFont(12), 0);
+        lv_label_set_text(lv_label_create(b), LV_SYMBOL_RIGHT);
+        lv_obj_add_event_cb(b, [](lv_event_t *e) {
+            s_pendingConn = (int)(intptr_t)lv_event_get_user_data(e);
+        }, LV_EVENT_CLICKED, (void *)(intptr_t)k);
+        lv_group_add_obj(s_conn.grp, b);
+    }
+    makeNote(box, "TNC and LoRa are one radio link: turning one on turns the other off.");
+    lv_obj_t *close = lv_button_create(box);
+    lv_obj_set_width(close, lv_pct(100));
+    lv_label_set_text(lv_label_create(close), "Close");
+    lv_obj_add_event_cb(close, [](lv_event_t *) { s_pendingConn = -1; }, LV_EVENT_CLICKED, nullptr);
+    lv_group_add_obj(s_conn.grp, close);
+    refreshConnections();
+
+    lv_group_set_default(s_conn.grp);
+    lv_indev_set_group(keyboardIndev(), s_conn.grp);
+}
+
+// Called from uiLoop, never from an event callback (it deletes objects).
+void closeConnections(int open) {
+    if (!s_conn.bg) return;
+    lv_obj_delete(s_conn.bg);
+    lv_group_delete(s_conn.grp);
+    s_conn = {};
+    lv_group_t *g = s_stack[s_depth - 1].grp;
+    lv_group_set_default(g);
+    lv_indev_set_group(keyboardIndev(), g);
+    if (open == kConnAprsIs) openAprsIs();
+    else if (open == kConnTnc) openTnc();
+    else if (open == kConnLora) openLora();
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────
@@ -2214,7 +2604,7 @@ constexpr int kSp = 1;
 // nothing on it takes focus.
 lv_obj_t *buildSplash(const char *footer) {
     lv_obj_t *scr = lv_obj_create(nullptr);
-    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(scr, false);
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x15506A), 0);
     lv_obj_set_style_bg_grad_color(scr, lv_color_hex(0x0A2230), 0);
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, 0);
@@ -2228,7 +2618,7 @@ lv_obj_t *buildSplash(const char *footer) {
 
     // The About screen's footer (version, heap, battery) sits at the bottom,
     // and the status bar covers the top while it is open.
-    const int vres = lv_display_get_vertical_resolution(nullptr);
+    const int vres = lv_display_get_vertical_resolution(lv_display_get_default());
     int areaTop = 0, areaBottom = vres;
     if (footer) {
         lv_obj_t *foot = lv_label_create(scr);
@@ -2249,7 +2639,7 @@ lv_obj_t *buildSplash(const char *footer) {
     // CrowPanel 5.0: everything at kSp times.
     const int blockH = (footer ? 162 : 180) * kSp;
     const int top = areaTop + (areaBottom - areaTop - blockH) / 2;
-    const int left = (lv_display_get_horizontal_resolution(nullptr) - 240 * kSp) / 2;
+    const int left = (lv_display_get_horizontal_resolution(lv_display_get_default()) - 240 * kSp) / 2;
     lv_obj_t *img = lv_image_create(scr);
     lv_image_set_src(img, kSplashImg);
     lv_obj_set_pos(img, left, top);
@@ -2314,7 +2704,7 @@ void saverShow() {
     lv_obj_set_size(s_saver.bg, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(s_saver.bg, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_saver.bg, false);
     // The smaller platy and the name, centred together.
     lv_obj_set_flex_flow(s_saver.bg, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_saver.bg, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2332,7 +2722,7 @@ void saverShow() {
     lv_obj_set_size(s_saver.bg, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(s_saver.bg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_saver.bg, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(s_saver.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_saver.bg, false);
     s_saver.img = lv_image_create(s_saver.bg);
     lv_image_set_src(s_saver.img, kSplashImg);
     lv_obj_set_size(s_saver.img, kSaverW, kSaverH);
@@ -2385,8 +2775,8 @@ void refreshOta() {
     if (!o.layoutOk) t = String("Running ") + APP_VERSION + "\nUpdates need the factory image: reflash over USB.";
     else if (WiFi.status() != WL_CONNECTED && o.state != OtaState::Installing) t += "\n\nNot on Wi-Fi.";
     lv_label_set_text(s_ota.info, t.c_str());
-    if (o.state == OtaState::Available) lv_obj_remove_flag(s_ota.install, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(s_ota.install, LV_OBJ_FLAG_HIDDEN);
+    if (o.state == OtaState::Available) lv_obj_set_hidden(s_ota.install, false);
+    else lv_obj_set_hidden(s_ota.install, true);
 }
 
 void openOta() {
@@ -2486,13 +2876,13 @@ void openBrightness(lv_obj_t *item) {
     oskHide();
     s_bright.item = item;
     s_bright.bg = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(s_bright.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_set_size(s_bright.bg, lv_pct(100), lv_display_get_vertical_resolution(lv_display_get_default()) - kStatusH);
     lv_obj_align(s_bright.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_radius(s_bright.bg, 0, 0);
     lv_obj_set_style_border_width(s_bright.bg, 0, 0);
     lv_obj_set_style_bg_color(s_bright.bg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_bright.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
-    lv_obj_clear_flag(s_bright.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_bright.bg, false);
     lv_obj_add_event_cb(s_bright.bg, [](lv_event_t *e) {
         if (lv_event_get_target(e) == lv_event_get_current_target(e)) s_pendingCloseBright = true;
     }, LV_EVENT_CLICKED, nullptr);
@@ -2505,7 +2895,7 @@ void openBrightness(lv_obj_t *item) {
     lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(box, 12, 0);
-    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(box, false);
     lv_obj_t *t = lv_label_create(box);
     lv_label_set_text(t, LV_SYMBOL_EYE_OPEN " Brightness");
     s_bright.value = lv_label_create(box);
@@ -2565,28 +2955,15 @@ lv_obj_t *s_textSizeItem = nullptr;
 lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
 Orientation s_appliedOrient = Orientation::Landscape;
 
-// E-paper Settings swaps in short labels to keep the list short.
-#define EL(full, brief) (HAS_EINK ? (brief) : (full))
 
 void openSettings() {
     lv_group_t *grp;
     lv_obj_t *scr = newScreen(LV_SYMBOL_SETTINGS " Settings", &grp);
     lv_obj_t *list = makeList(scr);
-    addItem(list, grp, LV_SYMBOL_WIFI, EL("Open setup access point", "Setup AP"), [](lv_event_t *) {
-        if (!wifiOpenSetupAp()) toast("Connected to Wi-Fi; setup AP stays off");
-        openWifi(false);
-    });
-    addItem(list, grp, LV_SYMBOL_WIFI, EL("Wi-Fi networks", "Wi-Fi"), [](lv_event_t *) { openWifi(true); });
+    addItem(list, grp, LV_SYMBOL_WIFI, "Wi-Fi", [](lv_event_t *) { openWifi(true); });
     addItem(list, grp, LV_SYMBOL_EDIT, EL("Quick messages", "Quick msgs"), [](lv_event_t *) { openQuickMsgs(); });
     addItem(list, grp, LV_SYMBOL_GPS, EL("GPS & beacon", "GPS/beacon"), [](lv_event_t *) { openGps(); });
-    addItem(list, grp, LV_SYMBOL_BLUETOOTH, EL("Radio link & pairing", "Radio link"), [](lv_event_t *) { openTnc(); });
-    lv_obj_t *is = addItem(list, grp, LV_SYMBOL_UPLOAD, "", [](lv_event_t *e) {
-        g_config.aprsIsEnabled = !g_config.aprsIsEnabled;
-        configSave();
-        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
-        lv_label_set_text(lv_obj_get_child(b, 1), g_config.aprsIsEnabled ? "APRS-IS: On" : "APRS-IS: Off");
-    });
-    lv_label_set_text(lv_obj_get_child(is, 1), g_config.aprsIsEnabled ? "APRS-IS: On" : "APRS-IS: Off");
+    addItem(list, grp, LV_SYMBOL_SHUFFLE, "Connections", [](lv_event_t *) { openConnections(); });
     // Cycles through the timeout choices; the label shows the current one.
     lv_obj_t *to = addItem(list, grp, LV_SYMBOL_EYE_CLOSE, "", [](lv_event_t *e) {
         int i = 0;
@@ -2718,7 +3095,7 @@ void openSettings() {
 #if HAS_TOUCH
     // Wide touch screens (CrowPanel landscape): two columns of tiles with the
     // full labels.
-    const int32_t hres = lv_display_get_horizontal_resolution(nullptr);
+    const int32_t hres = lv_display_get_horizontal_resolution(lv_display_get_default());
     if (hres >= 400) {
         lv_obj_set_flex_flow(list, LV_FLEX_FLOW_ROW_WRAP);
         lv_obj_set_style_pad_column(list, 6, 0);
@@ -2744,11 +3121,14 @@ String infoText() {
     const BleStatus b = g_ble.status();
     String t = g_config.fullCallsign() + "\n";
     if (w.staConnected) t += "Wi-Fi: " + w.staSsid + "\nhttp://" + w.staIp + "\n";
+    else if (!w.enabled) t += "Wi-Fi: off\n";
     else if (w.staConfigured) t += "Wi-Fi: connecting to " + w.staSsid + "...\n";
     else t += "Wi-Fi: not set up\n";
     if (w.apActive) t += "Setup AP: " + w.apSsid + "\nhttp://" + w.apIp + "\n";
     if (g_config.rfLink == RfLink::Lora) {
         t += loraSummary();
+    } else if (g_config.rfLink == RfLink::Off) {
+        t += "Radio link: off";
     } else {
         t += String("TNC: ") + bleStateName(b.state);
         if (b.peerName.length()) t += " (" + b.peerName + ")";
@@ -2771,9 +3151,9 @@ void updateApQr(lv_obj_t *qr, const WifiStatus &w) {
     if (w.apActive) {
         const String q = "WIFI:T:nopass;S:" + w.apSsid + ";;";
         lv_qrcode_update(qr, q.c_str(), q.length());
-        lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(qr, false);
     } else {
-        lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(qr, true);
     }
 }
 
@@ -2784,7 +3164,7 @@ lv_obj_t *makeApQr(lv_obj_t *parent, int size) {
     lv_qrcode_set_light_color(qr, lv_color_white());
     lv_obj_set_style_border_color(qr, lv_color_white(), 0);
     lv_obj_set_style_border_width(qr, 3, 0);
-    lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(qr, true);
     return qr;
 }
 
@@ -2813,13 +3193,13 @@ void openInfo() {
     if (s_info.bg) return;
     // Dimmed backdrop below the status bar; the box takes all key input.
     s_info.bg = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(s_info.bg, lv_pct(100), lv_display_get_vertical_resolution(nullptr) - kStatusH);
+    lv_obj_set_size(s_info.bg, lv_pct(100), lv_display_get_vertical_resolution(lv_display_get_default()) - kStatusH);
     lv_obj_align(s_info.bg, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_radius(s_info.bg, 0, 0);
     lv_obj_set_style_border_width(s_info.bg, 0, 0);
     lv_obj_set_style_bg_color(s_info.bg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_info.bg, HAS_EINK ? LV_OPA_TRANSP : LV_OPA_70, 0);
-    lv_obj_clear_flag(s_info.bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_info.bg, false);
 
     lv_obj_t *box = lv_obj_create(s_info.bg);
     modalBoxStyle(box);
@@ -2916,7 +3296,7 @@ void buildHome() {
     lv_obj_t *parent = scr;
 #if HOME_STATUS_PANEL
     // Status on the left, tiles on the right; stacked in portrait.
-    const bool portrait = lv_display_get_vertical_resolution(nullptr) > lv_display_get_horizontal_resolution(nullptr);
+    const bool portrait = lv_display_get_vertical_resolution(lv_display_get_default()) > lv_display_get_horizontal_resolution(lv_display_get_default());
     parent = lv_obj_create(scr);
     lv_obj_remove_style_all(parent);
     lv_obj_set_width(parent, lv_pct(100));
@@ -2924,7 +3304,7 @@ void buildHome() {
     lv_obj_set_flex_flow(parent, portrait ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_all(parent, 2, 0);
     lv_obj_set_style_pad_gap(parent, 6, 0);
-    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(parent, false);
 
     lv_obj_t *panel = lv_obj_create(parent);
     lv_obj_set_size(panel, portrait ? lv_pct(100) : lv_pct(40), portrait ? LV_SIZE_CONTENT : lv_pct(100));
@@ -2932,11 +3312,11 @@ void buildHome() {
     lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(panel, 6, 0);
-    s_home.qr = makeApQr(panel, lv_display_get_vertical_resolution(nullptr) >= 400 ? 120 : 96);
+    s_home.qr = makeApQr(panel, lv_display_get_vertical_resolution(lv_display_get_default()) >= 400 ? 120 : 96);
     s_home.info = lv_label_create(panel);
     lv_obj_set_width(s_home.info, lv_pct(100));
     lv_label_set_long_mode(s_home.info, LV_LABEL_LONG_WRAP);
-    if (lv_display_get_vertical_resolution(nullptr) < 400) lv_obj_set_style_text_font(s_home.info, uiFont(12), 0);
+    if (lv_display_get_vertical_resolution(lv_display_get_default()) < 400) lv_obj_set_style_text_font(s_home.info, uiFont(12), 0);
     s_home.key = "";
 #endif
 
@@ -2949,7 +3329,7 @@ void buildHome() {
 #endif
     lv_obj_set_style_pad_all(grid, 2, 0);
     lv_obj_set_style_pad_gap(grid, 6, 0);
-    lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(grid, false);
     lv_obj_set_grid_dsc_array(grid, kCols, kRowDsc);
 
     lv_obj_t *first = nullptr;
@@ -3066,6 +3446,7 @@ void tick(lv_timer_t *) {
     updateStatusBar();
     if (s_depth > 0 && s_stack[s_depth - 1].refresh) s_stack[s_depth - 1].refresh();
     refreshInfo();
+    refreshConnections();
 }
 
 #if HAS_EINK
@@ -3079,7 +3460,7 @@ struct {
 } s_scrollBtns;
 
 bool scrolls(lv_obj_t *o) {
-    return lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE) && !lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) &&
+    return lv_obj_is_scrollable(o) && !lv_obj_is_hidden(o) &&
            !lv_obj_check_type(o, &lv_textarea_class) &&
            (lv_obj_get_scroll_top(o) > 0 || lv_obj_get_scroll_bottom(o) > 0);
 }
@@ -3114,7 +3495,7 @@ lv_obj_t *makeScrollBtn(const char *sym, int dir) {
     lv_label_set_text(l, sym);
     lv_obj_center(l);
     lv_obj_add_event_cb(b, scrollPage, LV_EVENT_CLICKED, (void *)(intptr_t)dir);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(b, true);
     return b;
 }
 
@@ -3129,12 +3510,12 @@ void scrollButtonsLoop() {
         lv_obj_align(s_scrollBtns.down, LV_ALIGN_BOTTOM_RIGHT, -2, -4);
     }
     if (!s_depth) return;
-    const bool modal = s_qm.bg || s_choice.bg || s_info.bg || s_bright.bg || s_saver.bg;
+    const bool modal = s_qm.bg || s_choice.bg || s_conn.bg || s_info.bg || s_bright.bg || s_saver.bg;
     const bool show = !modal && lv_screen_active() == s_stack[s_depth - 1].scr && scrollTarget();
     for (lv_obj_t *b : {s_scrollBtns.up, s_scrollBtns.down}) {
-        if (show == lv_obj_has_flag(b, LV_OBJ_FLAG_HIDDEN)) {
-            if (show) lv_obj_remove_flag(b, LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+        if (show == lv_obj_is_hidden(b)) {
+            if (show) lv_obj_set_hidden(b, false);
+            else lv_obj_set_hidden(b, true);
         }
     }
 }
@@ -3188,6 +3569,12 @@ void uiLoop() {
         closeChoice(pick);
         if (nav == Nav::Back || nav == Nav::None) return;
     }
+    if (s_conn.bg && (s_pendingConn != -2 || nav != Nav::None)) {
+        const int open = s_pendingConn;
+        s_pendingConn = -2;
+        closeConnections(open);
+        if (nav == Nav::Back || nav == Nav::None) return;
+    }
     if (s_pendingCloseBright || (nav != Nav::None && s_bright.bg)) {
         s_pendingCloseBright = false;
         closeBrightness();
@@ -3201,7 +3588,7 @@ void uiLoop() {
     }
     if (s_pendingFav) {
         s_pendingFav = false;
-        if (!s_qm.bg && !s_info.bg && !s_choice.bg && !s_bright.bg) toggleFavoriteKey();
+        if (!s_qm.bg && !s_info.bg && !s_choice.bg && !s_conn.bg && !s_bright.bg) toggleFavoriteKey();
     }
     if (nav == Nav::Back) popScreen();
     else if (nav == Nav::Home) popToHome();

@@ -1,6 +1,7 @@
 #include "map_view.h"
 #include "ui.h"
 #include "hal/board_pins.h"
+#include "hal/keyboard.h"
 
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -832,15 +833,15 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
 
     lv_obj_remove_style_all(root);
     lv_obj_set_size(root, w, h);
-    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(root, LV_OBJ_FLAG_USER_1);   // keyboard: deliver UP/DOWN as arrows
+    lv_obj_set_scrollable(root, false);
+    lv_obj_set_user_flag(root, kUserFlagWantsArrows, true);   // keyboard: deliver UP/DOWN as arrows
     lv_obj_add_event_cb(root, keyCb, LV_EVENT_KEY, nullptr);
     lv_obj_add_event_cb(root, clickCb, LV_EVENT_CLICKED, nullptr);
 #if HAS_TOUCH
     lv_obj_add_event_cb(root, pressedCb, LV_EVENT_PRESSED, nullptr);
     lv_obj_add_event_cb(root, pressingCb, LV_EVENT_PRESSING, nullptr);
-    lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_clickable(root, true);
+    lv_obj_set_scroll_chain(root, false);
 #endif
     lv_obj_add_event_cb(root, deleteCb, LV_EVENT_DELETE, nullptr);
     lv_group_add_obj(grp, root);
@@ -852,7 +853,7 @@ void mapViewCreate(lv_obj_t *parent, lv_group_t *grp, void (*onStation)(const ch
     m->markers = lv_obj_create(root);
     lv_obj_remove_style_all(m->markers);
     lv_obj_set_size(m->markers, w, h);
-    lv_obj_clear_flag(m->markers, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    lv_obj_set_scrollable(m->markers, false); lv_obj_set_clickable(m->markers, false);
 
     m->info = lv_label_create(root);
     lv_obj_set_width(m->info, w);

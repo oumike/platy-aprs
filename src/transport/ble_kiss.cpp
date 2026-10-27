@@ -269,8 +269,12 @@ void task(void *) {
         // Detect link loss.
         if (s_writeChr && !(s_client && s_client->isConnected())) {
             s_writeChr = nullptr;
-            if (s_wantConnected) scheduleRetry("link lost");
-            else setState(BleState::Idle);
+            // Without "Reconnect automatically" a dropped link stays down until Connect.
+            if (s_wantConnected && g_config.tncAutoConnect) scheduleRetry("link lost");
+            else {
+                s_wantConnected = false;
+                setState(BleState::Idle);
+            }
         }
 
         bool scanning;

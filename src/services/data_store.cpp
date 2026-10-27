@@ -41,6 +41,7 @@ static LogEntry *s_log;
 static size_t s_logHead;   // next slot to write
 static size_t s_logCount;
 static uint32_t s_logSeq;
+static uint32_t s_logClears;
 
 void packetLogBegin() { s_log = (LogEntry *)psAlloc(sizeof(LogEntry) * kLogCap); }
 
@@ -61,6 +62,15 @@ void packetLogAdd(const char *tnc2, bool tx, bool viaIs) {
 
 uint32_t packetLogLastSeq() { return s_logSeq; }
 size_t packetLogCount() { return s_logCount; }
+
+void packetLogClear() {
+    s_logHead = 0;
+    s_logCount = 0;
+    s_logClears++;
+    g_dataGen++;
+}
+
+uint32_t packetLogClears() { return s_logClears; }
 
 const LogEntry *packetLogAt(size_t i) {
     if (i >= s_logCount) return nullptr;

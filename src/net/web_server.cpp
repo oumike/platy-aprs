@@ -473,6 +473,7 @@ void handlePackets() {
     const uint32_t since = s_server.hasArg("since") ? s_server.arg("since").toInt() : 0;
     JsonDocument doc;
     doc["last"] = packetLogLastSeq();
+    doc["cleared"] = packetLogClears();
     doc["now"] = uptimeS();
     JsonArray arr = doc["packets"].to<JsonArray>();
     for (size_t i = 0; i < packetLogCount() && i < 100; i++) {
@@ -487,6 +488,12 @@ void handlePackets() {
         o["raw"] = e->raw;
     }
     sendJson(200, doc);
+}
+
+void handlePacketsClear() {
+    if (!authorized()) return;
+    packetLogClear();
+    sendOk();
 }
 
 void handleStations() {
@@ -776,6 +783,7 @@ void webBegin() {
     s_server.on("/api/favorites/toggle", HTTP_POST, handleFavoriteToggle);
     s_server.on("/api/messages/retry", HTTP_POST, handleMessageRetry);
     s_server.on("/api/packets", HTTP_GET, handlePackets);
+    s_server.on("/api/packets/clear", HTTP_POST, handlePacketsClear);
     s_server.on("/api/stations", HTTP_GET, handleStations);
     s_server.on("/api/backup", HTTP_GET, handleBackupDownload);
     s_server.on("/api/restore", HTTP_POST, handleRestoreUpload);

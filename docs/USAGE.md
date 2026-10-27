@@ -34,7 +34,7 @@ You need an amateur radio licence to transmit on APRS frequencies. Receiving nee
 4. **Open the web interface** at `http://192.168.4.1`. (There is no captive portal; type the address.)
 5. **Set your station.** On the **Station** tab enter your callsign and SSID, then **Save**.
 6. **Join your Wi-Fi.** On the **Wi-Fi** tab enter your network and password and save. Or do it on the device:
-   **Settings → Wi-Fi networks** scans; pick a network and type its password (**Other network...** for a
+   **Settings → Wi-Fi** scans; pick a network and type its password (**Other network...** for a
    hidden one).
 7. **Reconnect.** Once the device is on your network the setup AP shuts down after about 15 s. Rejoin your
    own network and open `http://platy-aprs.local` or `http://<device-ip>` (shown under **Status & connection
@@ -42,8 +42,12 @@ You need an amateur radio licence to transmit on APRS frequencies. Receiving nee
 8. **Connect a radio** (see [Connecting a radio](#connecting-a-radio)).
 
 If your network is out of reach for 60 s the setup AP comes back on its own. You can also open it from
-**Settings → Open setup access point** while the device is not connected. It never stays up once the device is
-on a network.
+**Settings → Wi-Fi → Open setup access point** while the device is not connected. It never stays up once the
+device is on a network.
+
+**Wi-Fi: On/Off** at the top of **Settings → Wi-Fi** turns Wi-Fi off entirely: no network, no setup AP, and so
+no web interface or APRS-IS until you turn it back on there. It's only on the device, so the web page can't lock
+itself out.
 
 **Secure the web interface.** Anyone on the same network can open it. Set an admin password on the
 **Device** tab (the username is `admin`).
@@ -69,8 +73,8 @@ the time.
 | **Status & connection info** | Wi-Fi, IP address, setup AP and its QR code, radio link status. |
 | **Settings** | Everything else (below). |
 
-**Settings** holds: Open setup access point · Wi-Fi networks · Quick messages · GPS & beacon (send a beacon,
-turn the GPS on or off) · Radio link & pairing (TNC / LoRa, paired radios) · APRS-IS on/off · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
+**Settings** holds: Wi-Fi (on/off, networks, setup access point) · Quick messages · GPS & beacon (send a beacon,
+turn the GPS on or off) · Connections (APRS-IS, TNC, LoRa; see below) · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
 (see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanels and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names.
 
@@ -188,30 +192,34 @@ next key.
 ## Connecting a radio
 
 The device talks APRS through one RF link at a time: a **Bluetooth KISS TNC** (an external radio or TNC) or the
-board's **built-in LoRa radio**. Switch between them on the web **Radio** tab, or with **Use LoRa / Use BLE
-TNC** under **Settings → Radio link & pairing**. The status bar shows which is in use.
+board's **built-in LoRa radio**, or neither. **Settings → Connections** lists APRS-IS, TNC and LoRa,
+each with an on/off switch; turning the TNC or LoRa on turns the other off. Pick a connection's name to open its
+settings. The web **Radio** tab has the same choice. The status bar shows which is in use.
 
 ### Bluetooth KISS TNC
 
 Works with the BTECH/Vero VR-N76 and VR-N7600, Mobilinkd TNC3/TNC4, and any BLE device that speaks KISS.
 
 1. Put the radio in Bluetooth pairing mode.
-2. Web **Radio** tab → **Scan**, or **Settings → Radio link & pairing** on the device. Devices offering the KISS service
-   are marked `[KISS]`.
-3. Pick your radio. The device connects, and reconnects on its own from then on.
+2. Web **Radio** tab → **Scan**, or **Settings → Connections → TNC** on the device. Devices offering the
+   KISS service are marked `[KISS]`.
+3. Pick your radio and the device connects. Tick **Reconnect automatically** (off by default) to have it connect
+   at startup and reconnect when the link drops.
 
 The defaults match the common BLE KISS service (`00000001-ba2a-46c9-ae49-01b0961f68bb`); other UUIDs can be
 set on the Radio tab.
 
 **Receive works but sending fails?** The pairing keys no longer match (typical after erasing either side).
-Delete the pairing with **Remove** under **Settings → Radio link & pairing** (or **Paired radios** on the web Radio tab), remove the
+Delete the pairing with **Remove** under **Settings → Connections → TNC** (or **Paired radios** on the web Radio tab), remove the
 device from the radio's Bluetooth list too, and connect again.
 
 ### LoRa APRS
 
 The defaults follow the usual LoRa APRS convention, so the device works with LoRa APRS iGates and trackers
 straight away: 433.775 MHz, SF12, 125 kHz, CR 4/5, 20 dBm. Frequency (150–960 MHz), spreading factor,
-bandwidth, coding rate and power can be changed on the Radio tab. Each board's antenna and RF path are built for
+bandwidth, coding rate and power can be changed on the Radio tab. On the device, **Settings → Connections →
+LoRa** shows the link's status, steps the TX power, and offers to go back to the standard settings if they were
+changed. Each board's antenna and RF path are built for
 the band it was sold for; stay in that band.
 
 ## Your station and beaconing
@@ -265,7 +273,8 @@ bearing from you (when you both have a position), course and speed, comment, pat
 
 **Monitor** shows every packet as it arrives or leaves, decoded where possible. Each line starts with **TX**
 for packets you sent (in blue) or **IS** for ones from APRS-IS (in grey), then how long ago; RF lines have no
-tag.
+tag. **Clear** (beside the title, and on the web **Monitor** tab) empties the feed on both; packet logs on the SD
+card are kept.
 
 <p align="center"><img src="screenshots/monitor.png" width="480" alt="The Monitor screen: raw APRS packets from APRS-IS"></p>
 
@@ -284,8 +293,8 @@ looked at work offline.
 
 ## APRS-IS, iGate and digipeater
 
-APRS-IS can be switched on and off under **Settings → APRS-IS** on the device. Everything else is on the web
-**APRS-IS** tab:
+APRS-IS is switched on and off under **Settings → Connections** on the device; **APRS-IS** there sets the
+server, port, filter and passcode. Everything else is on the web **APRS-IS** tab:
 
 - **Connect to APRS-IS when on Wi-Fi**: logs in to `rotate.aprs2.net` (changeable) with the passcode computed
   from your callsign, receives the packets your filter selects (default `m/50`: everything within 50 km), and
@@ -411,7 +420,7 @@ The bar says when there are unsaved changes, and the browser asks before you lea
 
 | Problem | Try |
 |---|---|
-| Can't find the setup network | It only runs while the device has no working Wi-Fi. Open it from **Settings → Open setup access point**, or wait 60 s after the configured network goes away. |
+| Can't find the setup network | It only runs while the device has no working Wi-Fi. Open it from **Settings → Wi-Fi → Open setup access point** (Wi-Fi must be on), or wait 60 s after the configured network goes away. |
 | `platy-aprs.local` doesn't open | Use the IP address shown under **Status & connection info**; some networks block mDNS. |
 | Beacons don't go out | A callsign must be set (not `N0CALL`) and the radio link up; with GPS as the source, wait for a fix. |
 | TNC receives but can't send | Delete the pairing on both sides and pair again (see [Bluetooth KISS TNC](#bluetooth-kiss-tnc)). |

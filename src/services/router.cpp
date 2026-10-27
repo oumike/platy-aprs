@@ -167,7 +167,7 @@ bool routerCanSend() { return rfLink().connected() || aprsIsReady(); }
 
 String routerSendBlocked() {
     // Only mention the radio when one is set up (a LoRa link, or a saved TNC).
-    const bool radio = g_config.rfLink == RfLink::Lora || g_config.tncAddress.length();
+    const bool radio = g_config.rfLink == RfLink::Lora || (g_config.rfLink == RfLink::Ble && g_config.tncAddress.length());
     const char *link = g_config.rfLink == RfLink::Lora ? "LoRa radio not running" : "TNC not connected";
     if (!g_config.aprsIsEnabled) return radio ? String(link) : String("No radio link or APRS-IS");
     const AprsIsStatus st = aprsIsStatus();

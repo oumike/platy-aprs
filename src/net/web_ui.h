@@ -85,7 +85,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div></section>
 
 <section data-tab="Radio"><div class="card">
-<label>RF link</label><select data-k="rfLink" onchange="rfl()"><option value="ble">Bluetooth KISS TNC (radio)</option><option value="lora">Built-in LoRa radio (LoRa APRS)</option></select>
+<label>RF link</label><select data-k="rfLink" onchange="rfl()"><option value="ble">Bluetooth KISS TNC (radio)</option><option value="lora">Built-in LoRa radio (LoRa APRS)</option><option value="off">Off</option></select>
 <small>One at a time. Save to switch.</small>
 </div><div class="card" id="lorac">
 <div id="lst">…</div>
@@ -109,7 +109,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div><div class="card" id="tncc3">
 <label>Device name</label><input data-k="tnc.name">
 <label>BLE address</label><input data-k="tnc.address" placeholder="aa:bb:cc:dd:ee:ff">
-<div class="chk"><input type="checkbox" data-k="tnc.autoConnect" data-t="bool">Auto-connect</div>
+<div class="chk"><input type="checkbox" data-k="tnc.autoConnect" data-t="bool">Reconnect automatically</div>
 <small>Defaults work for Mobilinkd TNC3/TNC4 and Vero VR-N76 / VR-N7600.</small>
 <label>KISS service UUID</label><input data-k="tnc.serviceUuid">
 <label>Write characteristic UUID</label><input data-k="tnc.writeUuid">
@@ -171,7 +171,7 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 </div><div class="card" id="mconv" style="display:none"><div class="fl"><span><b id="mpeer"></b></span><button class="btn bad" onclick="mdel()">Delete conversation</button></div><div id="mlist"></div></div>
 <div class="card"><b>Conversations</b><div id="mth"><small>No messages yet.</small></div></div></section>
 
-<section data-tab="Monitor"><div class="card"><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
+<section data-tab="Monitor"><div class="card"><div class="fl"><span><b>Packets</b></span><button class="btn sec" onclick="monclr()">Clear</button></div><div id="mon" class="mono"><small>No packets yet.</small></div></div></section>
 
 <section data-tab="Stations"><div class="card"><table><thead><tr><th>Station</th><th>Heard</th><th>Dist</th><th>Info</th></tr></thead><tbody id="stl"></tbody></table></div></section>
 
@@ -204,7 +204,7 @@ $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.
 brv();$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');$$('.led').forEach(e=>e.style.display=cfg.caps.led?'':'none');$$('.ori').forEach(e=>e.style.display=cfg.caps.orientation?'':'none');$$('.thm').forEach(e=>e.style.display=cfg.caps.theme===false?'none':'');$$('.bri').forEach(e=>e.style.display=cfg.caps.brightness===false?'none':'');$$('.kbb').forEach(e=>e.style.display=cfg.caps.kbBlink?'':'none');$$('.lto').forEach(e=>e.style.display=cfg.caps.led||cfg.caps.kbBlink?'':'none');
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
-function rfl(){const l=$('[data-k="rfLink"]').value=='lora';$('#lorac').style.display=l?'':'none';$('#tncc').style.display=$('#tncc3').style.display=l?'none':''}
+function rfl(){const v=$('[data-k="rfLink"]').value;$('#lorac').style.display=v=='lora'?'':'none';$('#tncc').style.display=$('#tncc3').style.display=v=='ble'?'':'none'}
 async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);else if(e.dataset.t=='bool'&&e.type!='checkbox')v=v=='true';set(o,e.dataset.k,v)});
 if($('#wpass').value)set(o,'wifi.password',$('#wpass').value);
@@ -225,13 +225,15 @@ e.querySelector('button').onclick=()=>tforget({address:b.address,addressType:b.a
 if(!(j.bonds||[]).length)d.innerHTML='<small>No paired radios.</small>'}
 async function tforget(body,t){toast(t);const r=await (await fetch('/api/tnc/forget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json().catch(()=>({}));
 if(r.ok===false)toast(r.error,1);else if(body.removeSaved)load();setTimeout(()=>{tbonds();status()},800)}
-let lastSeq=0;
-async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();if(!j.packets.length)return;
-if(!lastSeq)$('#mon').innerHTML='';lastSeq=j.last;
+let lastSeq=0,monClr=-1;
+async function monitor(){const j=await (await fetch('/api/packets?since='+lastSeq)).json();
+if(j.cleared!==monClr){monClr=j.cleared;$('#mon').innerHTML='<small>No packets yet.</small>'}if(!j.packets.length)return;
+if($('#mon').querySelector('small'))$('#mon').innerHTML='';lastSeq=j.last;
 const html=j.packets.map(p=>'<div class="pk'+(p.tx?' tx':'')+'"><span class="t">'+(p.epoch?new Date(p.epoch*1000).toLocaleTimeString():'-'+age(p.ageS))+(p.tx?' TX':'')+(p.is?' IS':'')+'</span>'+esc(p.raw)+'</div>').join('');
 $('#mon').insertAdjacentHTML('afterbegin',html);const k=$('#mon').children;while(k.length>200)k[k.length-1].remove()}
 const favFirst=a=>a.filter(x=>x.fav).concat(a.filter(x=>!x.fav));
 const star=(c,on)=>'<span class="star'+(on?' on':'')+'" data-c="'+esc(c)+'" title="Favorite">'+(on?'★':'☆')+'</span>';
+async function monclr(){await post('/api/packets/clear','Monitor cleared');monitor()}
 async function favT(e,c,after){e.stopPropagation();const r=await (await fetch('/api/favorites/toggle?call='+encodeURIComponent(c),{method:'POST'})).json();if(r.ok)after()}
 async function stations(){const j=await (await fetch('/api/stations')).json();
 $('#stl').innerHTML=favFirst(j.stations).map(s=>'<tr><td>'+star(s.call,s.fav)+' <b>'+esc(s.call)+'</b>'+(s.owner?'<br><small>by '+esc(s.owner)+'</small>':'')+'</td><td>'+age(s.ageS)+'<br><small>'+s.packets+' pkt</small></td><td>'+(s.distance?esc(s.distance)+'<br><small>'+s.bearing+'°</small>':'')+'</td><td>'+

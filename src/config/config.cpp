@@ -110,7 +110,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
 
     o["digi"]["enabled"] = c.digiEnabled;
 
-    o["rfLink"] = c.rfLink == RfLink::Lora ? "lora" : "ble";
+    o["rfLink"] = c.rfLink == RfLink::Lora ? "lora" : c.rfLink == RfLink::Off ? "off" : "ble";
     JsonObject lr = o["lora"].to<JsonObject>();
     lr["freqMhz"] = c.loraFreqMhz;
     lr["sf"] = c.loraSf;
@@ -128,6 +128,7 @@ void configToJson(const AppConfig &c, JsonObject o) {
     t["autoConnect"] = c.tncAutoConnect;
 
     JsonObject w = o["wifi"].to<JsonObject>();
+    w["enabled"] = c.wifiEnabled;
     w["ssid"] = c.wifiSsid;
     w["passwordSet"] = c.wifiPassword.length() > 0;
     w["hostname"] = c.hostname;
@@ -231,8 +232,10 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     JsonObjectConst dg = o["digi"];
     if (dg) take(dg, "enabled", c.digiEnabled);
 
-    if (o["rfLink"].is<const char *>())
-        c.rfLink = strcmp(o["rfLink"].as<const char *>(), "lora") == 0 ? RfLink::Lora : RfLink::Ble;
+    if (o["rfLink"].is<const char *>()) {
+        const char *rl = o["rfLink"].as<const char *>();
+        c.rfLink = strcmp(rl, "lora") == 0 ? RfLink::Lora : strcmp(rl, "off") == 0 ? RfLink::Off : RfLink::Ble;
+    }
     JsonObjectConst lr = o["lora"];
     if (lr) {
         takeNum(lr, "freqMhz", c.loraFreqMhz);
@@ -254,6 +257,7 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
     }
     JsonObjectConst w = o["wifi"];
     if (w) {
+        take(w, "enabled", c.wifiEnabled);
         takeStr(w, "ssid", c.wifiSsid);
         String pw;
         takeStr(w, "password", pw);

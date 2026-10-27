@@ -5,6 +5,7 @@
 enum class ApReason : uint8_t { None, Setup, Fallback, Manual };
 
 struct WifiStatus {
+    bool enabled;   // g_config.wifiEnabled; when false everything below is off
     bool apActive;
     ApReason apReason;
     String apSsid;
@@ -26,6 +27,9 @@ void wifiApplyConfig();
 // User request from the device UI: bring the setup AP up. Refused (false) while
 // connected to a network; the AP also shuts down once a connection is made.
 bool wifiOpenSetupAp();
+// Turns the Wi-Fi radio on or off entirely (saved). Off means no network and
+// no setup AP, so the web config is unreachable until it is turned back on.
+void wifiSetEnabled(bool on);
 WifiStatus wifiStatus();
 bool wifiStaConnected();
 const char *apReasonStr(ApReason r);

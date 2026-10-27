@@ -15,6 +15,10 @@ void keyboardSetHotkeyHandler(KeyboardHotkeyHandler h);
 // The LVGL keypad device; attach a group to it with lv_indev_set_group().
 lv_indev_t *keyboardIndev();
 
+// LVGL user-flag bit (lv_obj_set_user_flag) marking a widget that takes UP/DOWN
+// as arrow keys instead of focus moves, e.g. the map. Bits 1..3 are used in ui.cpp.
+constexpr uint32_t kUserFlagWantsArrows = 0;
+
 // E-paper builds: run while the panel refresh blocks, so keystrokes queue up
 // instead of overflowing the keyboard controller. Touches no LVGL state.
 void keyboardServiceDuringRefresh();

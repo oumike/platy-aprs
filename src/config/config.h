@@ -37,7 +37,7 @@ struct SmartBeaconConfig {
     uint16_t minTurnTimeS = 15;
 };
 
-enum class RfLink : uint8_t { Ble, Lora };
+enum class RfLink : uint8_t { Ble, Lora, Off };
 
 struct AppConfig {
     // Station
@@ -67,7 +67,7 @@ struct AppConfig {
     bool igateIsToRfMsgs = false;
     bool digiEnabled = false;
 
-    // RF link: the BLE KISS TNC or the built-in LoRa radio (one at a time)
+    // RF link: the BLE KISS TNC or the built-in LoRa radio (one at a time), or neither
     RfLink rfLink = RfLink::Ble;
     float loraFreqMhz = 433.775f;   // LoRa APRS (OE5BPA): 433.775 MHz SF12 BW125 CR4/5
     uint8_t loraSf = 12;
@@ -82,9 +82,10 @@ struct AppConfig {
     String tncServiceUuid = "00000001-ba2a-46c9-ae49-01b0961f68bb";
     String tncWriteUuid = "00000002-ba2a-46c9-ae49-01b0961f68bb";
     String tncNotifyUuid = "00000003-ba2a-46c9-ae49-01b0961f68bb";
-    bool tncAutoConnect = true;
+    bool tncAutoConnect = false;   // connect at boot and reconnect when the link drops
 
     // Wi-Fi
+    bool wifiEnabled = true;   // off: no network, no setup AP (the web config is unreachable)
     String wifiSsid;
     String wifiPassword;
     String hostname = "platy-aprs";

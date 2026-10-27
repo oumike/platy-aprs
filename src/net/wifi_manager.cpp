@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "config/config.h"
 #include <ESPmDNS.h>
+#include <esp_netif.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
 #include <algorithm>
@@ -22,6 +23,7 @@ bool s_staWasConnected = false;
 uint32_t s_staDownSinceMs = 0;
 uint32_t s_staConnectedSinceMs = 0;
 uint32_t s_lastStaAttemptMs = 0;
+bool s_scanHeldSta = false;   // a scan cancelled the connection attempt; retry once it ends
 bool s_mdnsStarted = false;
 
 bool haveCreds() { return g_config.wifiSsid.length() > 0; }
@@ -87,7 +89,14 @@ void wifiBegin() {
     WiFi.setAutoReconnect(false);   // retries are paced by wifiLoop()
     WiFi.setSleep(true);            // modem sleep; required alongside BLE
 
-    if (haveCreds()) {
+    if (!g_config.wifiEnabled) {
+        // Arduino starts the TCP/IP stack only when Wi-Fi first comes on; the web
+        // server's socket still needs it (lwIP asserts "Invalid mbox" otherwise).
+        // Arduino's own init calls this again harmlessly once Wi-Fi is turned on.
+        esp_netif_init();
+        WiFi.mode(WIFI_OFF);
+        Serial.println("[wifi] off");
+    } else if (haveCreds()) {
         WiFi.mode(WIFI_STA);
         s_staDownSinceMs = millis();
         beginSta();
@@ -97,6 +106,7 @@ void wifiBegin() {
 }
 
 void wifiLoop() {
+    if (!g_config.wifiEnabled) return;
     const uint32_t now = millis();
 
     const bool up = WiFi.status() == WL_CONNECTED;
@@ -122,17 +132,20 @@ void wifiLoop() {
     // A connection attempt would abort a running scan.
     if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
         s_lastStaAttemptMs = now;
+        s_scanHeldSta = true;
         return;
     }
-    const uint32_t retry =
-        (s_apActive && WiFi.softAPgetStationNum() > 0) ? kStaRetryWithApClientsMs : kStaRetryMs;
-    if (now - s_lastStaAttemptMs > retry) {
+    const bool apClients = s_apActive && WiFi.softAPgetStationNum() > 0;
+    const uint32_t retry = apClients ? kStaRetryWithApClientsMs : kStaRetryMs;
+    if ((s_scanHeldSta && !apClients) || now - s_lastStaAttemptMs > retry) {
+        s_scanHeldSta = false;
         WiFi.disconnect(false, false);
         beginSta();
     }
 }
 
 void wifiApplyConfig() {
+    if (!g_config.wifiEnabled) return;   // new credentials wait until Wi-Fi is turned on
     WiFi.disconnect(false, false);
     s_staWasConnected = false;
     s_staDownSinceMs = millis();
@@ -145,6 +158,7 @@ void wifiApplyConfig() {
 }
 
 bool wifiScanStart() {
+    if (!g_config.wifiEnabled) return false;
     if (wifiScanRunning()) return true;
     if (!wifiStaConnected()) {
         // The driver refuses to scan while the station is connecting.
@@ -197,15 +211,42 @@ bool wifiConnectTo(const String &ssid, const String &password, String &err) {
 }
 
 bool wifiOpenSetupAp() {
-    if (wifiStaConnected()) return false;   // the AP never runs alongside a working STA link
+    if (!g_config.wifiEnabled || wifiStaConnected()) return false;   // the AP never runs alongside a working STA link
     startAp(ApReason::Manual);
     return true;
+}
+
+void wifiSetEnabled(bool on) {
+    if (on == g_config.wifiEnabled) return;
+    g_config.wifiEnabled = on;
+    configSave();
+    if (!on) {
+        stopAp();
+        if (s_mdnsStarted) {
+            MDNS.end();
+            s_mdnsStarted = false;
+        }
+        WiFi.disconnect(true, false);
+        WiFi.mode(WIFI_OFF);
+        s_staWasConnected = false;
+        Serial.println("[wifi] turned off");
+        return;
+    }
+    Serial.println("[wifi] turned on");
+    s_staDownSinceMs = millis();
+    if (haveCreds()) {
+        WiFi.mode(WIFI_STA);
+        beginSta();
+    } else {
+        startAp(ApReason::Setup);
+    }
 }
 
 bool wifiStaConnected() { return WiFi.status() == WL_CONNECTED; }
 
 WifiStatus wifiStatus() {
     WifiStatus s;
+    s.enabled = g_config.wifiEnabled;
     s.apActive = s_apActive;
     s.apReason = s_apReason;
     s.apSsid = s_apSsid;
