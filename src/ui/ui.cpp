@@ -115,7 +115,7 @@ lv_style_t s_stTile, s_stTileFocus, s_stRow, s_stRowFocus, s_stNoGrow, s_stDisab
 lv_style_t s_stEinkBox, s_stEinkBar;   // black outline for fields; black scrollbars
 #endif
 
-constexpr uint32_t kTileBg = 0xD96C00, kTileFocusBg = 0xFF9A2E;
+constexpr uint32_t kTileFocusBg = 0xFF9A2E;   // the default orange, focused
 constexpr uint32_t kMsgTileBg = 0x4A3F35, kMsgTileFocusBg = 0x6E5E50, kMsgTileText = 0xEDE6DF;
 constexpr uint32_t kMsgTileUnread = HAS_EINK ? 0x000000 : 0xFFB347;
 constexpr int kModalRadius = 12;   // pop-ups and toasts
@@ -126,6 +126,9 @@ constexpr uint32_t kUserFlagFav = 1;     // the favorite button Alt+F looks for
 constexpr uint32_t kUserFlagTx = 2;      // monitor row: our own packet
 constexpr uint32_t kUserFlagViaIs = 3;   // monitor row: heard via APRS-IS
 UiTheme s_appliedTheme = UiTheme::Dark;
+uint32_t s_appliedAccent = kAccentDefault;
+bool s_appliedAccentLight = false;
+lv_color_t s_accentText = LV_COLOR_MAKE(0, 0, 0);   // text on accent tiles
 bool s_dark = true;   // the theme in use (e-paper is always light)
 TextSize s_appliedTextSize = TextSize::Medium;
 
@@ -168,6 +171,12 @@ void themeApply(lv_theme_t *, lv_obj_t *obj) {
 
 bool s_stylesInited = false;
 
+// Focused tiles are a lighter shade of the accent; the default orange keeps the
+// shade it always had.
+lv_color_t accentFocusBg(uint32_t rgb) {
+    return rgb == kAccentDefault ? lv_color_hex(kTileFocusBg) : lv_color_lighten(lv_color_hex(rgb), LV_OPA_30);
+}
+
 void themeColors(bool light) {
 #if HAS_EINK
     // 1 bit: anything that must show is black. Links that are off drop out of
@@ -205,6 +214,9 @@ void themeInit() {
     s_appliedTheme = g_config.theme;
     s_dark = !light;
     s_appliedTextSize = g_config.textSize;
+    s_appliedAccent = g_config.accentColor;
+    s_appliedAccentLight = g_config.accentLightText;
+    s_accentText = g_config.accentLightText ? lv_color_white() : lv_color_black();
     themeColors(light);
     lv_style_t *styles[] = {&s_stFocus, &s_stCursor, &s_stScreen, &s_stSurface, &s_stTile,
                             &s_stTileFocus, &s_stRow, &s_stRowFocus, &s_stNoGrow, &s_stDisabled, &s_stTileList,
@@ -225,19 +237,19 @@ void themeInit() {
     lv_style_set_outline_pad(&s_stFocus, 0);
 
     const lv_color_t outline = light ? lv_color_black() : lv_color_white();
-    struct { lv_style_t *base, *focus; uint32_t bg, focusBg, text; } tiles[] = {
-        {&s_stTile, &s_stTileFocus, kTileBg, kTileFocusBg, 0x000000},
-        {&s_stRow, &s_stRowFocus, kMsgTileBg, kMsgTileFocusBg, kMsgTileText},
+    struct { lv_style_t *base, *focus; lv_color_t bg, focusBg, text; } tiles[] = {
+        {&s_stTile, &s_stTileFocus, lv_color_hex(g_config.accentColor), accentFocusBg(g_config.accentColor), s_accentText},
+        {&s_stRow, &s_stRowFocus, lv_color_hex(kMsgTileBg), lv_color_hex(kMsgTileFocusBg), lv_color_hex(kMsgTileText)},
     };
     for (auto &t : tiles) {
         lv_style_set_radius(t.base, 10);
-        lv_style_set_bg_color(t.base, lv_color_hex(t.bg));
+        lv_style_set_bg_color(t.base, t.bg);
         lv_style_set_bg_opa(t.base, LV_OPA_COVER);
-        lv_style_set_text_color(t.base, lv_color_hex(t.text));
+        lv_style_set_text_color(t.base, t.text);
         lv_style_set_border_width(t.base, 0);
         lv_style_set_shadow_width(t.base, 0);
-        lv_style_set_bg_color(t.focus, lv_color_hex(t.focusBg));
-        lv_style_set_text_color(t.focus, lv_color_hex(t.text));
+        lv_style_set_bg_color(t.focus, t.focusBg);
+        lv_style_set_text_color(t.focus, t.text);
         lv_style_set_shadow_width(t.focus, 0);
         lv_style_set_outline_color(t.focus, outline);
         lv_style_set_outline_width(t.focus, 2);
@@ -1135,7 +1147,7 @@ bool staAccented(const char *call) {
     return false;
 }
 
-// Orange while accented; otherwise the brown row with an amber star and dim age.
+// Accent tile while accented; otherwise the brown row with an amber star and dim age.
 void staRowAccent(lv_obj_t *b, bool on) {
     if (on) {
         lv_obj_add_style(b, &s_stTile, 0);
@@ -1145,8 +1157,8 @@ void staRowAccent(lv_obj_t *b, bool on) {
         lv_obj_remove_style(b, &s_stTileFocus, LV_STATE_FOCUS_KEY);
     }
     const uint32_t n = lv_obj_get_child_count(b);
-    if (n == 3) lv_obj_set_style_text_color(lv_obj_get_child(b, 0), on ? lv_color_black() : kAmber, 0);
-    lv_obj_set_style_text_color(lv_obj_get_child(b, n - 1), on ? lv_color_black() : kDimText, 0);
+    if (n == 3) lv_obj_set_style_text_color(lv_obj_get_child(b, 0), on ? s_accentText : kAmber, 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(b, n - 1), on ? s_accentText : kDimText, 0);
 }
 
 void staExpireAccents() {
@@ -2952,9 +2964,46 @@ bool s_themeFromSettings = false;
 lv_obj_t *s_themeItem = nullptr;  // in the newest Settings screen
 lv_obj_t *s_orientItem = nullptr;
 lv_obj_t *s_textSizeItem = nullptr;
+lv_obj_t *s_accentItem = nullptr;
 lv_obj_t **s_refocusItem = &s_themeItem;   // which item Settings reopens on after a rebuild
 Orientation s_appliedOrient = Orientation::Landscape;
 
+
+#if !HAS_EINK
+// The accent presets as swatches: each option button in its own colour. Custom
+// colours are set from the web config.
+void openAccentChoice() {
+    static ChoiceOpt opts[16];
+    int focus = 0;
+    for (int i = 0; i < kAccentPresetCount; i++) {
+        opts[i] = {kAccentPresets[i].name, false};
+        if (kAccentPresets[i].rgb == g_config.accentColor) focus = i;
+    }
+    openChoice("Accent color", nullptr, opts, kAccentPresetCount, [](int pick) {
+        const uint32_t rgb = kAccentPresets[pick].rgb;
+        if (rgb == g_config.accentColor) return;
+        // uiLoop() sees the change and rebuilds the UI in the new colour.
+        g_config.accentColor = rgb;
+        g_config.accentLightText = !accentPrefersDarkText(rgb);
+        configSave();
+        s_themeFromSettings = true;
+        s_refocusItem = &s_accentItem;
+    }, focus, nullptr, true);
+    if (!s_choice.bg) return;
+    lv_obj_t *box = lv_obj_get_child(s_choice.bg, 0);
+    int i = 0;
+    for (uint32_t c = 0; c < lv_obj_get_child_count(box) && i < kAccentPresetCount; c++) {
+        lv_obj_t *b = lv_obj_get_child(box, c);
+        if (!lv_obj_check_type(b, &lv_button_class)) continue;
+        const uint32_t rgb = kAccentPresets[i++].rgb;
+        const lv_color_t text = accentPrefersDarkText(rgb) ? lv_color_black() : lv_color_white();
+        lv_obj_set_style_bg_color(b, lv_color_hex(rgb), 0);
+        lv_obj_set_style_bg_color(b, accentFocusBg(rgb), LV_STATE_FOCUS_KEY);
+        lv_obj_set_style_text_color(b, text, 0);
+        lv_obj_set_style_text_color(b, text, LV_STATE_FOCUS_KEY);
+    }
+}
+#endif
 
 void openSettings() {
     lv_group_t *grp;
@@ -3057,6 +3106,9 @@ void openSettings() {
     });
     s_themeItem = th;
     lv_label_set_text(lv_obj_get_child(th, 1), g_config.theme == UiTheme::Light ? "Theme: Light" : "Theme: Dark");
+    lv_obj_t *ac = addItem(list, grp, LV_SYMBOL_TINT, "", [](lv_event_t *) { openAccentChoice(); });
+    s_accentItem = ac;
+    lv_label_set_text(lv_obj_get_child(ac, 1), (String("Accent color: ") + accentLabel(g_config.accentColor)).c_str());
 #endif
     lv_obj_t *ts = addItem(list, grp, LV_SYMBOL_EDIT, "", [](lv_event_t *) {
         static const ChoiceOpt kOpts[] = {{"Small", false}, {"Medium", false}, {"Large", false}, {"X-Large", false}};
@@ -3623,7 +3675,8 @@ void uiLoop() {
             displaySetOrientation((uint8_t)s_appliedOrient);
             rebuildForTheme();
         }
-    } else if (g_config.theme != s_appliedTheme || g_config.textSize != s_appliedTextSize) {
+    } else if (g_config.theme != s_appliedTheme || g_config.textSize != s_appliedTextSize ||
+               g_config.accentColor != s_appliedAccent || g_config.accentLightText != s_appliedAccentLight) {
         rebuildForTheme();
     }
     toastLoop();

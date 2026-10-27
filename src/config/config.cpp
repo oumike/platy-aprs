@@ -40,6 +40,29 @@ const char *ledColorKey(LedColor c) {
     return (uint8_t)c < kLedColorCount ? kKeys[(uint8_t)c] : "off";
 }
 
+// Keep in step with ACC in web_ui.h.
+const AccentPreset kAccentPresets[] = {
+    {"Orange", kAccentDefault}, {"Red", 0xD32F2F}, {"Pink", 0xC2185B},  {"Purple", 0x8E24AA}, {"Blue", 0x1565C0},
+    {"Cyan", 0x00BCD4},         {"Teal", 0x00796B}, {"Green", 0x2E7D32}, {"Yellow", 0xFBC02D}, {"Grey", 0x546E7A},
+};
+const int kAccentPresetCount = sizeof(kAccentPresets) / sizeof(kAccentPresets[0]);
+
+// WCAG relative luminance; black text wins when L > ~0.18.
+bool accentPrefersDarkText(uint32_t rgb) {
+    auto lin = [](uint32_t v) {
+        const float c = v / 255.0f;
+        return c <= 0.03928f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+    };
+    const float l = 0.2126f * lin(rgb >> 16 & 0xFF) + 0.7152f * lin(rgb >> 8 & 0xFF) + 0.0722f * lin(rgb & 0xFF);
+    return (l + 0.05f) / 0.05f >= 1.05f / (l + 0.05f);
+}
+
+const char *accentLabel(uint32_t rgb) {
+    for (int i = 0; i < kAccentPresetCount; i++)
+        if (kAccentPresets[i].rgb == rgb) return kAccentPresets[i].name;
+    return "Custom";
+}
+
 const uint16_t kLedTimeoutSecs[] = {5, 10, 15, 30, 60, 120, 300, 0};
 const int kLedTimeoutCount = sizeof(kLedTimeoutSecs) / sizeof(kLedTimeoutSecs[0]);
 
@@ -143,6 +166,10 @@ void configToJson(const AppConfig &c, JsonObject o) {
     d["theme"] = c.theme == UiTheme::Light ? "light" : "dark";
     d["orientation"] = orientationKey(c.orientation);
     d["textSize"] = textSizeKey(c.textSize);
+    char hex[8];
+    snprintf(hex, sizeof(hex), "#%06lx", (unsigned long)(c.accentColor & 0xFFFFFF));
+    d["accentColor"] = hex;
+    d["accentText"] = c.accentLightText ? "light" : "dark";
     d["ledColor"] = ledColorKey(c.ledColor);
     d["ledTimeoutSecs"] = c.ledTimeoutSecs;
     d["kbBlink"] = c.kbBlink;
@@ -299,6 +326,15 @@ void configFromJson(AppConfig &c, JsonObjectConst o) {
             for (uint8_t i = 0; i < 4; i++)
                 if (!strcmp(d["textSize"].as<const char *>(), textSizeKey((TextSize)i))) c.textSize = (TextSize)i;
         }
+        if (d["accentColor"].is<const char *>()) {
+            // "#rrggbb" or "rrggbb"; anything else keeps the current colour.
+            const char *s = d["accentColor"].as<const char *>();
+            if (*s == '#') s++;
+            bool ok = strlen(s) == 6;
+            for (const char *p = s; ok && *p; p++) ok = isxdigit((unsigned char)*p);
+            if (ok) c.accentColor = strtoul(s, nullptr, 16);
+        }
+        if (d["accentText"].is<const char *>()) c.accentLightText = !strcmp(d["accentText"].as<const char *>(), "light");
         if (d["ledColor"].is<const char *>()) {
             const char *s = d["ledColor"].as<const char *>();
             for (uint8_t i = 0; i < kLedColorCount; i++)

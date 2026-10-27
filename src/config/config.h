@@ -22,6 +22,18 @@ const char *textSizeLabel(TextSize t);   // "Small", "Medium", "Large", "X-Large
 enum class LedColor : uint8_t { Off, Red, Green, Blue, Yellow, Cyan, Magenta, White };
 constexpr uint8_t kLedColorCount = 8;
 const char *ledColorKey(LedColor c);   // JSON value: "off", "red", ...
+// Button (accent) colour presets, offered on the device and in the web config;
+// the web config also takes any hex colour. Presets pick the text colour that
+// reads best on them; a custom colour comes with the user's choice.
+struct AccentPreset {
+    const char *name;
+    uint32_t rgb;
+};
+extern const AccentPreset kAccentPresets[];
+extern const int kAccentPresetCount;
+constexpr uint32_t kAccentDefault = 0xD96C00;   // orange
+bool accentPrefersDarkText(uint32_t rgb);   // dark text has more contrast than light
+const char *accentLabel(uint32_t rgb);      // preset name, or "Custom"
 // Blink timeout choices in seconds; 0 = never stop while messages are unread.
 extern const uint16_t kLedTimeoutSecs[];
 extern const int kLedTimeoutCount;
@@ -101,6 +113,8 @@ struct AppConfig {
     UiTheme theme = UiTheme::Dark;
     Orientation orientation = Orientation::Landscape;
     TextSize textSize = TextSize::Medium;
+    uint32_t accentColor = kAccentDefault;   // buttons (0xRRGGBB)
+    bool accentLightText = false;            // white text on them, else black
     LedColor ledColor = LedColor::Blue;   // new-message blink; LED boards only
     uint16_t ledTimeoutSecs = 15;         // stop blinking after this; 0 = never (LED and keyboard)
     bool kbBlink = true;                  // T-Deck keyboard backlight blink, screen off

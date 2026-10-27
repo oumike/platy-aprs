@@ -35,6 +35,8 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 .fl{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a313b}.fl span{flex:1}
 .fl .btn{margin:0;padding:6px 10px}
 .bub{max-width:80%;padding:6px 10px;border-radius:10px;margin:6px 0;background:#2a313b}.bub.o{margin-left:auto;background:#1d4a73}
+.sw{display:flex;flex-wrap:wrap;gap:6px}.sw button{flex:1 0 84px;padding:8px 4px;border:2px solid transparent;border-radius:6px;font-weight:600}.sw button.on{border-color:var(--fg);outline:2px solid var(--bg);outline-offset:-4px}
+.sw button.cu{background:#2a313b;color:var(--fg)}#accc input[type=color]{padding:2px;height:38px}
 .bub small{display:block;font-size:11px}.star{cursor:pointer;color:#777;font-size:16px}.star.on{color:#ffb347}.ur{background:var(--acc);color:#000;border-radius:9px;padding:0 6px;font-size:12px;margin-left:6px}
 </style></head><body>
 <header><b>Platy APRS</b><div id="st">…</div></header>
@@ -128,6 +130,11 @@ td,th{padding:5px 4px;border-bottom:1px solid #2a313b;text-align:left;vertical-a
 <section data-tab="Device"><div class="card">
 <label>Units</label><select data-k="device.units"><option value="imperial">Imperial</option><option value="metric">Metric</option></select>
 <div class="thm"><label>Theme</label><select data-k="device.theme"><option value="dark">Dark</option><option value="light">Light</option></select></div>
+<div class="thm"><label>Accent color <small>(buttons)</small></label><div class="sw" id="accs"></div>
+<input type="hidden" data-k="device.accentColor" id="accv"><input type="hidden" data-k="device.accentText" id="acct">
+<div id="accc" class="row"><div><label>Hex code</label><input id="acchex" maxlength="7" placeholder="#1e88e5"></div>
+<div style="flex:0 0 56px"><label>&nbsp;</label><input type="color" id="accpk"></div>
+<div><label>Button text</label><select id="acctxt"><option value="dark">Dark</option><option value="light">Light</option></select></div></div></div>
 <label>Text size</label><select data-k="device.textSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option><option value="xlarge">X-Large</option></select>
 <div class="ori"><label>Orientation</label><select data-k="device.orientation"><option value="landscape">Landscape</option><option value="landscape180">Landscape 180</option><option value="portrait">Portrait</option><option value="portrait180">Portrait 180</option></select></div>
 <div class="snd"><label>Alert sound</label><select data-k="device.sound"><option value="default">Default</option><option value="chirpy">Chirpy</option><option value="bass">Bass</option><option value="off">Off</option></select></div>
@@ -197,15 +204,36 @@ function toast(t,bad){const m=$('#msg');m.textContent=t;m.style.background=bad?'
 let dirty=false;
 function setDirty(d){dirty=d;$('#savebar').classList.toggle('dirty',d);$('#dirty').textContent=d?'Unsaved changes':'All changes saved';$('#savebtn').disabled=!d}
 $$('[data-k],#wpass,#apass,#aclr').forEach(e=>{e.addEventListener('input',()=>setDirty(true));e.addEventListener('change',()=>setDirty(true))});
+// Accent colour: preset swatches (text colour chosen for contrast, as on the
+// device) or Custom with a hex code and the user's text colour.
+// Keep in step with kAccentPresets in config.cpp.
+const ACC=[['Orange','#d96c00'],['Red','#d32f2f'],['Pink','#c2185b'],['Purple','#8e24aa'],['Blue','#1565c0'],['Cyan','#00bcd4'],['Teal','#00796b'],['Green','#2e7d32'],['Yellow','#fbc02d'],['Grey','#546e7a']];
+const hexOk=h=>/^#?[0-9a-f]{6}$/i.test(h.trim()),hexN=h=>'#'+h.trim().replace('#','').toLowerCase();
+function darkTxt(h){const l=[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255).map(c=>c<=.03928?c/12.92:((c+.055)/1.055)**2.4);
+const L=.2126*l[0]+.7152*l[1]+.0722*l[2];return (L+.05)/.05>=1.05/(L+.05)}
+let accCustom=false;
+function accDraw(){const v=$('#accv').value,t=$('#acct').value;
+$$('#accs button').forEach(b=>b.classList.toggle('on',accCustom?b.classList.contains('cu'):b.dataset.c==v));
+$('#accc').style.display=accCustom?'':'none';const cu=$('#accs .cu');
+if(accCustom&&hexOk(v)){cu.style.background=v;cu.style.color=t=='light'?'#fff':'#000'}else{cu.style.background='';cu.style.color=''}}
+function accSet(v,t){$('#accv').value=v;$('#acct').value=t;setDirty(true);accDraw()}
+ACC.forEach(([n,c])=>{const b=document.createElement('button');b.textContent=n;b.dataset.c=c;b.style.background=c;b.style.color=darkTxt(c)?'#000':'#fff';
+b.onclick=()=>{accCustom=false;accSet(c,darkTxt(c)?'dark':'light')};$('#accs').appendChild(b)});
+{const b=document.createElement('button');b.textContent='Custom';b.className='cu';b.onclick=()=>{accCustom=true;
+const v=$('#accv').value;$('#acchex').value=v;$('#accpk').value=v;$('#acctxt').value=$('#acct').value;accDraw()};$('#accs').appendChild(b)}
+function accCu(){const h=$('#acchex').value;if(hexOk(h)){$('#accpk').value=hexN(h);accSet(hexN(h),$('#acctxt').value)}else setDirty(true)}
+$('#acchex').addEventListener('input',accCu);$('#acctxt').addEventListener('change',accCu);
+$('#accpk').addEventListener('input',()=>{$('#acchex').value=$('#accpk').value;accCu()});
+function accLoad(){const v=$('#accv').value;accCustom=!ACC.some(a=>a[1]==v);if(accCustom){$('#acchex').value=v;$('#accpk').value=v;$('#acctxt').value=$('#acct').value}accDraw()}
 function brv(){$('#brv').textContent=Math.round($('#bri').value*100/255)+'%'}$('#bri').addEventListener('input',brv);
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 async function load(){cfg=await (await fetch('/api/config')).json();
 $$('[data-k]').forEach(e=>{const v=get(cfg,e.dataset.k);if(e.type=='checkbox')e.checked=!!v;else e.value=v??''});
-brv();$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');$$('.led').forEach(e=>e.style.display=cfg.caps.led?'':'none');$$('.ori').forEach(e=>e.style.display=cfg.caps.orientation?'':'none');$$('.thm').forEach(e=>e.style.display=cfg.caps.theme===false?'none':'');$$('.bri').forEach(e=>e.style.display=cfg.caps.brightness===false?'none':'');$$('.kbb').forEach(e=>e.style.display=cfg.caps.kbBlink?'':'none');$$('.lto').forEach(e=>e.style.display=cfg.caps.led||cfg.caps.kbBlink?'':'none');
+brv();accLoad();$$('.snd').forEach(e=>e.style.display=cfg.caps.sound?'':'none');$$('.vol').forEach(e=>e.style.display=cfg.caps.volume?'':'none');$$('.led').forEach(e=>e.style.display=cfg.caps.led?'':'none');$$('.ori').forEach(e=>e.style.display=cfg.caps.orientation?'':'none');$$('.thm').forEach(e=>e.style.display=cfg.caps.theme===false?'none':'');$$('.bri').forEach(e=>e.style.display=cfg.caps.brightness===false?'none':'');$$('.kbb').forEach(e=>e.style.display=cfg.caps.kbBlink?'':'none');$$('.lto').forEach(e=>e.style.display=cfg.caps.led||cfg.caps.kbBlink?'':'none');
 rfl();$('#cpc').textContent=cfg.aprsis.computedPasscode;$('#wpw').textContent=cfg.wifi.passwordSet?'(saved; leave blank to keep)':'';
 $('#apw').textContent=cfg.device.adminPasswordSet?'(set; leave blank to keep)':'(none)';$$('.hn').forEach(e=>e.textContent=cfg.wifi.hostname);setDirty(false);tbonds().catch(()=>{})}
 function rfl(){const v=$('[data-k="rfLink"]').value;$('#lorac').style.display=v=='lora'?'':'none';$('#tncc').style.display=$('#tncc3').style.display=v=='ble'?'':'none'}
-async function save(){const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
+async function save(){if(accCustom&&!hexOk($('#acchex').value))return toast('Accent color must be a hex code like #1e88e5',1);const o={};$$('[data-k]').forEach(e=>{let v=e.type=='checkbox'?e.checked:e.value;
 if(e.dataset.t=='num')v=Number(v);else if(e.dataset.t=='bool'&&e.type!='checkbox')v=v=='true';set(o,e.dataset.k,v)});
 if($('#wpass').value)set(o,'wifi.password',$('#wpass').value);
 if($('#apass').value)set(o,'device.adminPassword',$('#apass').value);

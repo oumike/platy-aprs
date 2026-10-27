@@ -75,7 +75,7 @@ the time.
 
 **Settings** holds: Wi-Fi (on/off, networks, setup access point) · Quick messages · GPS & beacon (send a beacon,
 turn the GPS on or off) · Connections (APRS-IS, TNC, LoRa; see below) · Screen timeout · At timeout · Brightness (opens a slider: Left/Right or drag it; not on the T-Deck Pro) · Sound and Volume
-(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanels and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
+(see [Sound](#sound)) · Message light (Mesh Deck) or Keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro), and Light timeout (see [Message light](#message-light)) · Theme (dark or light, applies at once; not on the T-Deck Pro) · Accent color (the button colour: pick Orange, Red, Pink, Purple, Blue, Cyan, Teal, Green, Yellow or Grey from a pop-up of swatches; button text turns light or dark to suit; the web Device tab also takes any hex colour, with your choice of light or dark text; not on the T-Deck Pro) · Text size (Small, Medium, Large or X-Large from a pop-up; also on the web Device tab) · Orientation (CrowPanels and Wio Tracker L2: pick Landscape, Landscape 180, Portrait or Portrait 180 from a pop-up; also on the web Device tab) · Backup settings to SD card ·
 Firmware update · About · Reboot. On the T-Deck Pro, Settings uses shorter names.
 
 The status bar along the top shows your callsign, an unread-message marker, the radio link (Bluetooth icon, or
@@ -408,7 +408,7 @@ Open `http://platy-aprs.local`, the device's IP address, or `http://192.168.4.1`
 | **Radio** | RF link (Bluetooth TNC or LoRa), TNC scan and pairing, UUIDs, LoRa settings |
 | **APRS-IS** | Connection, server, passcode, filter, iGate and digipeater |
 | **Wi-Fi** | Network, password, hostname |
-| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro) and its timeout, brightness (not on the T-Deck Pro), screen timeout and screensaver, theme (dark/light; not on the T-Deck Pro), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
+| **Device** | Units, alert sound and volume, message light (Mesh Deck) or keyboard blink (T-Deck Plus, T-LoRa Pager, T-Deck Pro) and its timeout, brightness (not on the T-Deck Pro), screen timeout and screensaver, theme (dark/light; not on the T-Deck Pro), accent color (presets or a custom hex code with light or dark button text; not on the T-Deck Pro), timezone, admin password, firmware update, backups, packet logs, reboot, factory reset |
 | **Monitor** | Live packet feed |
 | **Stations** | Heard stations, favorites |
 | **Messages** | Conversations; send messages |
